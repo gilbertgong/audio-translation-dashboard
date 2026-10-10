@@ -8,33 +8,37 @@
 </head>
 <body>
   <header>
-    <button id="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="true"
-            title="Show/hide activity log">&#9776;</button>
     <h1>Audio Translation Dashboard</h1>
   </header>
 
-  <div class="layout">
-    <aside id="sidebar">
-      <div class="sidebar-header">
-        <h2>Activity</h2>
-        <button id="clear-log" type="button">Clear</button>
+  <main>
+    <!-- One grid: each recording is a row with its text on the left and its
+         activity (timings, details) on the right, so the two always align. -->
+    <section id="translation-window" aria-live="polite">
+      <div class="col-head conversation-head">Conversation</div>
+      <div class="col-head activity-head">
+        <span class="col-title">Activity</span>
+        <!-- Sidebar toggle: window outline, panel on the right, chevron that
+             points right to collapse and left (flipped by CSS) to expand. -->
+        <button id="activity-toggle" type="button" aria-expanded="true"
+                aria-label="Hide activity" title="Hide activity">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
+               fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2.5"/>
+            <line x1="15" y1="4" x2="15" y2="20"/>
+            <polyline class="chevron" points="17 9.5 19.5 12 17 14.5"/>
+          </svg>
+        </button>
       </div>
-      <div id="activity-log" aria-live="polite">
-        <p class="placeholder">No activity yet.</p>
-      </div>
-    </aside>
+      <p class="placeholder">Translations will appear here.</p>
+    </section>
 
-    <main>
-      <section id="translation-window">
-        <p class="placeholder">Translations will appear here.</p>
-      </section>
-
-      <div class="controls">
-        <button id="record-btn" type="button">Start Recording</button>
-        <span id="status">Idle</span>
-      </div>
-    </main>
-  </div>
+    <div class="controls">
+      <button id="record-btn" type="button">Start Recording</button>
+      <span id="status">Idle</span>
+    </div>
+  </main>
 
   <script src="app.js"></script>
 </body>

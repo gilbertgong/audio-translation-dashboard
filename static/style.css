@@ -1,12 +1,13 @@
 :root {
   --bg: #f6f7f9;
   --panel: #ffffff;
+  --activity-bg: #f9fafb;
   --text: #1d2125;
   --muted: #6b7280;
   --border: #d9dde3;
   --accent: #2563eb;
   --recording: #dc2626;
-  --sidebar-width: 320px;
+  --activity-width: 220px;
   --header-height: 50px;
 }
 
@@ -14,6 +15,7 @@
   :root {
     --bg: #15171a;
     --panel: #1f2226;
+    --activity-bg: #1a1d21;
     --text: #e6e8eb;
     --muted: #9aa1ab;
     --border: #33373d;
@@ -52,79 +54,14 @@ h1 { font-size: 1.1rem; margin: 0; }
   background: var(--recording);
   color: #fff;
 }
-h2 { font-size: 0.95rem; margin: 0; }
 
 button { font: inherit; color: inherit; }
-
-#sidebar-toggle {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  width: 34px;
-  height: 34px;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.layout {
-  display: flex;
-  height: calc(100vh - var(--header-height));
-}
-
-/* Sidebar (activity log) */
-
-#sidebar {
-  width: var(--sidebar-width);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  background: var(--panel);
-}
-
-body.sidebar-hidden #sidebar { display: none; }
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-#clear-log {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-#activity-log {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 12px;
-}
-
-.entry {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
-  word-break: break-word;
-}
-
-.entry time { color: var(--muted); margin-right: 6px; }
-.entry.error { color: var(--recording); }
-
-.placeholder { color: var(--muted); }
 
 /* Main area */
 
 main {
-  flex: 1;
-  min-width: 0;
-  max-width: 900px;
+  max-width: 1100px;
+  height: calc(100vh - var(--header-height));
   margin: 0 auto;
   padding: 16px;
   display: flex;
@@ -132,19 +69,102 @@ main {
   gap: 12px;
 }
 
+/* Translation window: a two-column grid. Each row is one recording; its cells
+   share the row's height, so text and activity always line up. */
+
 #translation-window {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--activity-width);
+  align-content: start;
+  /* Carries both column backgrounds (and the divider) down through the empty
+     space below the last row. */
+  background: linear-gradient(to right,
+    var(--panel) calc(100% - var(--activity-width)),
+    var(--border) calc(100% - var(--activity-width)) calc(100% - var(--activity-width) + 1px),
+    var(--activity-bg) calc(100% - var(--activity-width) + 1px));
 }
 
-.utterance {
-  padding: 10px 0;
+/* Collapsed activity: the column shrinks to a narrow strip that keeps the
+   toggle button; rows and the background stay aligned. */
+body.activity-hidden { --activity-width: 36px; }
+body.activity-hidden .activity > *,
+body.activity-hidden .activity-head .col-title { display: none; }
+body.activity-hidden .activity { padding: 0; }
+body.activity-hidden .activity-head { justify-content: center; padding: 8px 0; }
+
+.row { display: contents; }
+
+.col-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
+
+.activity-head {
+  background: var(--activity-bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+
+#activity-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px 0; /* don't make the header row taller */
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#activity-toggle:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+#activity-toggle .chevron {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
+
+.placeholder {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--muted);
+}
+
+/* Left column: the conversation. language1 is left-aligned, language2 right. */
+
+.utterance {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.utterance.lang2 { text-align: right; }
 
 .utterance .meta {
   font-size: 0.75rem;
@@ -152,16 +172,16 @@ main {
   margin-bottom: 2px;
 }
 
-.utterance .original {
+.utterance .meta:empty { display: none; }
+
+.utterance .original,
+.utterance .translation {
   font-size: 1.05rem;
   line-height: 1.5;
   white-space: pre-wrap;
 }
 
 .utterance .translation {
-  font-size: 1.05rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
   color: var(--accent);
   margin-top: 4px;
 }
@@ -169,6 +189,51 @@ main {
 .utterance .translation:empty { display: none; }
 .utterance .pending { color: var(--muted); font-style: italic; }
 .utterance .error { color: var(--recording); font-size: 0.9rem; }
+
+/* Right column: activity for the row. Timings first and largest; the rest is
+   supporting detail. */
+
+.activity {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--activity-bg);
+  min-width: 0;
+}
+
+.timing {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.timing .secs {
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.6em;
+}
+
+.timing .label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.timing.pending .secs { color: var(--muted); font-weight: 400; }
+.timing.error .secs { color: var(--recording); }
+
+.details {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.details .error { color: var(--recording); }
+
+/* Controls */
 
 .controls {
   display: flex;
@@ -192,15 +257,11 @@ main {
 
 #status { color: var(--muted); }
 
-/* On narrow screens the sidebar overlays the main area. */
+/* Narrow screens: the activity column becomes narrower. */
 @media (max-width: 700px) {
-  #sidebar {
-    position: fixed;
-    top: var(--header-height);
-    bottom: 0;
-    left: 0;
-    width: min(var(--sidebar-width), 85vw);
-    z-index: 10;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-  }
+  :root { --activity-width: 130px; }
+  main { padding: 8px; }
+  .utterance { padding: 8px 10px; }
+  .activity { padding: 8px 10px; }
+  .timing .secs { font-size: 1rem; }
 }

@@ -36,20 +36,25 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 log = logging.getLogger("app")
 
-# Sample conversation for --mock mode. "language" is as whisper reports it.
+# Sample conversation for --mock mode. "language" is as whisper reports it;
+# the audio length and timings are shown for the lines displayed when the page loads.
 MOCK_CONVERSATION = [
     {"text": "Hi Li Wei, are we still meeting tomorrow afternoon?",
      "language": "english",
-     "translation": "嗨，李伟，我们明天下午还见面吗？"},
+     "translation": "嗨，李伟，我们明天下午还见面吗？",
+     "audio_seconds": 2.6, "stt_seconds": 0.41, "llm_seconds": 0.52},
     {"text": "是的，三点在二楼的会议室，别迟到。",
      "language": "chinese",
-     "translation": "Yes, three o'clock in the second-floor meeting room. Don't be late."},
+     "translation": "Yes, three o'clock in the second-floor meeting room. Don't be late.",
+     "audio_seconds": 2.2, "stt_seconds": 0.38, "llm_seconds": 0.74},
     {"text": "Great, I'll bring the latest budget numbers so we can go through them together.",
      "language": "english",
-     "translation": "太好了，我会带上最新的预算数据，我们可以一起过一遍。"},
+     "translation": "太好了，我会带上最新的预算数据，我们可以一起过一遍。",
+     "audio_seconds": 3.9, "stt_seconds": 0.46, "llm_seconds": 0.69},
     {"text": "好的，到时候我们先 review 一下 Q4 的计划，然后再讨论预算。",
      "language": "chinese",
-     "translation": "Okay, then we'll first review the Q4 plan and discuss the budget after that."},
+     "translation": "Okay, then we'll first review the Q4 plan and discuss the budget after that.",
+     "audio_seconds": 3.4, "stt_seconds": 0.44, "llm_seconds": 0.81},
 ]
 MOCK_DELAY = 0.8  # seconds; long enough to see the in-progress states
 MOCK_PRELOAD = 2  # lines shown when the page loads; recordings continue from there
@@ -187,7 +192,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/config":
             # Only the settings the browser needs.
-            payload = {"sample_rate": self.config["audio"]["sample_rate"], "mock": self.server.mock}
+            prompt = self.config["llama_prompt"]
+            payload = {"sample_rate": self.config["audio"]["sample_rate"],
+                       "language1": prompt["language1"], "language2": prompt["language2"],
+                       "mock": self.server.mock}
             if self.server.mock:
                 # A page (re)load starts the sample conversation over.
                 payload["mock_conversation"] = MOCK_CONVERSATION[:MOCK_PRELOAD]

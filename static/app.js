@@ -1,15 +1,15 @@
 // Dashboard front end: microphone capture -> 16-bit mono WAV -> POST to backend,
-// which transcribes it; the text is then sent back for translation. Both are
-// shown in the translation window.
+// which transcribes it; the text is then sent back for translation. Each
+// recording becomes a row in the translation window: the conversation text on
+// the left, its activity (timings first, then details) on the right.
 
 const recordBtn = document.getElementById("record-btn");
 const statusEl = document.getElementById("status");
 const windowEl = document.getElementById("translation-window");
-const logEl = document.getElementById("activity-log");
-const sidebarToggle = document.getElementById("sidebar-toggle");
-const clearLogBtn = document.getElementById("clear-log");
+const activityToggle = document.getElementById("activity-toggle");
 
 let targetSampleRate = 16000;
+let language2 = ""; // entries detected in this language are right-aligned
 let session = null; // active recording: { stream, ctx, source, node, chunks }
 let pending = 0; // recordings still being processed
 
@@ -21,73 +21,113 @@ function updateIdleStatus() {
   if (!session) setStatus(pending ? `Processing (${pending})...` : "Idle");
 }
 
-// Translation window: one entry per recording, filled in when processing finishes.
+function el(tag, className, text = "") {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
 
-function addUtterance() {
+// Rows: one per recording (or note). Returns the row element; its cells are
+// .utterance (left: time/language, text) and .activity (right: timings, details).
+
+function addRow() {
   const placeholder = windowEl.querySelector(".placeholder");
   if (placeholder) placeholder.remove();
-  const div = document.createElement("div");
-  div.className = "utterance";
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  meta.textContent = new Date().toLocaleTimeString();
-  const original = document.createElement("div");
-  original.className = "original pending";
-  original.textContent = "Transcribing...";
-  const translation = document.createElement("div");
-  translation.className = "translation";
-  div.append(meta, original, translation);
-  windowEl.appendChild(div);
+  const row = el("div", "row");
+
+  const utterance = el("div", "utterance");
+  utterance.append(el("div", "meta"), el("div", "original"), el("div", "translation"));
+
+  const activity = el("div", "activity");
+  activity.append(el("div", "timings"), el("div", "details"));
+
+  row.append(utterance, activity);
+  windowEl.appendChild(row);
   windowEl.scrollTop = windowEl.scrollHeight;
-  return div;
+  return row;
 }
 
-// Set one line (".original" or ".translation") of an entry.
+// Set one line (".original" or ".translation") of a row's text.
 // state: "pending", "error", or "" for normal text.
-function setLine(div, selector, text, state = "") {
-  const el = div.querySelector(selector);
-  el.textContent = text;
-  el.classList.toggle("pending", state === "pending");
-  el.classList.toggle("error", state === "error");
+function setLine(row, selector, text, state = "") {
+  const line = row.querySelector(selector);
+  line.textContent = text;
+  line.classList.toggle("pending", state === "pending");
+  line.classList.toggle("error", state === "error");
   windowEl.scrollTop = windowEl.scrollHeight;
 }
 
-// Activity log (sidebar)
-
-function addEntry(text, isError = false) {
-  const placeholder = logEl.querySelector(".placeholder");
-  if (placeholder) placeholder.remove();
-  const div = document.createElement("div");
-  div.className = isError ? "entry error" : "entry";
-  const time = document.createElement("time");
-  time.textContent = new Date().toLocaleTimeString();
-  div.append(time, text);
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
+// The small line above a row's text: the time; setLanguage adds the language.
+function setMeta(row, time) {
+  row.querySelector(".meta").textContent = time;
 }
 
-clearLogBtn.addEventListener("click", () => {
-  logEl.innerHTML = '<p class="placeholder">No activity yet.</p>';
-});
+// Record the detected language: shown in the meta line, and rows in
+// language2 are right-aligned.
+function setLanguage(row, language) {
+  const meta = row.querySelector(".meta");
+  if (language) meta.textContent += ` · ${language}`;
+  const isLang2 = !!language && language.toLowerCase() === language2.toLowerCase();
+  row.querySelector(".utterance").classList.toggle("lang2", isLang2);
+}
 
-// Sidebar visibility, remembered per browser.
+// Set a timing in a row's activity cell, listed in the order first set:
+// "audio" (recording length), "stt" (transcription), "llm" (translation).
+// seconds: a number, null while in progress, or "failed".
+const TIMING_LABELS = { audio: "audio", stt: "transcribe", llm: "translate" };
+const TIMING_DECIMALS = { audio: 1, stt: 2, llm: 2 };
 
-function setSidebarHidden(hidden) {
-  document.body.classList.toggle("sidebar-hidden", hidden);
-  sidebarToggle.setAttribute("aria-expanded", String(!hidden));
+function setTiming(row, kind, seconds) {
+  const timings = row.querySelector(".timings");
+  let timing = timings.querySelector(`[data-kind="${kind}"]`);
+  if (!timing) {
+    timing = el("div", "timing");
+    timing.dataset.kind = kind;
+    timing.append(el("span", "secs"), el("span", "label", TIMING_LABELS[kind]));
+    timings.appendChild(timing);
+  }
+  const secs = timing.querySelector(".secs");
+  timing.classList.toggle("pending", seconds === null);
+  timing.classList.toggle("error", seconds === "failed");
+  if (seconds === null) secs.textContent = "…";
+  else if (seconds === "failed") secs.textContent = "failed";
+  else secs.textContent = `${Number(seconds).toFixed(TIMING_DECIMALS[kind])}s`;
+}
+
+// Add a line of supporting detail to a row's activity cell.
+function addDetail(row, text, isError = false) {
+  const detail = el("div", isError ? "error" : "", text);
+  row.querySelector(".details").appendChild(detail);
+  return detail;
+}
+
+// A row with only an activity note (e.g. a microphone error), no conversation text.
+function addNote(text, isError = false) {
+  const row = addRow();
+  addDetail(row, new Date().toLocaleTimeString());
+  addDetail(row, text, isError);
+}
+
+// Activity column visibility, remembered per browser.
+
+function setActivityHidden(hidden) {
+  document.body.classList.toggle("activity-hidden", hidden);
+  activityToggle.setAttribute("aria-expanded", String(!hidden));
+  const label = hidden ? "Show activity" : "Hide activity";
+  activityToggle.setAttribute("aria-label", label);
+  activityToggle.title = label;
   try {
-    localStorage.setItem("sidebarHidden", hidden ? "1" : "0");
+    localStorage.setItem("activityHidden", hidden ? "1" : "0");
   } catch {}
 }
 
-sidebarToggle.addEventListener("click", () => {
-  setSidebarHidden(!document.body.classList.contains("sidebar-hidden"));
+activityToggle.addEventListener("click", () => {
+  setActivityHidden(!document.body.classList.contains("activity-hidden"));
 });
 
 try {
-  const saved = localStorage.getItem("sidebarHidden");
-  // Default: visible on wide screens, hidden on narrow ones.
-  setSidebarHidden(saved === null ? window.innerWidth <= 700 : saved === "1");
+  setActivityHidden(localStorage.getItem("activityHidden") === "1");
 } catch {}
 
 async function loadConfig() {
@@ -95,25 +135,28 @@ async function loadConfig() {
     const res = await fetch("/api/config");
     const config = await res.json();
     targetSampleRate = config.sample_rate;
+    language2 = config.language2 || "";
     if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
   }
 }
 
-// Mock mode (app.py --mock): show the sample conversation, built the same way
-// as real entries, so the page can be styled without whisper or llama.
+// Mock mode (app.py --mock): show the start of the sample conversation, built
+// the same way as real entries, so the page can be styled without whisper or llama.
 function showMockConversation(items) {
-  const badge = document.createElement("span");
-  badge.className = "mock-badge";
-  badge.textContent = "MOCK";
+  const badge = el("span", "mock-badge", "MOCK");
   document.querySelector("header h1").append(" ", badge);
-  addEntry("Mock mode: sample data, whisper and llama are not used");
   for (const item of items) {
-    const div = addUtterance();
-    div.querySelector(".meta").textContent += ` · ${item.language}`;
-    setLine(div, ".original", item.text);
-    setLine(div, ".translation", item.translation);
+    const row = addRow();
+    setMeta(row, new Date().toLocaleTimeString());
+    setLanguage(row, item.language);
+    setLine(row, ".original", item.text);
+    setLine(row, ".translation", item.translation);
+    setTiming(row, "audio", item.audio_seconds);
+    setTiming(row, "stt", item.stt_seconds);
+    setTiming(row, "llm", item.llm_seconds);
+    addDetail(row, "mock sample");
   }
 }
 
@@ -205,6 +248,8 @@ function encodeWav(samples, sampleRate) {
   return new Blob([view], { type: "audio/wav" });
 }
 
+// Returns the response body; on failure, throws an Error that also carries
+// the body (which may include the saved file's path).
 async function uploadWav(wav) {
   const res = await fetch("/api/recordings", {
     method: "POST",
@@ -212,10 +257,7 @@ async function uploadWav(wav) {
     body: wav,
   });
   const body = await res.json();
-  if (!res.ok) {
-    if (body.file) addEntry(`Saved recording to ${body.file}`);
-    throw new Error(body.error || `HTTP ${res.status}`);
-  }
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { body });
   return body;
 }
 
@@ -230,10 +272,20 @@ async function requestTranslation(text) {
   return body;
 }
 
+// Shows a saved file by name; the full path is in the tooltip.
+function addFileDetail(row, path) {
+  const detail = addDetail(row, path.split(/[\\/]/).pop());
+  detail.title = path;
+}
+
 // Transcribe, then translate, in the background so the next recording can start.
 async function processRecording(wav) {
-  const seconds = (wav.size - 44) / 2 / targetSampleRate;
-  const div = addUtterance();
+  const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
+  const row = addRow();
+  setMeta(row, new Date().toLocaleTimeString());
+  setLine(row, ".original", "Transcribing...", "pending");
+  setTiming(row, "audio", audioSeconds);
+  setTiming(row, "stt", null);
   pending++;
   updateIdleStatus();
   try {
@@ -241,30 +293,33 @@ async function processRecording(wav) {
     try {
       stt = await uploadWav(wav);
     } catch (err) {
-      setLine(div, ".original", `Error: ${err.message}`, "error");
+      setTiming(row, "stt", "failed");
+      setLine(row, ".original", `Error: ${err.message}`, "error");
+      if (err.body?.file) addFileDetail(row, err.body.file);
       throw err;
     }
-    addEntry(`Saved ${seconds.toFixed(1)} s recording to ${stt.file}`);
-    addEntry(`Transcribed in ${stt.stt_seconds} s (${stt.language || "unknown language"})`);
-    if (stt.language) div.querySelector(".meta").textContent += ` · ${stt.language}`;
+    setTiming(row, "stt", stt.stt_seconds);
+    addFileDetail(row, stt.file);
+    setLanguage(row, stt.language);
     if (!stt.text) {
-      setLine(div, ".original", "(no speech detected)", "pending");
+      setLine(row, ".original", "(no speech detected)", "pending");
       return;
     }
-    setLine(div, ".original", stt.text);
+    setLine(row, ".original", stt.text);
 
-    setLine(div, ".translation", "Translating...", "pending");
+    setLine(row, ".translation", "Translating...", "pending");
+    setTiming(row, "llm", null);
     try {
       const result = await requestTranslation(stt.text);
-      addEntry(`Translated in ${result.llm_seconds} s`);
-      setLine(div, ".translation", result.translation);
+      setTiming(row, "llm", result.llm_seconds);
+      setLine(row, ".translation", result.translation);
     } catch (err) {
-      setLine(div, ".translation", `Error: ${err.message}`, "error");
+      setTiming(row, "llm", "failed");
+      setLine(row, ".translation", `Error: ${err.message}`, "error");
       throw err;
     }
   } catch (err) {
     console.error(err);
-    addEntry(`Error: ${err.message}`, true);
   } finally {
     pending--;
     updateIdleStatus();
@@ -287,7 +342,7 @@ recordBtn.addEventListener("click", async () => {
     }
   } catch (err) {
     console.error(err);
-    addEntry(`Error: ${err.message}`, true);
+    addNote(`Error: ${err.message}`, true);
     setStatus("Error");
     if (session) {
       session.stream.getTracks().forEach((t) => t.stop());
