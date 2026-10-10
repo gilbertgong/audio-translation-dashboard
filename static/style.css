@@ -223,6 +223,14 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
   color: var(--muted);
 }
 
+/* Second line under a label: the translate line's time to first token. */
+.timing .label .sub {
+  display: block;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Small buttons at the right end of a timing line: play (audio) and
    raw-response viewers (transcribe, translate), stacked in one column. */
 .row-btn {
@@ -239,6 +247,10 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 }
 
 .row-btn:hover { border-color: var(--accent); }
+
+/* A second button (play, after ⓘ on the audio line) stays in the same
+   right-hand column as the single buttons on the other lines. */
+.timing .row-btn + .row-btn { margin-left: 0; }
 
 /* The speak button, just after the translated text. */
 .translation .speak-btn {

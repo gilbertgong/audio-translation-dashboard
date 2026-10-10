@@ -42,7 +42,7 @@ echo_cancellation = true
 # is sent as its own recording when you pause. "Speech" is anything clearly
 # louder than the background noise, which is measured continuously.
 # Whether the switch starts out on when the page loads.
-enabled = false
+enabled = true
 # Silence (ms) that ends a phrase.
 pause_ms = 600
 # How far (dB) above the background noise counts as speech. Raise it if noise

@@ -328,6 +328,15 @@ function setTiming(row, kind, seconds) {
   else secs.textContent = `${Number(seconds).toFixed(TIMING_DECIMALS[kind])}s`;
 }
 
+// A small second line under a timing's label, e.g. time to first token.
+function setTimingSub(row, kind, text, title = "") {
+  const label = row.querySelector(`.timing[data-kind="${kind}"] .label`);
+  let sub = label.querySelector(".sub");
+  if (!sub) sub = label.appendChild(el("span", "sub"));
+  sub.textContent = text;
+  sub.title = title;
+}
+
 // Playback of a row's recording: the exact audio sent to whisper, kept in the
 // browser. One shared player, so starting one recording stops another (and
 // any speech; see speakTranslation).
@@ -493,9 +502,10 @@ const rawTitle = document.getElementById("raw-title");
 const rawBody = document.getElementById("raw-body");
 const rawCopy = document.getElementById("raw-copy");
 
+// raw: shown as formatted JSON, or as is if it's a string.
 function showRaw(title, raw) {
   rawTitle.textContent = title;
-  rawBody.textContent = JSON.stringify(raw, null, 2);
+  rawBody.textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
   rawCopy.textContent = "Copy";
   rawDialog.showModal();
   rawBody.scrollTop = 0;
@@ -529,6 +539,22 @@ function addDetail(row, text, isError = false) {
   const detail = el("div", isError ? "error" : "", text);
   row.querySelector(".details").appendChild(detail);
   return detail;
+}
+
+// Background information about a row's recording (how it was split, the saved
+// file), kept out of the activity cell: an "ⓘ" button on the audio timing line
+// (left of the play button) shows it in the viewer dialog.
+function addInfo(row, text) {
+  if (!row.info) {
+    row.info = [];
+    const btn = el("button", "row-btn", "ⓘ");
+    btn.type = "button";
+    btn.title = "Show recording details";
+    btn.addEventListener("click", () => showRaw("Recording details", row.info.join("\n")));
+    const line = row.querySelector('.timing[data-kind="audio"]');
+    line.insertBefore(btn, line.querySelector(".row-btn"));
+  }
+  row.info.push(text);
 }
 
 // A row with only an activity note (e.g. a microphone error), no conversation text.
@@ -595,7 +621,7 @@ function showMockConversation(items) {
     setTiming(row, "llm", item.llm_seconds);
     addRawButton(row, "stt", "whisper response (mock)", { mock: true, text: item.text, language: item.language });
     addRawButton(row, "llm", "llama response (mock)", { mock: true, text: item.text, translation: item.translation });
-    addDetail(row, "mock sample");
+    addInfo(row, "Mock sample (not a real recording)");
   }
 }
 
@@ -807,10 +833,8 @@ async function requestTranslation(text, onText) {
   return { translation: translation.trim(), seconds, firstSeconds, raw };
 }
 
-// Shows a saved file by name; the full path is in the tooltip.
-function addFileDetail(row, path) {
-  const detail = addDetail(row, path.split(/[\\/]/).pop());
-  detail.title = path;
+function addFileInfo(row, path) {
+  addInfo(row, `Saved as: ${path}`);
 }
 
 // Transcribe, then translate, in the background so the next recording can start.
@@ -823,7 +847,7 @@ async function processRecording(wav, note = "") {
   setTiming(row, "audio", audioSeconds);
   addPlayButton(row, wav);
   setTiming(row, "stt", null);
-  if (note) addDetail(row, note);
+  if (note) addInfo(row, `Split by: ${note}`);
   pending++;
   updateStatus();
   try {
@@ -833,12 +857,12 @@ async function processRecording(wav, note = "") {
     } catch (err) {
       setTiming(row, "stt", "failed");
       setLine(row, ".original", `Error: ${err.message}`, "error");
-      if (err.body?.file) addFileDetail(row, err.body.file);
+      if (err.body?.file) addFileInfo(row, err.body.file);
       throw err;
     }
     setTiming(row, "stt", stt.stt_seconds);
     if (stt.stt_raw) addRawButton(row, "stt", "whisper request and response", stt.stt_raw);
-    addFileDetail(row, stt.file);
+    addFileInfo(row, stt.file);
     setLanguage(row, stt.language);
     if (!stt.text) {
       setLine(row, ".original", "(no speech detected)", "pending");
@@ -851,7 +875,9 @@ async function processRecording(wav, note = "") {
     try {
       const result = await requestTranslation(stt.text, (soFar) => setLine(row, ".translation", soFar));
       setTiming(row, "llm", result.seconds);
-      if (result.firstSeconds !== null) addDetail(row, `first token after ${result.firstSeconds.toFixed(2)}s`);
+      if (result.firstSeconds !== null) {
+        setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
+      }
       addRawButton(row, "llm", "llama request and streamed response", result.raw);
       if (result.translation) {
         setLine(row, ".translation", result.translation);
