@@ -16,7 +16,8 @@ Standard library only (Python 3.11+ for tomllib).
 import argparse
 from pathlib import Path
 
-from common import CONFIG_FILE, download, load_config, model_path, model_url, run_script, setup_logging, starts
+from common import (CONFIG_FILE, download, load_config, model_files, model_names, run_script,
+                    setup_logging, starts)
 
 NAME = "download_models"
 
@@ -31,30 +32,27 @@ def main():
 
     cfg = load_config(args.config)
     log = setup_logging(cfg, NAME)
-    names = [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, str)]
-
-    for name in names:
+    for name in model_names(cfg):
         if not starts(cfg, name):
             print(f"== {name}: skipped (start = false)")
             log.info("%s model skipped (start = false)", name)
             continue
-        url = model_url(name, cfg["models"][name])
-        dest = model_path(cfg, name)
-        print(f"== {name}: {dest.name}")
-        print(f"   {url}")
+        for _flag, url, dest in model_files(cfg, name):
+            print(f"== {name}: {dest.name}")
+            print(f"   {url}")
 
-        if dest.is_file() and not args.force:
-            print(f"   already downloaded ({dest.stat().st_size / 2**30:.2f} GB) in {dest.parent}")
-            log.info("%s model already downloaded: %s", name, dest)
-        elif args.dry_run:
-            print(f"   would download to {dest.parent}")
-        else:
-            if args.force:
-                dest.unlink(missing_ok=True)
-            log.info("downloading %s model from %s", name, url)
-            download(url, dest, resume=not args.force)
-            print(f"   saved to {dest}")
-            log.info("downloaded %s model to %s", name, dest)
+            if dest.is_file() and not args.force:
+                print(f"   already downloaded ({dest.stat().st_size / 2**30:.2f} GB) in {dest.parent}")
+                log.info("%s model already downloaded: %s", name, dest)
+            elif args.dry_run:
+                print(f"   would download to {dest.parent}")
+            else:
+                if args.force:
+                    dest.unlink(missing_ok=True)
+                log.info("downloading %s model from %s", name, url)
+                download(url, dest, resume=not args.force)
+                print(f"   saved to {dest}")
+                log.info("downloaded %s model to %s", name, dest)
 
 
 if __name__ == "__main__":

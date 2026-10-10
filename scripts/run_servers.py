@@ -1,12 +1,14 @@
-"""Start the API servers (whisper-server, llama-server) and keep them running
-while a command runs, e.g. the dashboard.
+"""Start the API servers (whisper-server, tts-server, llama-server) and keep
+them running while a command runs, e.g. the dashboard.
 
 Usage, from the project root:
     python scripts/run_servers.py [--config config.toml] [COMMAND ...]
 
 Starts each server with start = true in [api_servers], in config order, and
-waits until it answers on /health. Then runs COMMAND, and stops the servers
-when it exits. Without a COMMAND, keeps the servers running until Ctrl+C.
+waits until it answers on /health. Voices listed in [api_servers.<name>.voices]
+are registered as soon as their server is ready. Then runs COMMAND, and stops
+the servers when it exits. Without a COMMAND, keeps the servers running until
+Ctrl+C.
 
     python scripts/run_servers.py python app.py
 
@@ -18,6 +20,8 @@ Standard library only (Python 3.11+ for tomllib).
 """
 
 import argparse
+import base64
+import json
 import subprocess
 import sys
 import time
@@ -25,7 +29,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import (CONFIG_FILE, LOG_FILE, api_servers, config_path, load_config, model_path, run_script,
+from common import (CONFIG_FILE, LOG_FILE, api_servers, config_path, load_config, model_files, run_script,
                     setup_logging, starts)
 
 NAME = "run_servers"
@@ -37,16 +41,18 @@ def server_url(server):
 
 
 def server_argv(cfg, name, server):
-    """The server's command line: executable, model, host, port and extra args."""
+    """The server's command line: executable, model file(s), host, port and extra args."""
     install_dir = config_path(cfg, cfg["api_servers"].get("install_dir", "api_servers"))
     exe = install_dir / name / server["executable"]
     if not exe.is_file() and exe.with_suffix(".exe").is_file():
         exe = exe.with_suffix(".exe")
-    model = model_path(cfg, name)
-    for path, hint in [(exe, "install_api_servers.py"), (model, "download_models.py")]:
+    files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("-m", ..., model.gguf)
+    needed = [(exe, "install_api_servers.py")] + [(path, "download_models.py") for _, _, path in files]
+    for path, hint in needed:
         if not path.is_file():
             raise SystemExit(f"error: {path} not found (run scripts/{hint})")
-    return [str(exe), "-m", str(model), "--host", server["host"], "--port", str(server["port"]),
+    model_args = [arg for flag, _, path in files for arg in (flag, str(path))]
+    return [str(exe), *model_args, "--host", server["host"], "--port", str(server["port"]),
             *server.get("args", [])]
 
 
@@ -89,6 +95,32 @@ def start_server(cfg, name, server, log, log_dir):
     return proc
 
 
+def voice_files(cfg, server):
+    """The server's [api_servers.<name>.voices] entries, as {voice name: WAV path}."""
+    return {voice: config_path(cfg, path) for voice, path in server.get("voices", {}).items()}
+
+
+def register_voices(cfg, name, server, log):
+    """Register the server's voices (tts-server keeps them in memory only, so
+    this runs at every start). Speaker-embedding cloning: no transcript."""
+    for voice, path in voice_files(cfg, server).items():
+        body = json.dumps({"name": voice, "wav_b64": base64.b64encode(path.read_bytes()).decode()})
+        req = urllib.request.Request(server_url(server) + "/v1/audio/voices", data=body.encode("utf-8"),
+                                     headers={"Content-Type": "application/json"})
+        start = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                resp.read()
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", "replace").strip()[:300]
+            raise SystemExit(f"error: registering voice {voice!r} with {name} failed: HTTP {err.code}: {detail}")
+        except OSError as err:
+            raise SystemExit(f"error: registering voice {voice!r} with {name} failed: {err}")
+        seconds = time.monotonic() - start
+        print(f"   voice {voice!r} registered from {path.name} ({seconds:.1f}s)")
+        log.info("%s: registered voice %r from %s in %.1fs", name, voice, path, seconds)
+
+
 def stop_servers(procs, log):
     if not procs:
         return
@@ -127,14 +159,22 @@ def main():
     log = setup_logging(cfg, NAME)
     log_dir = config_path(cfg, LOG_FILE).parent
 
+    # Check the voice files up front, before anything is started.
+    for name, server in api_servers(cfg).items():
+        if starts(cfg, name):
+            for voice, path in voice_files(cfg, server).items():
+                if not path.is_file():
+                    raise SystemExit(f"error: voice {voice!r} for {name}: {path} not found")
+
     procs = []
     exit_code = 0
     try:
-        # Config order: whisper comes first, so llama-server sizes itself to the
-        # GPU memory left over.
+        # Config order: llama-server comes last, so it sizes itself to the GPU
+        # memory the others leave over.
         for name, server in api_servers(cfg).items():
             if starts(cfg, name):
                 procs.append(start_server(cfg, name, server, log, log_dir))
+                register_voices(cfg, name, server, log)
             else:
                 print(f"== {name}: not started (start = false)")
         if args.command:

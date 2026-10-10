@@ -119,11 +119,27 @@ def model_url(name, value):
     raise SystemExit(f"error: models.{name} must be a URL, got {value!r}")
 
 
-def model_path(cfg, name):
-    """Local path of a [models] entry: <models.dir>/<name>/<file name from URL>."""
+def model_names(cfg):
+    """The names of the [models] entries (e.g. whisper, llama, tts)."""
+    return [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, (str, dict))]
+
+
+def model_files(cfg, name):
+    """The files of a [models] entry, as [(flag, url, local path)].
+
+    An entry is either one model (a whisper.cpp model name or a URL), passed to
+    its server as -m; or a table of URLs keyed by the server's flag for each
+    file, e.g. {model = ..., codec = ...} -> --model and --codec. Files are
+    saved to <models.dir>/<name>/<file name from URL>.
+    """
     models = cfg["models"]
-    filename = Path(urllib.parse.urlsplit(model_url(name, models[name])).path).name
-    return config_path(cfg, models.get("dir", "models")) / name / filename
+    entry = models[name]
+    folder = config_path(cfg, models.get("dir", "models")) / name
+    if isinstance(entry, str):
+        pairs = [("-m", model_url(name, entry))]
+    else:
+        pairs = [(f"--{key}", model_url(name, url)) for key, url in entry.items()]
+    return [(flag, url, folder / Path(urllib.parse.urlsplit(url).path).name) for flag, url in pairs]
 
 
 def download(url, dest, resume=False):

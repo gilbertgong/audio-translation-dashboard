@@ -104,6 +104,15 @@ llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 # whisper = "large-v3-turbo-q5_0"
 # llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
 
+# Text-to-speech: Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices
+# (see voices/), about 4GB of GPU memory. Two files: the talker and its codec,
+# passed to tts-server as --model and --codec (the keys here are the flag names).
+# Smaller: qwen-talker-0.6b-base-Q8_0.gguf (about 3GB). Preset voices (serena,
+# vivian, ryan, ...) instead of cloning: a "customvoice" talker.
+[models.tts]
+model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf"
+codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
+
 [api_servers]
 # Used by scripts/install_api_servers.py and scripts/run_servers.py. Prebuilt
 # binaries are downloaded from GitHub releases into install_dir/<name>/.
@@ -133,6 +142,30 @@ executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081
 args = ["--language", "auto"]
+
+[api_servers.tts]
+# Text-to-speech: tts-server from qwentts.cpp (Qwen3-TTS), as built by the public
+# release workflow in the Zyeine fork. The Vulkan build is small and runs on most
+# GPUs without a CUDA runtime. (Not used by the app yet.)
+# Servers start in the order listed here; tts comes before llama because
+# llama-server sizes itself to the GPU memory left over.
+start = true
+repo = "Zyeine/qwentts.cpp"
+release = "mellon-v0.1.0"
+ensure_version = false
+assets = ["mellon-voice-engine-windows-vulkan.zip"]
+executable = "tts-server"
+host = "127.0.0.1"
+port = 8083
+# Language detected per text (it is set for the whole server in this build).
+args = ["--lang", "auto"]
+
+[api_servers.tts.voices]
+# Cloned voices, registered by scripts/run_servers.py every time tts-server
+# starts (it keeps them in memory only), then selected by name when speaking.
+# name = WAV file of one speaker, about 10-30 s (relative to the project
+# folder); no transcript needed. See voices/README.md.
+beth = "voices/beth_thomas.wav"
 
 [api_servers.llama]
 # start, release and ensure_version: as for whisper above.
