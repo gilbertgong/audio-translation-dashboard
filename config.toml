@@ -40,9 +40,24 @@ enable_thinking = false
 dir = "models"
 # A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
 # (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
+
+# these are sized for 24GB of VRAM
+# whisper models listed here: https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md#available-models
 whisper = "large-v3"
-# Full URL to a GGUF model file.
+# Full URL to a GGUF model file for llama.
+# Qwen is well suited to English-Chinese translation
 llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"
+
+# Suggestions for other VRAM amounts
+# both models run at once, so their sizes add up, and additional VRAM is needed for context/etc
+#
+# 8GB (about 6.4GB for models - 1.1GB and 5.05GB for whisper/llama):
+# whisper = "large-v3-q5_0"
+# llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q3_K_XL.gguf?download=true"
+#
+# 6GB (about 4.8GB for models = .546GB/4.02GB for whisper/llama):
+# whisper = "large-v3-turbo-q5_0"
+# llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
 
 [api_servers]
 # Used by scripts/install_api_servers.py and launch.sh. Prebuilt binaries are
