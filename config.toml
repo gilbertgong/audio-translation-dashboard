@@ -14,6 +14,17 @@ temp_dir = "tmp/audio"
 sample_rate = 16000
 # Uploads larger than this are rejected.
 max_upload_mb = 50
+# The browser's own microphone processing (applied before the page sees the
+# audio). Automatic gain control is off by default: it can change the level
+# mid-recording (including the Windows microphone level), especially just
+# after the microphone opens. With it off, set the microphone level in Windows
+# sound settings and fine-tune with the page's Gain slider.
+auto_gain_control = false
+# Noise suppression can make speech sound "underwater" on some built-in mics;
+# whisper copes with ordinary background noise on its own. Try both.
+noise_suppression = true
+# Only needed if speakers play while recording.
+echo_cancellation = true
 
 [auto_split]
 # Automatic splitting on pauses, switched on/off on the page ("Continuous Audio

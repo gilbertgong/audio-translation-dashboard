@@ -107,7 +107,7 @@ function stopMeter() {
   meterEl.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
   meterFill.style.width = "0";
   meterDb.classList.remove("clip");
-  meterDb.textContent = "";
+  meterDb.textContent = "-∞ dB"; // keep the readout (and the layout) in place
 }
 
 // Auto-split on pauses. Every audio block updates a simple loudness-based
@@ -218,6 +218,40 @@ async function sendPhrase(samples, sampleRate, reason) {
     addNote(`Error: ${err.message}`, true);
   }
 }
+
+// Microphone input: the browser's processing options (from [audio] in
+// config.toml) and a software gain stage between the microphone and the
+// recorder, so the meter, speech detection and recordings all see the
+// adjusted level. The slider value is remembered per browser.
+
+const audioProcessing = { auto_gain_control: false, noise_suppression: true, echo_cancellation: true };
+const gainSlider = document.getElementById("gain");
+const gainValue = document.getElementById("gain-value");
+
+function gainDb() {
+  return Number(gainSlider.value);
+}
+
+function showGain() {
+  const db = gainDb();
+  gainValue.textContent = `${db > 0 ? "+" : ""}${db} dB`;
+  if (session) session.gain.gain.setTargetAtTime(10 ** (db / 20), session.ctx.currentTime, 0.02);
+  try {
+    localStorage.setItem("gainDb", String(db));
+  } catch {}
+}
+
+gainSlider.addEventListener("input", showGain);
+gainSlider.addEventListener("dblclick", () => {
+  gainSlider.value = "0";
+  showGain();
+});
+
+try {
+  const saved = localStorage.getItem("gainDb");
+  if (saved !== null) gainSlider.value = saved;
+} catch {}
+showGain();
 
 function el(tag, className, text = "") {
   const node = document.createElement(tag);
@@ -410,6 +444,7 @@ async function loadConfig() {
     const config = await res.json();
     targetSampleRate = config.sample_rate;
     language2 = config.language2 || "";
+    Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
     autoSplitToggle.checked = !!enabled;
@@ -446,11 +481,19 @@ function showMockConversation(items) {
 // all audio for one recording.
 async function startRecording(auto) {
   stopPlayback(); // speakers playing into the mic would end up in the recording
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      autoGainControl: audioProcessing.auto_gain_control,
+      noiseSuppression: audioProcessing.noise_suppression,
+      echoCancellation: audioProcessing.echo_cancellation,
+    },
+  });
   const ctx = new AudioContext();
   try {
     await ctx.audioWorklet.addModule("recorder-worklet.js");
     const source = ctx.createMediaStreamSource(stream);
+    const gain = new GainNode(ctx, { gain: 10 ** (gainDb() / 20) });
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
     const splitter = auto ? createSplitter(ctx.sampleRate) : null;
@@ -459,9 +502,9 @@ async function startRecording(auto) {
       if (splitter) splitterBlock(splitter, e.data, rms);
       else chunks.push(e.data);
     };
-    source.connect(node);
+    source.connect(gain).connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    session = { stream, ctx, source, node, chunks, splitter };
+    session = { stream, ctx, source, gain, node, chunks, splitter };
     startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
@@ -473,10 +516,11 @@ async function startRecording(auto) {
 // Returns the recording as a WAV Blob; in auto-split mode, sends any phrase in
 // progress and returns null.
 async function stopRecording() {
-  const { stream, ctx, source, node, chunks, splitter } = session;
+  const { stream, ctx, source, gain, node, chunks, splitter } = session;
   session = null;
   stopMeter();
   source.disconnect();
+  gain.disconnect();
   node.disconnect();
   stream.getTracks().forEach((t) => t.stop());
   const inputRate = ctx.sampleRate;

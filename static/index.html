@@ -34,7 +34,13 @@
       <p class="placeholder">Translations will appear here.</p>
     </section>
 
+    <!-- Two-row grid. Top row: hints/indicators, each above the control it
+         belongs to (the Space hint above the button, the status above the
+         level). Bottom row: button, mode switch, gain, level. -->
     <div class="controls">
+      <span class="shortcut-hint"><kbd>Space</kbd> to start/stop</span>
+      <span id="status">Idle</span>
+
       <button id="record-btn" type="button" title="Start/stop recording (Space)">Start Recording</button>
       <!-- "Continuous Audio Mode" in the UI; called auto-split in the code and config. -->
       <label class="switch" title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop.">
@@ -42,17 +48,42 @@
         <span class="switch-track"></span>
         Continuous Audio Mode
       </label>
-      <!-- Microphone level while recording: -60 dB (left) to 0 dB (right). -->
-      <div id="level-meter" class="meter" role="meter" aria-label="Microphone level"
-           aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60"
-           title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording's highest peak.">
-        <div class="meter-fill"></div>
-        <div class="meter-peak"></div>
-        <div class="meter-threshold" title="Speech threshold (Continuous Audio Mode)"></div>
+      <!-- Software gain applied before the meter and the recording. Fine
+           adjustment only: set the main level in Windows sound settings. -->
+      <label class="gain" title="Software gain (double-click to reset to 0 dB). For larger changes, adjust the microphone level in Windows sound settings.">
+        Gain
+        <span class="gain-slider">
+          <input type="range" id="gain" min="-12" max="6" step="1" value="0" list="gain-ticks">
+          <!-- Scale labels, positioned along the thumb's travel (0 dB is at 2/3). -->
+          <span class="gain-scale" aria-hidden="true">
+            <span style="left: 0%">&minus;12</span>
+            <span class="zero" style="left: 66.667%">0</span>
+            <span style="left: 100%">+6</span>
+          </span>
+        </span>
+        <span id="gain-value" class="gain-value">0 dB</span>
+        <datalist id="gain-ticks">
+          <option value="-12"></option>
+          <option value="-9"></option>
+          <option value="-6"></option>
+          <option value="-3"></option>
+          <option value="0"></option>
+          <option value="3"></option>
+          <option value="6"></option>
+        </datalist>
+      </label>
+      <!-- Microphone level while recording: the meter bar (-60 dB left to
+           0 dB right) and its dB readout, as one item. -->
+      <div class="level">
+        <div id="level-meter" class="meter" role="meter" aria-label="Microphone level"
+             aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60"
+             title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording's highest peak.">
+          <div class="meter-fill"></div>
+          <div class="meter-peak"></div>
+          <div class="meter-threshold" title="Speech threshold (Continuous Audio Mode)"></div>
+        </div>
+        <span id="level-db" class="meter-db">-∞ dB</span>
       </div>
-      <span id="level-db" class="meter-db"></span>
-      <span id="status">Idle</span>
-      <span class="shortcut-hint"><kbd>Space</kbd> to start/stop</span>
     </div>
   </main>
 

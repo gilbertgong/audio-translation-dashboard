@@ -205,6 +205,11 @@ class Handler(SimpleHTTPRequestHandler):
             payload = {"sample_rate": self.config["audio"]["sample_rate"],
                        "language1": prompt["language1"], "language2": prompt["language2"],
                        "auto_split": self.config.get("auto_split", {}),
+                       # Browser microphone processing, passed to getUserMedia.
+                       "audio_processing": {
+                           key: self.config["audio"].get(key, default) for key, default in
+                           [("auto_gain_control", False), ("noise_suppression", True),
+                            ("echo_cancellation", True)]},
                        "mock": self.server.mock}
             if self.server.mock:
                 # A page (re)load starts the sample conversation over.
