@@ -162,7 +162,22 @@ Milestone 2 - STT via whisper.cpp                                 [in progress]
     the text and detected language. The translation window shows one entry
     per recording, filled in when transcription finishes; recording can
     continue meanwhile. Errors show in the entry and the Activity log.
-Milestone 3 - Translation via llama.cpp                           [planned]
+
+Milestone 3 - Translation via llama.cpp                           [in progress]
+  - [llama_prompt] in config.toml holds the system prompt, with {language1}
+    and {language2} placeholders filled from the settings of the same names
+    (default English and Chinese, translating in either direction). app.py
+    fills them in when it loads the config.
+  - [llama_prompt] also sets temperature (default 0.2) and enable_thinking
+    (default false). Measured on Qwen3.8-27B: with thinking on, "Hello,
+    testing." took 3.5 s and 118 tokens; with it off, 0.3 s and 5 tokens.
+  - POST /api/translate {"text"} sends the text to llama-server's
+    /v1/chat/completions, passing enable_thinking to the chat template via
+    chat_template_kwargs, and returns {"translation", "llm_seconds"}.
+  - The browser calls it after each transcription, so the original text
+    appears first and the translation (in the accent color) follows below it.
+    Errors show on the translation line and in the Activity log.
+  - This completes the MVP pipeline: record -> whisper -> llama -> display.
 
 
 8. EXTENSION POINTS (FUTURE)

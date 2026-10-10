@@ -147,8 +147,17 @@ main {
   white-space: pre-wrap;
 }
 
-.utterance.pending .original { color: var(--muted); font-style: italic; }
-.utterance.error .original { color: var(--recording); font-size: 0.9rem; }
+.utterance .translation {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+.utterance .translation:empty { display: none; }
+.utterance .pending { color: var(--muted); font-style: italic; }
+.utterance .error { color: var(--recording); font-size: 0.9rem; }
 
 .controls {
   display: flex;

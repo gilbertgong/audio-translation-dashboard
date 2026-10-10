@@ -15,6 +15,35 @@ sample_rate = 16000
 # Uploads larger than this are rejected.
 max_upload_mb = 50
 
+[llama_prompt]
+# The two languages to translate between, in either direction.
+language1 = "English"
+language2 = "Chinese"
+# System prompt sent to llama-server. {language1} and {language2} are replaced
+# with the values above. (A "\" at the end of a line joins it to the next one.)
+system = """\
+You are an expert {language1}-{language2} translator. Your sole purpose is to \
+translate the user's text accurately, naturally, and contextually. If the user \
+types {language1}, respond only with the {language2} translation. If the user \
+types {language2}, respond only with the {language1} translation. Do not \
+include introductory phrases, conversational fluff, or explanations unless \
+explicitly asked."""
+# Sampling temperature: lower gives more literal, consistent translations.
+temperature = 0.2
+# Let the model think before answering. Thinking models (like the default
+# Qwen) do this unless told not to; it is several times slower per request.
+enable_thinking = false
+
+[models]
+# Used by scripts/download_models.py. Each model is saved to dir/<name>/
+# (relative paths are relative to this file).
+dir = "models"
+# A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
+# (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
+whisper = "large-v3"
+# Full URL to a GGUF model file.
+llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"
+
 [api_servers]
 # Used by scripts/install_api_servers.py and launch.sh. Prebuilt binaries are
 # downloaded from GitHub releases into install_dir/<name>/ (relative paths are
@@ -50,13 +79,3 @@ port = 8082
 # llama-server puts all layers on the GPU and fits memory use automatically by
 # default; --ctx-size caps the context (the model's default is 262144 tokens).
 args = ["--ctx-size", "8192"]
-
-[models]
-# Used by scripts/download_models.py. Each model is saved to dir/<name>/
-# (relative paths are relative to this file).
-dir = "models"
-# A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
-# (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
-whisper = "large-v3"
-# Full URL to a GGUF model file.
-llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"

@@ -1,5 +1,6 @@
 // Dashboard front end: microphone capture -> 16-bit mono WAV -> POST to backend,
-// which transcribes it; the result is shown in the translation window.
+// which transcribes it; the text is then sent back for translation. Both are
+// shown in the translation window.
 
 const recordBtn = document.getElementById("record-btn");
 const statusEl = document.getElementById("status");
@@ -17,7 +18,7 @@ function setStatus(text) {
 }
 
 function updateIdleStatus() {
-  if (!session) setStatus(pending ? `Transcribing (${pending})...` : "Idle");
+  if (!session) setStatus(pending ? `Processing (${pending})...` : "Idle");
 }
 
 // Translation window: one entry per recording, filled in when processing finishes.
@@ -26,29 +27,29 @@ function addUtterance() {
   const placeholder = windowEl.querySelector(".placeholder");
   if (placeholder) placeholder.remove();
   const div = document.createElement("div");
-  div.className = "utterance pending";
+  div.className = "utterance";
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = new Date().toLocaleTimeString();
   const original = document.createElement("div");
-  original.className = "original";
+  original.className = "original pending";
   original.textContent = "Transcribing...";
-  div.append(meta, original);
+  const translation = document.createElement("div");
+  translation.className = "translation";
+  div.append(meta, original, translation);
   windowEl.appendChild(div);
   windowEl.scrollTop = windowEl.scrollHeight;
   return div;
 }
 
-function fillUtterance(div, result) {
-  div.classList.remove("pending");
-  if (result.language) div.querySelector(".meta").textContent += ` · ${result.language}`;
-  div.querySelector(".original").textContent = result.text || "(no speech detected)";
-}
-
-function failUtterance(div, message) {
-  div.classList.remove("pending");
-  div.classList.add("error");
-  div.querySelector(".original").textContent = message;
+// Set one line (".original" or ".translation") of an entry.
+// state: "pending", "error", or "" for normal text.
+function setLine(div, selector, text, state = "") {
+  const el = div.querySelector(selector);
+  el.textContent = text;
+  el.classList.toggle("pending", state === "pending");
+  el.classList.toggle("error", state === "error");
+  windowEl.scrollTop = windowEl.scrollHeight;
 }
 
 // Activity log (sidebar)
@@ -200,21 +201,52 @@ async function uploadWav(wav) {
   return body;
 }
 
-// Upload and transcribe in the background so the next recording can start.
+async function requestTranslation(text) {
+  const res = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+// Transcribe, then translate, in the background so the next recording can start.
 async function processRecording(wav) {
   const seconds = (wav.size - 44) / 2 / targetSampleRate;
   const div = addUtterance();
   pending++;
   updateIdleStatus();
   try {
-    const result = await uploadWav(wav);
-    addEntry(`Saved ${seconds.toFixed(1)} s recording to ${result.file}`);
-    addEntry(`Transcribed in ${result.stt_seconds} s (${result.language || "unknown language"})`);
-    fillUtterance(div, result);
+    let stt;
+    try {
+      stt = await uploadWav(wav);
+    } catch (err) {
+      setLine(div, ".original", `Error: ${err.message}`, "error");
+      throw err;
+    }
+    addEntry(`Saved ${seconds.toFixed(1)} s recording to ${stt.file}`);
+    addEntry(`Transcribed in ${stt.stt_seconds} s (${stt.language || "unknown language"})`);
+    if (stt.language) div.querySelector(".meta").textContent += ` · ${stt.language}`;
+    if (!stt.text) {
+      setLine(div, ".original", "(no speech detected)", "pending");
+      return;
+    }
+    setLine(div, ".original", stt.text);
+
+    setLine(div, ".translation", "Translating...", "pending");
+    try {
+      const result = await requestTranslation(stt.text);
+      addEntry(`Translated in ${result.llm_seconds} s`);
+      setLine(div, ".translation", result.translation);
+    } catch (err) {
+      setLine(div, ".translation", `Error: ${err.message}`, "error");
+      throw err;
+    }
   } catch (err) {
     console.error(err);
     addEntry(`Error: ${err.message}`, true);
-    failUtterance(div, `Error: ${err.message}`);
   } finally {
     pending--;
     updateIdleStatus();

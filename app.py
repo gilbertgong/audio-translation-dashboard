@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 DEFAULT_CONFIG = ROOT / "config.toml"
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
+LLM_TIMEOUT = 300  # seconds to wait for llama-server
+MAX_TEXT_BYTES = 1024 * 1024  # largest /api/translate request body
 
 
 def load_config(path):
@@ -32,7 +34,18 @@ def load_config(path):
     config["audio"]["temp_dir"] = temp_dir
     whisper = config["api_servers"]["whisper"]
     config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
+    llama = config["api_servers"]["llama"]
+    config["llama_url"] = f"http://{llama['host']}:{llama['port']}"
+    config["system_prompt"] = render_prompt(config["llama_prompt"])
     return config
+
+
+def render_prompt(prompt):
+    """Fill {language1} and {language2} into the [llama_prompt] system prompt."""
+    text = prompt["system"]
+    for key in ("language1", "language2"):
+        text = text.replace("{" + key + "}", prompt[key])
+    return text
 
 
 def multipart(fields, files):
@@ -50,19 +63,51 @@ def multipart(fields, files):
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
+def request_json(url, body, content_type, timeout):
+    """POST body to url and return the parsed JSON response.
+
+    HTTP errors are raised as RuntimeError including the server's error text.
+    """
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode("utf-8", "replace").strip()
+        raise RuntimeError(f"HTTP {err.code}: {detail[:500]}") from err
+
+
 def transcribe(whisper_url, wav, filename):
     """Send a WAV to whisper-server; return {"text", "language"}."""
     body, content_type = multipart(
         {"response_format": "verbose_json", "temperature": "0.0"},
         {"file": (filename, "audio/wav", wav)},
     )
-    req = urllib.request.Request(f"{whisper_url}/inference", data=body,
-                                 headers={"Content-Type": content_type})
-    with urllib.request.urlopen(req, timeout=STT_TIMEOUT) as resp:
-        result = json.load(resp)
+    result = request_json(f"{whisper_url}/inference", body, content_type, STT_TIMEOUT)
     if "error" in result:
         raise RuntimeError(result["error"])
     return {"text": result["text"].strip(), "language": result.get("detected_language")}
+
+
+def translate(config, text):
+    """Translate text with llama-server's OpenAI-style chat endpoint."""
+    prompt = config["llama_prompt"]
+    body = {
+        "messages": [
+            {"role": "system", "content": config["system_prompt"]},
+            {"role": "user", "content": text},
+        ],
+        "temperature": prompt.get("temperature", 0.2),
+        # Passed to the model's chat template, which switches thinking on or off.
+        "chat_template_kwargs": {"enable_thinking": prompt.get("enable_thinking", False)},
+    }
+    result = request_json(f"{config['llama_url']}/v1/chat/completions",
+                          json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
+    content = result["choices"][0]["message"].get("content") or ""
+    # llama-server normally moves thinking to a separate field; drop it if not.
+    if "</think>" in content:
+        content = content.split("</think>", 1)[1]
+    return content.strip()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -97,10 +142,42 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        if self.path != "/api/recordings":
+        routes = {
+            "/api/recordings": self.post_recording,
+            "/api/translate": self.post_translate,
+        }
+        handler = routes.get(self.path)
+        if handler:
+            handler()
+        else:
             self.send_json(404, {"error": "not found"})
+
+    def post_translate(self):
+        """Body: {"text": "..."}. Returns {"translation", "llm_seconds"}."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= MAX_TEXT_BYTES:
+            self.send_json(400, {"error": "missing or oversized request body"})
+            return
+        try:
+            text = json.loads(self.rfile.read(length))["text"].strip()
+        except (ValueError, KeyError, TypeError, AttributeError):
+            self.send_json(400, {"error": 'expected JSON {"text": "..."}'})
+            return
+        if not text:
+            self.send_json(400, {"error": "no text to translate"})
             return
 
+        start = time.monotonic()
+        try:
+            translation = translate(self.config, text)
+        except (OSError, RuntimeError, ValueError, KeyError, IndexError) as err:
+            self.send_json(502, {"error": f"translation failed: {err}"
+                                 f" (is llama-server running at {self.config['llama_url']}?)"})
+            return
+        self.send_json(200, {"translation": translation,
+                             "llm_seconds": round(time.monotonic() - start, 2)})
+
+    def post_recording(self):
         length = int(self.headers.get("Content-Length") or 0)
         max_bytes = self.config["audio"]["max_upload_mb"] * 1024 * 1024
         if length <= 0:
@@ -125,7 +202,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             response.update(transcribe(self.config["whisper_url"], data, path.name))
         except (OSError, RuntimeError, ValueError) as err:
-            # OSError covers connection errors and HTTP errors from urllib.
+            # OSError: connection problems; RuntimeError: errors from whisper-server.
             response["error"] = f"transcription failed: {err} (is whisper-server running at {self.config['whisper_url']}?)"
             self.send_json(502, response)
             return
@@ -146,6 +223,8 @@ def main():
     print(f"Config:     {config_path.resolve()}")
     print(f"Recordings: {config['audio']['temp_dir']}")
     print(f"Whisper:    {config['whisper_url']}")
+    print(f"Llama:      {config['llama_url']}")
+    print(f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}")
     print(f"Dashboard:  http://{shown_host}:{port}/  (Ctrl+C to stop)")
     try:
         server.serve_forever()
