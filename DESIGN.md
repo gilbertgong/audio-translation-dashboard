@@ -4,15 +4,19 @@
 
 A local, self-hosted tool that captures speech from the microphone, transcribes it, translates it, and shows the original and translation side by side, with timing and debugging details. It uses whisper.cpp and llama.cpp as external services, and includes helpers that download and start them, including their models.
 
+## Approach
+
+- The core application logic of voice translation is isolated from ancillary configuration and model handling, which are handled instead by a configuration file (`config.toml`) and supporting scripts (`scripts/`).
+- The configuration is read at startup and fixed while running, so there's no configuration UI and no wiring for settings to flow back into behavior. This keeps the core app far simpler and easier to change and extend.
+- It also lets the UI stay clean and focused on voice translation itself: the page only has controls you'd change while using it.
+
 ## Design principles
 
 - **Simple first:** one page, one linear pipeline.
 - **Use existing engines** instead of reimplementing them: whisper.cpp for speech-to-text (STT), llama.cpp for translation.
 - **Loose coupling:** each engine is its own local server, reached over HTTP. Swapping a model, engine or machine is a config change.
 - **Pipeline of small stages:** Capture → Transcribe → Translate → Display, so new stages (e.g. TTS) can be inserted later.
-- **One config file** (`config.toml`), read at startup. The page only has controls you'd change while using it.
 - **No dependencies** beyond Python's standard library (3.11+) and a browser.
-- **Easy to extend or modify** by virtue of simplicity.
 
 ## Architecture
 
