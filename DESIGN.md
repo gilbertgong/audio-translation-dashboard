@@ -16,34 +16,23 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 
 ## Architecture
 
-```mermaid
-block-beta
-  columns 5
-  mic(["microphone"])
-  block:pageBox
-    columns 1
-    pageTop["Dashboard (page)"]
-    pageBottom["capture · meter · splitting · display"]
-  end
-  space
-  block:appBox:2
-    columns 1
-    appTop["app.py (backend)"]
-    appBottom["saves recordings · calls the servers"]
-  end
-  space:5
-  space:3 whisper["whisper-server<br/>speech-to-text<br/>(port 8081)"] llama["llama-server<br/>translation<br/>(port 8082)"]
-  mic --> pageBox
-  pageTop -- "WAV audio, text" --> appTop
-  appBottom -- "text, timings, raw responses" --> pageBottom
-  appBox --> whisper
-  appBox --> llama
-  style pageTop fill:none,stroke:none
-  style pageBottom fill:none,stroke:none
-  style appTop fill:none,stroke:none
-  style appBottom fill:none,stroke:none
-  style pageBox fill:#ECECFF,stroke:#9370DB
-  style appBox fill:#ECECFF,stroke:#9370DB
+```text
+        microphone
+             |
+             v
+  +---------------------+     WAV audio, text       +---------------------+
+  |  Dashboard (page)   | ------------------------> |  app.py (backend)   |
+  |  capture, meter,    | <------------------------ |  saves recordings,  |
+  |  splitting, display |      text, timings,       |  calls the servers  |
+  +---------------------+      raw responses        +----------+----------+
+                                                               |
+                                                  +------------+------------+
+                                                  v                         v
+                                       +---------------------+   +---------------------+
+                                       |  whisper-server     |   |  llama-server       |
+                                       |  speech-to-text     |   |  translation        |
+                                       |  (port 8081)        |   |  (port 8082)        |
+                                       +---------------------+   +---------------------+
 ```
 
 ### Dashboard (`static/`)
