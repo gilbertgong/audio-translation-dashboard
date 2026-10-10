@@ -35,8 +35,17 @@
     </section>
 
     <div class="controls">
-      <button id="record-btn" type="button">Start Recording</button>
+      <button id="record-btn" type="button" title="Start/stop recording (Space)">Start Recording</button>
+      <!-- Microphone level while recording: -60 dB (left) to 0 dB (right). -->
+      <div id="level-meter" class="meter" role="meter" aria-label="Microphone level"
+           aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60"
+           title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording's highest peak.">
+        <div class="meter-fill"></div>
+        <div class="meter-peak"></div>
+      </div>
+      <span id="level-db" class="meter-db"></span>
       <span id="status">Idle</span>
+      <span class="shortcut-hint"><kbd>Space</kbd> to start/stop</span>
     </div>
   </main>
 

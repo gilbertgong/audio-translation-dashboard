@@ -21,6 +21,74 @@ function updateIdleStatus() {
   if (!session) setStatus(pending ? `Processing (${pending})...` : "Idle");
 }
 
+// Microphone level meter, running while recording. Audio blocks from the
+// recorder feed meterSample(); drawMeter() shows the loudest level since the
+// previous frame (fast rise, slow fall), a marker at the highest peak of the
+// whole recording (reset by startMeter), and a clipping warning when samples
+// reach full scale.
+
+const meterEl = document.getElementById("level-meter");
+const meterFill = meterEl.querySelector(".meter-fill");
+const meterPeak = meterEl.querySelector(".meter-peak");
+const meterDb = document.getElementById("level-db");
+const METER_FLOOR_DB = -60;
+const METER_QUIET_DB = -45; // below this: too quiet
+const METER_HOT_DB = -10; // above this: very loud
+const METER_CLIP_MS = 1500; // how long the clipping warning stays up
+const meter = { rms: 0, peak: 0, shownDb: METER_FLOOR_DB, maxDb: METER_FLOOR_DB,
+                clipUntil: 0, frame: 0 };
+
+function meterSample(samples) {
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i] * samples[i];
+    peak = Math.max(peak, Math.abs(samples[i]));
+  }
+  meter.rms = Math.max(meter.rms, Math.sqrt(sum / samples.length));
+  meter.peak = Math.max(meter.peak, peak);
+}
+
+const toDb = (x) => (x > 0 ? Math.max(METER_FLOOR_DB, 20 * Math.log10(x)) : METER_FLOOR_DB);
+const dbToPercent = (db) => ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100;
+
+function drawMeter(now) {
+  const db = toDb(meter.rms);
+  meter.shownDb = db > meter.shownDb ? db : Math.max(db, meter.shownDb - 1); // fall ~60 dB/s
+  meter.maxDb = Math.max(meter.maxDb, toDb(meter.peak)); // highest peak this recording
+  if (meter.peak >= 0.99) meter.clipUntil = now + METER_CLIP_MS;
+  meter.rms = 0;
+  meter.peak = 0;
+
+  const clipping = now < meter.clipUntil;
+  meterFill.style.width = `${dbToPercent(meter.shownDb)}%`;
+  meterPeak.style.left = `calc(${dbToPercent(meter.maxDb)}% - 2px)`;
+  meterEl.classList.toggle("clip", clipping);
+  meterEl.classList.toggle("hot", !clipping && meter.shownDb > METER_HOT_DB);
+  meterEl.classList.toggle("quiet", meter.shownDb < METER_QUIET_DB);
+  meterEl.setAttribute("aria-valuenow", String(Math.round(meter.shownDb)));
+  meterDb.classList.toggle("clip", clipping);
+  meterDb.textContent = clipping ? "CLIP"
+    : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
+  meter.frame = requestAnimationFrame(drawMeter);
+}
+
+function startMeter() {
+  Object.assign(meter, { rms: 0, peak: 0, shownDb: METER_FLOOR_DB, maxDb: METER_FLOOR_DB,
+                         clipUntil: 0 });
+  meterEl.classList.add("active");
+  meter.frame = requestAnimationFrame(drawMeter);
+}
+
+function stopMeter() {
+  cancelAnimationFrame(meter.frame);
+  meterEl.classList.remove("active", "quiet", "hot", "clip");
+  meterEl.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
+  meterFill.style.width = "0";
+  meterDb.classList.remove("clip");
+  meterDb.textContent = "";
+}
+
 function el(tag, className, text = "") {
   const node = document.createElement(tag);
   node.className = className;
@@ -168,10 +236,14 @@ async function startRecording() {
     const source = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
-    node.port.onmessage = (e) => chunks.push(e.data);
+    node.port.onmessage = (e) => {
+      chunks.push(e.data);
+      meterSample(e.data);
+    };
     source.connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
     session = { stream, ctx, source, node, chunks };
+    startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
     ctx.close();
@@ -182,6 +254,7 @@ async function startRecording() {
 async function stopRecording() {
   const { stream, ctx, source, node, chunks } = session;
   session = null;
+  stopMeter();
   source.disconnect();
   node.disconnect();
   stream.getTracks().forEach((t) => t.stop());
@@ -344,6 +417,7 @@ recordBtn.addEventListener("click", async () => {
     console.error(err);
     addNote(`Error: ${err.message}`, true);
     setStatus("Error");
+    stopMeter();
     if (session) {
       session.stream.getTracks().forEach((t) => t.stop());
       session.ctx.close();
@@ -354,6 +428,26 @@ recordBtn.addEventListener("click", async () => {
   } finally {
     recordBtn.disabled = false;
   }
+});
+
+// Space starts/stops recording from anywhere on the page. It takes over Space
+// from focused buttons (which would otherwise also be "clicked"); Enter still
+// activates them. Text fields keep Space for typing.
+function isSpaceShortcut(e) {
+  if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
+  const target = e.target;
+  return !(target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!isSpaceShortcut(e)) return;
+  e.preventDefault(); // no page scroll, no click on a focused button
+  if (!e.repeat) recordBtn.click(); // holding Space toggles only once
+});
+
+// A focused button is "clicked" on Space key-up; block that too.
+document.addEventListener("keyup", (e) => {
+  if (isSpaceShortcut(e)) e.preventDefault();
 });
 
 loadConfig();

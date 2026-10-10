@@ -257,6 +257,79 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 
 #status { color: var(--muted); }
 
+.shortcut-hint {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* Microphone level meter. The track is faintly shaded by range:
+   -60..-45 dB too quiet, -45..-10 dB good, -10..0 dB very loud. */
+
+.meter {
+  --meter-quiet: #9ca3af;
+  --meter-good: #16a34a;
+  --meter-hot: #f59e0b;
+  position: relative;
+  width: 200px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--meter-quiet) 12%, transparent) 25%,
+    color-mix(in srgb, var(--meter-good) 12%, transparent) 25% 83.3%,
+    color-mix(in srgb, var(--meter-hot) 15%, transparent) 83.3%);
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.meter.active { opacity: 1; }
+
+.meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--meter-good);
+}
+
+.meter.quiet .meter-fill { background: var(--meter-quiet); }
+.meter.hot .meter-fill { background: var(--meter-hot); }
+.meter.clip .meter-fill { background: var(--recording); }
+
+.meter-peak {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--text);
+  opacity: 0.6;
+  display: none;
+}
+
+.meter.active .meter-peak { display: block; }
+
+.meter-db {
+  min-width: 4.5em;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-db.clip { color: var(--recording); font-weight: 600; }
+
 /* Narrow screens: the activity column becomes narrower. */
 @media (max-width: 700px) {
   :root { --activity-width: 130px; }
