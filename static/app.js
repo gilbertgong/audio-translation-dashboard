@@ -305,10 +305,11 @@ function setLanguage(row, language) {
 }
 
 // Set a timing in a row's activity cell, listed in the order first set:
-// "audio" (recording length), "stt" (transcription), "llm" (translation).
+// "audio" (recording length), "stt" (transcription), "llm" (translation),
+// "tts" (time until the spoken translation starts playing).
 // seconds: a number, null while in progress, or "failed".
-const TIMING_LABELS = { audio: "audio", stt: "transcribe", llm: "translate" };
-const TIMING_DECIMALS = { audio: 1, stt: 2, llm: 2 };
+const TIMING_LABELS = { audio: "audio", stt: "transcribe", llm: "translate", tts: "speak" };
+const TIMING_DECIMALS = { audio: 1, stt: 2, llm: 2, tts: 2 };
 
 function setTiming(row, kind, seconds) {
   const timings = row.querySelector(".timings");
@@ -328,11 +329,13 @@ function setTiming(row, kind, seconds) {
 }
 
 // Playback of a row's recording: the exact audio sent to whisper, kept in the
-// browser. One shared player, so starting one recording stops another.
+// browser. One shared player, so starting one recording stops another (and
+// any speech; see speakTranslation).
 const player = new Audio();
 let playingBtn = null;
 
 function stopPlayback() {
+  stopSpeech();
   player.pause();
   if (playingBtn) {
     playingBtn.textContent = "▶";
@@ -363,6 +366,124 @@ function addPlayButton(row, wav) {
     btn.title = "Stop playback";
   });
   row.querySelector('.timing[data-kind="audio"]').appendChild(btn);
+}
+
+// Speaking a translation: the text is sent to /api/speak, which streams
+// tts-server's audio back as raw PCM (16-bit little-endian mono; the rate is
+// in the Content-Type). Each piece is played as soon as it arrives, scheduled
+// right after the previous one, so speech starts before it is fully generated.
+// Only one thing plays at a time: starting speech stops other playback, and
+// vice versa. Active speech: { ctx, controller, btn }.
+let speech = null;
+const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
+
+function setSpeakButton(btn, state) {
+  const looks = {
+    idle: ["▶", "Speak this translation"],
+    waiting: ["…", "Generating speech (click to cancel)"],
+    playing: ["■", "Stop speaking"],
+  };
+  [btn.textContent, btn.title] = looks[state];
+}
+
+function stopSpeech() {
+  if (!speech) return;
+  const { ctx, controller, btn } = speech;
+  speech = null;
+  controller.abort();
+  ctx.close();
+  setSpeakButton(btn, "idle");
+}
+
+// Convert 16-bit little-endian PCM bytes to samples (-1..1).
+function pcmToFloat(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+  const samples = new Float32Array(bytes.length >> 1);
+  for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+  return samples;
+}
+
+async function speakTranslation(row, btn, text) {
+  const wasThis = speech?.btn === btn;
+  stopPlayback(); // also stops any speech in progress
+  if (wasThis) return; // the click was "cancel" or "stop"
+
+  // Created here, during the click, so the browser allows it to play.
+  const ctx = new AudioContext();
+  const controller = new AbortController();
+  const current = { ctx, controller, btn };
+  speech = current;
+  setSpeakButton(btn, "waiting");
+  setTiming(row, "tts", null);
+  const start = performance.now();
+  try {
+    const res = await fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let message = `HTTP ${res.status}`;
+      try {
+        message = (await res.json()).error || message;
+      } catch {}
+      throw new Error(message);
+    }
+    const rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
+
+    const reader = res.body.getReader();
+    let leftover = new Uint8Array(0); // an odd byte, completed by the next piece
+    let playAt = 0;
+    let last = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      let bytes = value;
+      if (leftover.length) {
+        bytes = new Uint8Array(leftover.length + value.length);
+        bytes.set(leftover);
+        bytes.set(value, leftover.length);
+      }
+      const even = bytes.length & ~1;
+      leftover = bytes.slice(even);
+      if (!even) continue;
+
+      const samples = pcmToFloat(bytes.subarray(0, even));
+      const buffer = ctx.createBuffer(1, samples.length, rate);
+      buffer.copyToChannel(samples, 0);
+      const source = new AudioBufferSourceNode(ctx, { buffer });
+      source.connect(ctx.destination);
+      if (!last) {
+        setTiming(row, "tts", (performance.now() - start) / 1000);
+        setSpeakButton(btn, "playing");
+      }
+      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
+      source.start(playAt);
+      playAt += buffer.duration;
+      last = source;
+    }
+    if (speech !== current) return;
+    if (!last) throw new Error("no audio received");
+    last.onended = () => {
+      if (speech === current) stopSpeech();
+    };
+  } catch (err) {
+    if (speech !== current) return; // stopped or replaced: not an error
+    console.error(err);
+    stopSpeech();
+    setTiming(row, "tts", "failed");
+    addDetail(row, `Speech error: ${err.message}`, true);
+  }
+}
+
+// Add a speak button after a row's translated text (once it's complete).
+function addSpeakButton(row, text) {
+  const btn = el("button", "row-btn speak-btn");
+  btn.type = "button";
+  setSpeakButton(btn, "idle");
+  btn.addEventListener("click", () => speakTranslation(row, btn, text));
+  row.querySelector(".translation").appendChild(btn);
 }
 
 // Raw whisper/llama exchanges: a "{ }" button on a timing line opens a dialog
@@ -465,6 +586,7 @@ function showMockConversation(items) {
     setLanguage(row, item.language);
     setLine(row, ".original", item.text);
     setLine(row, ".translation", item.translation);
+    addSpeakButton(row, item.translation); // speaks silence in mock mode
     setTiming(row, "audio", item.audio_seconds);
     // Silence of the listed length, so the play button looks and behaves as usual.
     const silence = new Float32Array(Math.round(item.audio_seconds * targetSampleRate));
@@ -731,8 +853,12 @@ async function processRecording(wav, note = "") {
       setTiming(row, "llm", result.seconds);
       if (result.firstSeconds !== null) addDetail(row, `first token after ${result.firstSeconds.toFixed(2)}s`);
       addRawButton(row, "llm", "llama request and streamed response", result.raw);
-      if (result.translation) setLine(row, ".translation", result.translation);
-      else setLine(row, ".translation", "(empty translation)", "pending");
+      if (result.translation) {
+        setLine(row, ".translation", result.translation);
+        addSpeakButton(row, result.translation);
+      } else {
+        setLine(row, ".translation", "(empty translation)", "pending");
+      }
     } catch (err) {
       setTiming(row, "llm", "failed");
       if (err.raw) addRawButton(row, "llm", "llama request and streamed response", err.raw);

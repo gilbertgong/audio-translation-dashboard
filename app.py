@@ -31,6 +31,9 @@ DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
 CONFIG_FILE = ROOT / "config.toml"  # your settings, on top of the defaults (optional)
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
+TTS_TIMEOUT = 120  # seconds to wait for tts-server
+# tts-server streams raw PCM: 16-bit little-endian samples, mono, at this rate.
+TTS_PCM_TYPE = "audio/pcm; rate=24000; channels=1"
 
 # Shared log file and line format (same as scripts/common.py).
 LOG_FILE = "logs/app.log"
@@ -112,6 +115,8 @@ def load_config(path):
     config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
     llama = config["api_servers"]["llama"]
     config["llama_url"] = f"http://{llama['host']}:{llama['port']}"
+    tts = config["api_servers"]["tts"]
+    config["tts_url"] = f"http://{tts['host']}:{tts['port']}"
     config["system_prompt"] = render_prompt(config["llama_prompt"])
     return config
 
@@ -254,6 +259,17 @@ def mock_translation_stream(text):
     yield "data: [DONE]\n\n"
 
 
+def mock_speech_stream(text):
+    """Silence in tts-server's format (s16le, 24 kHz), about as long as the text
+    would take to say, streamed in pieces, for --mock."""
+    seconds = min(1.0 + 0.07 * len(text), 15.0)
+    piece = bytes(2 * 24000 // 10)  # 0.1 s of silence
+    time.sleep(0.05)
+    for _ in range(int(seconds * 10)):
+        yield piece
+        time.sleep(0.01)
+
+
 # The web app. Handlers use the module-level settings below, set in main().
 
 app = App(static_dir=STATIC_DIR)  # request bodies up to 1 MB unless a handler allows more
@@ -317,6 +333,47 @@ def post_translate(req):
     return Stream(relay_translation(text, url, body, resp, start), "text/event-stream")
 
 
+@app.post("/api/speak")
+def post_speak(req):
+    """Body: {"text": "..."}. Streams tts-server's audio for the text, in the
+    configured voice, unchanged: raw PCM (see TTS_PCM_TYPE). If tts-server
+    can't be reached, a 502 JSON error instead."""
+    data = req.json()
+    text = data.get("text") if isinstance(data, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPError(400, 'expected JSON {"text": "..."} with some text')
+    text = text.strip()
+
+    if mock:
+        return Stream(mock_speech_stream(text), TTS_PCM_TYPE)
+
+    voice = config["tts"]["voice"]
+    body = {"input": text, "voice": voice, "response_format": "pcm"}
+    start = time.monotonic()
+    try:
+        # Connect before returning the stream, so an unreachable server is a plain 502.
+        resp = open_server(f"{config['tts_url']}/v1/audio/speech", json.dumps(body).encode("utf-8"),
+                           "application/json", TTS_TIMEOUT)
+    except (OSError, RuntimeError) as err:
+        error = f"speech failed: {err} (is tts-server running at {config['tts_url']}?)"
+        log.warning("%s; text: %r", error, text)
+        raise HTTPError(502, error) from err
+
+    def relay():
+        n = 0
+        try:
+            with resp:
+                while chunk := resp.read1(65536):
+                    n += len(chunk)
+                    yield chunk
+        except OSError as err:
+            log.warning("relaying speech failed: %s; text: %r", err, text)
+        log.info("spoke %.1fs of audio in %.2fs (voice %r): %r", n / 2 / 24000,
+                 time.monotonic() - start, voice, text)
+
+    return Stream(relay(), TTS_PCM_TYPE)
+
+
 @app.post("/api/recordings")
 def post_recording(req):
     """Body: a WAV file. Saves and transcribes it; returns
@@ -371,15 +428,17 @@ def main():
 
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
     banner = [
-        *(["Mode:       MOCK (sample data; whisper and llama are not used)"] if mock else []),
+        *(["Mode:       MOCK (sample data; whisper, llama and tts are not used)"] if mock else []),
         f"Config:     {DEFAULTS_FILE}" + (f" + {args.config.resolve()}" if args.config.is_file()
                                             else " (no config.toml: defaults only)"),
         f"Log:        {log_path}",
         f"Recordings: {config['audio']['temp_dir']}",
         f"Whisper:    {config['whisper_url']}",
         f"Llama:      {config['llama_url']}",
+        f"TTS:        {config['tts_url']} (voice {config['tts']['voice']!r})",
         f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}",
         f"Dashboard:  http://{shown_host}:{port}/",
+        f"All services started, and ready for translation.",
     ]
 
     def ready():

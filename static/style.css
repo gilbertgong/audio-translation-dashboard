@@ -240,6 +240,13 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 
 .row-btn:hover { border-color: var(--accent); }
 
+/* The speak button, just after the translated text. */
+.translation .speak-btn {
+  margin-left: 8px;
+  vertical-align: 0.1em;
+  font-style: normal;
+}
+
 /* Raw response viewer */
 
 #raw-dialog {

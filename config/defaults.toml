@@ -80,6 +80,11 @@ temperature = 0.2
 # Qwen) do this unless told not to; it is several times slower per request.
 enable_thinking = false
 
+[tts]
+# The voice translations are spoken in: a name from [api_servers.tts.voices]
+# (a cloned voice), or a preset speaker if the TTS model is a "customvoice" one.
+voice = "beth"
+
 [models]
 # Used by scripts/download_models.py. Each model is saved to dir/<name>/.
 dir = "models"
@@ -146,7 +151,7 @@ args = ["--language", "auto"]
 [api_servers.tts]
 # Text-to-speech: tts-server from qwentts.cpp (Qwen3-TTS), as built by the public
 # release workflow in the Zyeine fork. The Vulkan build is small and runs on most
-# GPUs without a CUDA runtime. (Not used by the app yet.)
+# GPUs without a CUDA runtime. The voice used is set in [tts].
 # Servers start in the order listed here; tts comes before llama because
 # llama-server sizes itself to the GPU memory left over.
 start = true
