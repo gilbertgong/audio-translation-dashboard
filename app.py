@@ -204,6 +204,7 @@ class Handler(SimpleHTTPRequestHandler):
             prompt = self.config["llama_prompt"]
             payload = {"sample_rate": self.config["audio"]["sample_rate"],
                        "language1": prompt["language1"], "language2": prompt["language2"],
+                       "auto_split": self.config.get("auto_split", {}),
                        "mock": self.server.mock}
             if self.server.mock:
                 # A page (re)load starts the sample conversation over.

@@ -197,6 +197,24 @@ Milestone 3 - Translation via llama.cpp                           [in progress]
     wrapping around after the last line. Reloading the page starts over.
     Nothing is saved, and whisper/llama are not contacted.
 
+Milestone 4 - Automatic splitting on pauses                       [in progress]
+  - Called auto-split in the code and config; labeled "Continuous Audio Mode"
+    in the UI.
+  - A "Continuous Audio Mode" switch next to the Record button (initial
+    state: [auto_split] enabled in config.toml; locked while recording). Off:
+    one recording per Start/Stop, as before. On: Start keeps the microphone
+    open and each phrase is sent through the normal pipeline as its own row
+    when the speaker pauses; Stop sends any phrase in progress.
+  - Done in the browser with a loudness-based voice activity detector on the
+    same audio blocks the level meter uses. The background noise level is
+    measured for the first 400 ms and then tracked continuously (falls fast,
+    rises slowly); speech is anything threshold_db above it (never below
+    min_threshold_db). A phrase starts at the first loud block, with
+    pre_roll_ms of earlier audio, and ends after pause_ms of quiet (keeping
+    tail_ms of it) or at max_phrase_s. Phrases with under min_speech_ms of
+    speech (clicks, coughs) are dropped. The meter shows the threshold as a
+    dashed line and is outlined while speech is detected.
+
 
 8. EXTENSION POINTS (FUTURE)
 ----------------------------

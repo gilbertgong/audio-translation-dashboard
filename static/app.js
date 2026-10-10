@@ -10,15 +10,26 @@ const activityToggle = document.getElementById("activity-toggle");
 
 let targetSampleRate = 16000;
 let language2 = ""; // entries detected in this language are right-aligned
-let session = null; // active recording: { stream, ctx, source, node, chunks }
+// Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
+// set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
+let session = null;
 let pending = 0; // recordings still being processed
 
 function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function updateIdleStatus() {
-  if (!session) setStatus(pending ? `Processing (${pending})...` : "Idle");
+// Status line when it isn't simply "Recording...": idle/processing, or the
+// auto-split listening state.
+function updateStatus() {
+  if (session?.splitter) {
+    const sp = session.splitter;
+    const state = sp.calibrating ? "Listening (measuring background)..."
+      : sp.speaking ? "Speaking..." : "Listening...";
+    setStatus(pending ? `${state} · processing ${pending}` : state);
+  } else if (!session) {
+    setStatus(pending ? `Processing (${pending})...` : "Idle");
+  }
 }
 
 // Microphone level meter, running while recording. Audio blocks from the
@@ -30,6 +41,7 @@ function updateIdleStatus() {
 const meterEl = document.getElementById("level-meter");
 const meterFill = meterEl.querySelector(".meter-fill");
 const meterPeak = meterEl.querySelector(".meter-peak");
+const meterThreshold = meterEl.querySelector(".meter-threshold");
 const meterDb = document.getElementById("level-db");
 const METER_FLOOR_DB = -60;
 const METER_QUIET_DB = -45; // below this: too quiet
@@ -45,8 +57,10 @@ function meterSample(samples) {
     sum += samples[i] * samples[i];
     peak = Math.max(peak, Math.abs(samples[i]));
   }
-  meter.rms = Math.max(meter.rms, Math.sqrt(sum / samples.length));
+  const rms = Math.sqrt(sum / samples.length);
+  meter.rms = Math.max(meter.rms, rms);
   meter.peak = Math.max(meter.peak, peak);
+  return rms;
 }
 
 const toDb = (x) => (x > 0 ? Math.max(METER_FLOOR_DB, 20 * Math.log10(x)) : METER_FLOOR_DB);
@@ -70,6 +84,13 @@ function drawMeter(now) {
   meterDb.classList.toggle("clip", clipping);
   meterDb.textContent = clipping ? "CLIP"
     : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
+
+  // Auto-split: show the current speech threshold and whether speech is detected.
+  const sp = session?.splitter;
+  meterEl.classList.toggle("auto", !!sp);
+  meterEl.classList.toggle("speaking", !!sp?.speaking);
+  if (sp) meterThreshold.style.left = `calc(${dbToPercent(sp.thresholdDb)}% - 1px)`;
+
   meter.frame = requestAnimationFrame(drawMeter);
 }
 
@@ -82,11 +103,120 @@ function startMeter() {
 
 function stopMeter() {
   cancelAnimationFrame(meter.frame);
-  meterEl.classList.remove("active", "quiet", "hot", "clip");
+  meterEl.classList.remove("active", "quiet", "hot", "clip", "auto", "speaking");
   meterEl.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
   meterFill.style.width = "0";
   meterDb.classList.remove("clip");
   meterDb.textContent = "";
+}
+
+// Auto-split on pauses. Every audio block updates a simple loudness-based
+// voice activity detector: "speech" is anything clearly above the background
+// noise level, which is tracked continuously (falling quickly, rising slowly).
+// A phrase starts at the first loud block (plus some pre-roll audio), and ends
+// after pause_ms of quiet or at max_phrase_s; it is then sent like a manual
+// recording. Settings come from [auto_split] in config.toml.
+
+const autoSplitToggle = document.getElementById("auto-split");
+const autoSplit = {
+  pause_ms: 600, threshold_db: 12, min_threshold_db: -50, pre_roll_ms: 300,
+  tail_ms: 200, min_speech_ms: 300, max_phrase_s: 25,
+};
+const CALIBRATION_MS = 400; // measure background noise only, at the start
+const NOISE_FALL_MS = 50; // background estimate follows quieter levels quickly...
+const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-phrase)
+
+function createSplitter(sampleRate) {
+  return {
+    sampleRate,
+    elapsedMs: 0,
+    calibrating: true,
+    noiseDb: null, // background level estimate
+    thresholdDb: autoSplit.min_threshold_db,
+    speaking: false,
+    preRoll: [], // recent blocks kept while waiting for speech
+    preRollSamples: 0,
+    blocks: [], // the current phrase
+    phraseSamples: 0,
+    speechMs: 0, // loud time in the current phrase
+    silenceMs: 0, // quiet time since the last loud block
+  };
+}
+
+// Feed one audio block (Float32Array) and its RMS level.
+function splitterBlock(sp, block, rms) {
+  const ms = (block.length / sp.sampleRate) * 1000;
+  const db = toDb(rms);
+  sp.elapsedMs += ms;
+
+  // Track the background noise level.
+  if (sp.noiseDb === null) sp.noiseDb = db;
+  const tau = db < sp.noiseDb ? NOISE_FALL_MS : NOISE_RISE_MS * (sp.speaking ? 4 : 1);
+  sp.noiseDb += (db - sp.noiseDb) * (1 - Math.exp(-ms / tau));
+  sp.thresholdDb = Math.max(sp.noiseDb + autoSplit.threshold_db, autoSplit.min_threshold_db);
+
+  if (sp.calibrating) {
+    if (sp.elapsedMs < CALIBRATION_MS) return;
+    sp.calibrating = false;
+    updateStatus();
+  }
+  const loud = db > sp.thresholdDb;
+
+  if (!sp.speaking) {
+    sp.preRoll.push(block);
+    sp.preRollSamples += block.length;
+    const keep = (autoSplit.pre_roll_ms / 1000) * sp.sampleRate;
+    while (sp.preRoll.length > 1 && sp.preRollSamples - sp.preRoll[0].length >= keep) {
+      sp.preRollSamples -= sp.preRoll.shift().length;
+    }
+    if (loud) {
+      Object.assign(sp, { speaking: true, blocks: sp.preRoll, phraseSamples: sp.preRollSamples,
+                          speechMs: ms, silenceMs: 0, preRoll: [], preRollSamples: 0 });
+      updateStatus();
+    }
+    return;
+  }
+
+  sp.blocks.push(block);
+  sp.phraseSamples += block.length;
+  if (loud) {
+    sp.speechMs += ms;
+    sp.silenceMs = 0;
+  } else {
+    sp.silenceMs += ms;
+  }
+  if (sp.silenceMs >= autoSplit.pause_ms) endPhrase(sp, "pause");
+  else if (sp.phraseSamples / sp.sampleRate >= autoSplit.max_phrase_s) endPhrase(sp, "max length");
+}
+
+// Finish the current phrase and send it (if it had enough speech).
+// reason: "pause", "max length" (speech continues into a new phrase) or "stop".
+function endPhrase(sp, reason) {
+  if (!sp.speaking) return;
+  let samples = concat(sp.blocks);
+  if (reason === "pause") {
+    // Keep only tail_ms of the trailing silence.
+    const extraMs = Math.max(0, sp.silenceMs - autoSplit.tail_ms);
+    const extra = Math.floor((extraMs / 1000) * sp.sampleRate);
+    samples = samples.subarray(0, Math.max(0, samples.length - extra));
+  }
+  const speechMs = sp.speechMs;
+  const continuing = reason === "max length";
+  Object.assign(sp, { speaking: continuing, blocks: [], phraseSamples: 0, speechMs: 0, silenceMs: 0 });
+  updateStatus();
+
+  if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
+  sendPhrase(samples, sp.sampleRate, reason);
+}
+
+async function sendPhrase(samples, sampleRate, reason) {
+  try {
+    const resampled = await resample(samples, sampleRate, targetSampleRate);
+    processRecording(encodeWav(resampled, targetSampleRate), `continuous mode (${reason})`);
+  } catch (err) {
+    console.error(err);
+    addNote(`Error: ${err.message}`, true);
+  }
 }
 
 function el(tag, className, text = "") {
@@ -280,6 +410,9 @@ async function loadConfig() {
     const config = await res.json();
     targetSampleRate = config.sample_rate;
     language2 = config.language2 || "";
+    const { enabled, ...settings } = config.auto_split || {};
+    Object.assign(autoSplit, settings);
+    autoSplitToggle.checked = !!enabled;
     if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
@@ -309,7 +442,9 @@ function showMockConversation(items) {
   }
 }
 
-async function startRecording() {
+// auto: split on pauses (each phrase is sent as it ends) instead of keeping
+// all audio for one recording.
+async function startRecording(auto) {
   stopPlayback(); // speakers playing into the mic would end up in the recording
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
   const ctx = new AudioContext();
@@ -318,13 +453,15 @@ async function startRecording() {
     const source = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
+    const splitter = auto ? createSplitter(ctx.sampleRate) : null;
     node.port.onmessage = (e) => {
-      chunks.push(e.data);
-      meterSample(e.data);
+      const rms = meterSample(e.data);
+      if (splitter) splitterBlock(splitter, e.data, rms);
+      else chunks.push(e.data);
     };
     source.connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    session = { stream, ctx, source, node, chunks };
+    session = { stream, ctx, source, node, chunks, splitter };
     startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
@@ -333,8 +470,10 @@ async function startRecording() {
   }
 }
 
+// Returns the recording as a WAV Blob; in auto-split mode, sends any phrase in
+// progress and returns null.
 async function stopRecording() {
-  const { stream, ctx, source, node, chunks } = session;
+  const { stream, ctx, source, node, chunks, splitter } = session;
   session = null;
   stopMeter();
   source.disconnect();
@@ -343,6 +482,10 @@ async function stopRecording() {
   const inputRate = ctx.sampleRate;
   await ctx.close();
 
+  if (splitter) {
+    endPhrase(splitter, "stop");
+    return null;
+  }
   const samples = concat(chunks);
   if (samples.length === 0) throw new Error("No audio captured");
   const resampled = await resample(samples, inputRate, targetSampleRate);
@@ -434,7 +577,8 @@ function addFileDetail(row, path) {
 }
 
 // Transcribe, then translate, in the background so the next recording can start.
-async function processRecording(wav) {
+// note: optional detail for the activity cell (e.g. how an auto-split phrase ended).
+async function processRecording(wav, note = "") {
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
   setMeta(row, new Date().toLocaleTimeString());
@@ -442,8 +586,9 @@ async function processRecording(wav) {
   setTiming(row, "audio", audioSeconds);
   addPlayButton(row, wav);
   setTiming(row, "stt", null);
+  if (note) addDetail(row, note);
   pending++;
-  updateIdleStatus();
+  updateStatus();
   try {
     let stt;
     try {
@@ -480,7 +625,7 @@ async function processRecording(wav) {
     console.error(err);
   } finally {
     pending--;
-    updateIdleStatus();
+    updateStatus();
   }
 }
 
@@ -488,15 +633,20 @@ recordBtn.addEventListener("click", async () => {
   recordBtn.disabled = true;
   try {
     if (!session) {
-      await startRecording();
-      recordBtn.textContent = "Stop Recording";
+      const auto = autoSplitToggle.checked;
+      autoSplitToggle.disabled = true; // no mode change mid-recording
+      await startRecording(auto);
+      recordBtn.textContent = auto ? "Stop Listening" : "Stop Recording";
       recordBtn.classList.add("recording");
-      setStatus("Recording...");
+      if (auto) updateStatus();
+      else setStatus("Recording...");
     } else {
       recordBtn.textContent = "Start Recording";
       recordBtn.classList.remove("recording");
       const wav = await stopRecording();
-      processRecording(wav); // not awaited: runs in the background
+      autoSplitToggle.disabled = false;
+      updateStatus();
+      if (wav) processRecording(wav); // not awaited: runs in the background
     }
   } catch (err) {
     console.error(err);
@@ -508,6 +658,7 @@ recordBtn.addEventListener("click", async () => {
       session.ctx.close();
       session = null;
     }
+    autoSplitToggle.disabled = false;
     recordBtn.textContent = "Start Recording";
     recordBtn.classList.remove("recording");
   } finally {
@@ -516,13 +667,14 @@ recordBtn.addEventListener("click", async () => {
 });
 
 // Space starts/stops recording from anywhere on the page. It takes over Space
-// from focused buttons (which would otherwise also be "clicked"); Enter still
-// activates them. Text fields keep Space for typing.
+// from focused buttons and switches (which would otherwise also be toggled);
+// Enter still activates buttons. Text fields keep Space for typing.
 function isSpaceShortcut(e) {
   if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
-  return !(target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+  const isTextInput = target.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(target.type);
+  return !(target.isContentEditable || isTextInput || ["TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
 document.addEventListener("keydown", (e) => {

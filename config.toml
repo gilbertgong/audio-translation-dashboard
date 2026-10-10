@@ -15,6 +15,31 @@ sample_rate = 16000
 # Uploads larger than this are rejected.
 max_upload_mb = 50
 
+[auto_split]
+# Automatic splitting on pauses, switched on/off on the page ("Continuous Audio
+# Mode"). When on, one Start/Stop keeps the microphone open and each phrase
+# is sent as its own recording when you pause. "Speech" is anything clearly
+# louder than the background noise, which is measured continuously.
+# Whether the switch starts out on when the page loads.
+enabled = false
+# Silence (ms) that ends a phrase.
+pause_ms = 600
+# How far (dB) above the background noise counts as speech. Raise it if noise
+# triggers phrases; lower it if quiet speech is missed.
+threshold_db = 12
+# Nothing quieter than this (dBFS) is ever treated as speech.
+min_threshold_db = -50
+# Audio (ms) kept from just before speech is detected, so first syllables
+# aren't cut off.
+pre_roll_ms = 300
+# Silence (ms) kept at the end of each phrase.
+tail_ms = 200
+# Phrases with less speech than this (ms) are dropped (coughs, clicks).
+min_speech_ms = 300
+# Longest phrase (seconds); longer speech is cut here (whisper works on
+# 30-second windows).
+max_phrase_s = 25
+
 [llama_prompt]
 # The two languages to translate between, in either direction.
 language1 = "English"
