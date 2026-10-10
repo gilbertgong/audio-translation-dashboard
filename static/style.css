@@ -220,6 +220,67 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
   color: var(--muted);
 }
 
+/* Small buttons at the right end of a timing line: play (audio) and
+   raw-response viewers (transcribe, translate), stacked in one column. */
+.row-btn {
+  margin-left: auto;
+  min-width: 2.2em;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.row-btn:hover { border-color: var(--accent); }
+
+/* Raw response viewer */
+
+#raw-dialog {
+  width: min(900px, 92vw);
+  max-height: 85vh;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+#raw-dialog[open] { display: flex; flex-direction: column; }
+#raw-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+
+.raw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.raw-head h2 { flex: 1; margin: 0; font-size: 0.95rem; }
+
+.raw-head button {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+#raw-body {
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .timing.pending .secs { color: var(--muted); font-weight: 400; }
 .timing.error .secs { color: var(--recording); }
 

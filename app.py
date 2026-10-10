@@ -129,19 +129,28 @@ def request_json(url, body, content_type, timeout):
 
 
 def transcribe(whisper_url, wav, filename):
-    """Send a WAV to whisper-server; return {"text", "language"}."""
-    body, content_type = multipart(
-        {"response_format": "verbose_json", "temperature": "0.0"},
-        {"file": (filename, "audio/wav", wav)},
-    )
-    result = request_json(f"{whisper_url}/inference", body, content_type, STT_TIMEOUT)
+    """Send a WAV to whisper-server; return {"text", "language", "stt_raw"}.
+
+    stt_raw is the request settings and whisper's full reply, for debugging.
+    """
+    fields = {"response_format": "verbose_json", "temperature": "0.0"}
+    body, content_type = multipart(fields, {"file": (filename, "audio/wav", wav)})
+    url = f"{whisper_url}/inference"
+    result = request_json(url, body, content_type, STT_TIMEOUT)
     if "error" in result:
         raise RuntimeError(result["error"])
-    return {"text": result["text"].strip(), "language": result.get("detected_language")}
+    raw = {"request": {"url": url, "fields": fields, "file": f"{filename} ({len(wav)} bytes)"},
+           "response": result}
+    return {"text": result["text"].strip(), "language": result.get("detected_language"),
+            "stt_raw": raw}
 
 
 def translate(config, text):
-    """Translate text with llama-server's OpenAI-style chat endpoint."""
+    """Translate text with llama-server's OpenAI-style chat endpoint.
+
+    Returns (translation, raw), where raw is the full request and llama's full
+    reply, for debugging.
+    """
     prompt = config["llama_prompt"]
     body = {
         "messages": [
@@ -152,13 +161,13 @@ def translate(config, text):
         # Passed to the model's chat template, which switches thinking on or off.
         "chat_template_kwargs": {"enable_thinking": prompt.get("enable_thinking", False)},
     }
-    result = request_json(f"{config['llama_url']}/v1/chat/completions",
-                          json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
+    url = f"{config['llama_url']}/v1/chat/completions"
+    result = request_json(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
     content = result["choices"][0]["message"].get("content") or ""
     # llama-server normally moves thinking to a separate field; drop it if not.
     if "</think>" in content:
         content = content.split("</think>", 1)[1]
-    return content.strip()
+    return content.strip(), {"request": {"url": url, "body": body}, "response": result}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -233,13 +242,14 @@ class Handler(SimpleHTTPRequestHandler):
         if self.server.mock:
             time.sleep(MOCK_DELAY)
             known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
-            self.send_json(200, {"translation": known.get(text, f"[mock translation] {text}"),
-                                 "llm_seconds": MOCK_DELAY})
+            translation = known.get(text, f"[mock translation] {text}")
+            self.send_json(200, {"translation": translation, "llm_seconds": MOCK_DELAY,
+                                 "llm_raw": {"mock": True, "text": text, "translation": translation}})
             return
 
         start = time.monotonic()
         try:
-            translation = translate(self.config, text)
+            translation, raw = translate(self.config, text)
         except (OSError, RuntimeError, ValueError, KeyError, IndexError) as err:
             error = (f"translation failed: {err}"
                      f" (is llama-server running at {self.config['llama_url']}?)")
@@ -248,7 +258,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         seconds = round(time.monotonic() - start, 2)
         log.info("translated in %ss: %r -> %r", seconds, text, translation)
-        self.send_json(200, {"translation": translation, "llm_seconds": seconds})
+        self.send_json(200, {"translation": translation, "llm_seconds": seconds, "llm_raw": raw})
 
     def post_recording(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -271,7 +281,9 @@ class Handler(SimpleHTTPRequestHandler):
             item = MOCK_CONVERSATION[next(self.server.mock_counter) % len(MOCK_CONVERSATION)]
             self.send_json(201, {"file": "(mock mode: not saved)", "bytes": len(data),
                                  "text": item["text"], "language": item["language"],
-                                 "stt_seconds": MOCK_DELAY})
+                                 "stt_seconds": MOCK_DELAY,
+                                 "stt_raw": {"mock": True, "text": item["text"],
+                                             "language": item["language"]}})
             return
 
         temp_dir = self.config["audio"]["temp_dir"]

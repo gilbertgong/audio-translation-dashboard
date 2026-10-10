@@ -163,6 +163,82 @@ function setTiming(row, kind, seconds) {
   else secs.textContent = `${Number(seconds).toFixed(TIMING_DECIMALS[kind])}s`;
 }
 
+// Playback of a row's recording: the exact audio sent to whisper, kept in the
+// browser. One shared player, so starting one recording stops another.
+const player = new Audio();
+let playingBtn = null;
+
+function stopPlayback() {
+  player.pause();
+  if (playingBtn) {
+    playingBtn.textContent = "▶";
+    playingBtn.title = "Play this recording";
+    playingBtn = null;
+  }
+}
+
+player.addEventListener("ended", stopPlayback);
+
+// Add a play/stop button to a row's "audio" timing line.
+function addPlayButton(row, wav) {
+  const url = URL.createObjectURL(wav);
+  const btn = el("button", "row-btn", "▶");
+  btn.type = "button";
+  btn.title = "Play this recording";
+  btn.addEventListener("click", () => {
+    const wasPlaying = playingBtn === btn;
+    stopPlayback();
+    if (wasPlaying) return;
+    player.src = url;
+    player.play().catch((err) => {
+      console.error(err);
+      stopPlayback();
+    });
+    playingBtn = btn;
+    btn.textContent = "■";
+    btn.title = "Stop playback";
+  });
+  row.querySelector('.timing[data-kind="audio"]').appendChild(btn);
+}
+
+// Raw whisper/llama exchanges: a "{ }" button on a timing line opens a dialog
+// with the request and full response as formatted JSON.
+const rawDialog = document.getElementById("raw-dialog");
+const rawTitle = document.getElementById("raw-title");
+const rawBody = document.getElementById("raw-body");
+const rawCopy = document.getElementById("raw-copy");
+
+function showRaw(title, raw) {
+  rawTitle.textContent = title;
+  rawBody.textContent = JSON.stringify(raw, null, 2);
+  rawCopy.textContent = "Copy";
+  rawDialog.showModal();
+  rawBody.scrollTop = 0;
+}
+
+// kind: "stt" or "llm" (the timing line to put the button on).
+function addRawButton(row, kind, title, raw) {
+  const btn = el("button", "row-btn", "{ }");
+  btn.type = "button";
+  btn.title = `Show ${title}`;
+  btn.addEventListener("click", () => showRaw(title, raw));
+  row.querySelector(`.timing[data-kind="${kind}"]`).appendChild(btn);
+}
+
+document.getElementById("raw-close").addEventListener("click", () => rawDialog.close());
+rawDialog.addEventListener("click", (e) => {
+  if (e.target === rawDialog) rawDialog.close(); // click on the backdrop
+});
+rawCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(rawBody.textContent);
+    rawCopy.textContent = "Copied";
+  } catch (err) {
+    console.error(err);
+    rawCopy.textContent = "Copy failed";
+  }
+});
+
 // Add a line of supporting detail to a row's activity cell.
 function addDetail(row, text, isError = false) {
   const detail = el("div", isError ? "error" : "", text);
@@ -222,13 +298,19 @@ function showMockConversation(items) {
     setLine(row, ".original", item.text);
     setLine(row, ".translation", item.translation);
     setTiming(row, "audio", item.audio_seconds);
+    // Silence of the listed length, so the play button looks and behaves as usual.
+    const silence = new Float32Array(Math.round(item.audio_seconds * targetSampleRate));
+    addPlayButton(row, encodeWav(silence, targetSampleRate));
     setTiming(row, "stt", item.stt_seconds);
     setTiming(row, "llm", item.llm_seconds);
+    addRawButton(row, "stt", "whisper response (mock)", { mock: true, text: item.text, language: item.language });
+    addRawButton(row, "llm", "llama response (mock)", { mock: true, text: item.text, translation: item.translation });
     addDetail(row, "mock sample");
   }
 }
 
 async function startRecording() {
+  stopPlayback(); // speakers playing into the mic would end up in the recording
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
   const ctx = new AudioContext();
   try {
@@ -358,6 +440,7 @@ async function processRecording(wav) {
   setMeta(row, new Date().toLocaleTimeString());
   setLine(row, ".original", "Transcribing...", "pending");
   setTiming(row, "audio", audioSeconds);
+  addPlayButton(row, wav);
   setTiming(row, "stt", null);
   pending++;
   updateIdleStatus();
@@ -372,6 +455,7 @@ async function processRecording(wav) {
       throw err;
     }
     setTiming(row, "stt", stt.stt_seconds);
+    if (stt.stt_raw) addRawButton(row, "stt", "whisper request and response", stt.stt_raw);
     addFileDetail(row, stt.file);
     setLanguage(row, stt.language);
     if (!stt.text) {
@@ -385,6 +469,7 @@ async function processRecording(wav) {
     try {
       const result = await requestTranslation(stt.text);
       setTiming(row, "llm", result.llm_seconds);
+      if (result.llm_raw) addRawButton(row, "llm", "llama request and response", result.llm_raw);
       setLine(row, ".translation", result.translation);
     } catch (err) {
       setTiming(row, "llm", "failed");
@@ -435,6 +520,7 @@ recordBtn.addEventListener("click", async () => {
 // activates them. Text fields keep Space for typing.
 function isSpaceShortcut(e) {
   if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
   return !(target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
