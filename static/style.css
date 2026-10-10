@@ -321,6 +321,7 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 /* Two rows on a shared grid so each indicator sits above its control:
      row 1:  Space hint |        |      | status
      row 2:  button     | switch | gain | level (meter bar + dB readout)
+     row 3:             | switch |      |
    The gain column takes the leftover space (1fr), which pushes the last
    column to the right edge; that column is as wide as the Activity column so
    the indicators line up under it (even when the column is collapsed).
@@ -356,10 +357,13 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
   padding: 0 14px;
   text-align: center;
 }
-.controls #record-btn { grid-row: 2; grid-column: 1; justify-self: center; }
-.controls .switch { grid-row: 2; grid-column: 2; justify-self: center; }
-.controls .gain { grid-row: 2; grid-column: 3; justify-self: center; }
-.controls .level { grid-row: 2; grid-column: 4; justify-self: stretch; }
+/* Rows 2-3: the two switches stacked (left-aligned, so their tracks line
+   up); the other controls span both rows, centered vertically. */
+.controls #record-btn { grid-row: 2 / 4; grid-column: 1; justify-self: center; }
+.controls .switch { grid-row: 2; grid-column: 2; justify-self: start; }
+.controls .switch + .switch { grid-row: 3; }
+.controls .gain { grid-row: 2 / 4; grid-column: 3; justify-self: center; }
+.controls .level { grid-row: 2 / 4; grid-column: 4; justify-self: stretch; }
 
 /* The level: meter bar filling the width, dB readout to its right. */
 .level {

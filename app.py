@@ -288,6 +288,7 @@ def get_config(req):
         "language1": prompt["language1"],
         "language2": prompt["language2"],
         "auto_split": config.get("auto_split", {}),
+        "auto_play": config["tts"].get("auto_play", False),
         # Browser microphone processing, passed to getUserMedia.
         "audio_processing": {
             key: config["audio"].get(key, default) for key, default in

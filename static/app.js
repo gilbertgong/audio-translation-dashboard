@@ -338,13 +338,13 @@ function setTimingSub(row, kind, text, title = "") {
 }
 
 // Playback of a row's recording: the exact audio sent to whisper, kept in the
-// browser. One shared player, so starting one recording stops another (and
-// any speech; see speakTranslation).
+// browser. One shared player, so starting one recording stops another. Only
+// one thing plays at a time: stopPlayback() stops recordings and speech (see
+// speakTranslation) and drops any queued automatic speech.
 const player = new Audio();
 let playingBtn = null;
 
-function stopPlayback() {
-  stopSpeech();
+function stopRecordingPlayback() {
   player.pause();
   if (playingBtn) {
     playingBtn.textContent = "▶";
@@ -353,7 +353,16 @@ function stopPlayback() {
   }
 }
 
-player.addEventListener("ended", stopPlayback);
+function stopPlayback() {
+  speechQueue.length = 0;
+  stopSpeech();
+  stopRecordingPlayback();
+}
+
+player.addEventListener("ended", () => {
+  stopRecordingPlayback();
+  playNextSpeech();
+});
 
 // Add a play/stop button to a row's "audio" timing line.
 function addPlayButton(row, wav) {
@@ -413,12 +422,14 @@ function pcmToFloat(bytes) {
 }
 
 async function speakTranslation(row, btn, text) {
-  const wasThis = speech?.btn === btn;
-  stopPlayback(); // also stops any speech in progress
-  if (wasThis) return; // the click was "cancel" or "stop"
+  stopSpeech();
+  stopRecordingPlayback();
 
-  // Created here, during the click, so the browser allows it to play.
+  // Created right away (during the click, for the speak button) so the browser
+  // allows it to play; automatic playback relies on the page having been
+  // clicked or typed in before, so resume in case it starts suspended.
   const ctx = new AudioContext();
+  ctx.resume().catch(() => {});
   const controller = new AbortController();
   const current = { ctx, controller, btn };
   speech = current;
@@ -475,7 +486,9 @@ async function speakTranslation(row, btn, text) {
     if (speech !== current) return;
     if (!last) throw new Error("no audio received");
     last.onended = () => {
-      if (speech === current) stopSpeech();
+      if (speech !== current) return;
+      stopSpeech();
+      playNextSpeech();
     };
   } catch (err) {
     if (speech !== current) return; // stopped or replaced: not an error
@@ -483,16 +496,39 @@ async function speakTranslation(row, btn, text) {
     stopSpeech();
     setTiming(row, "tts", "failed");
     addDetail(row, `Speech error: ${err.message}`, true);
+    playNextSpeech();
   }
 }
 
+// Automatic translation playback: each finished translation is spoken, in
+// order; one that finishes while something is playing waits its turn.
+// Stopping playback (or starting a recording) drops the waiting ones.
+const autoPlayToggle = document.getElementById("auto-play");
+const speechQueue = []; // [{ row, btn, text }]
+
+function queueSpeech(row, btn, text) {
+  speechQueue.push({ row, btn, text });
+  if (!speech && !playingBtn) playNextSpeech();
+}
+
+function playNextSpeech() {
+  const next = speechQueue.shift();
+  if (next) speakTranslation(next.row, next.btn, next.text);
+}
+
 // Add a speak button after a row's translated text (once it's complete).
+// Returns the button.
 function addSpeakButton(row, text) {
   const btn = el("button", "row-btn speak-btn");
   btn.type = "button";
   setSpeakButton(btn, "idle");
-  btn.addEventListener("click", () => speakTranslation(row, btn, text));
+  btn.addEventListener("click", () => {
+    const wasThis = speech?.btn === btn;
+    stopPlayback(); // also drops queued automatic speech
+    if (!wasThis) speakTranslation(row, btn, text); // else the click was "cancel" or "stop"
+  });
   row.querySelector(".translation").appendChild(btn);
+  return btn;
 }
 
 // Raw whisper/llama exchanges: a "{ }" button on a timing line opens a dialog
@@ -595,6 +631,7 @@ async function loadConfig() {
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
     autoSplitToggle.checked = !!enabled;
+    autoPlayToggle.checked = !!config.auto_play;
     if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
@@ -881,7 +918,8 @@ async function processRecording(wav, note = "") {
       addRawButton(row, "llm", "llama request and streamed response", result.raw);
       if (result.translation) {
         setLine(row, ".translation", result.translation);
-        addSpeakButton(row, result.translation);
+        const speakBtn = addSpeakButton(row, result.translation);
+        if (autoPlayToggle.checked) queueSpeech(row, speakBtn, result.translation);
       } else {
         setLine(row, ".translation", "(empty translation)", "pending");
       }

@@ -84,6 +84,9 @@ enable_thinking = false
 # The voice translations are spoken in: a name from [api_servers.tts.voices]
 # (a cloned voice), or a preset speaker if the TTS model is a "customvoice" one.
 voice = "beth"
+# Whether the page's "Automatic Translation Playback" switch starts out on:
+# each translation is spoken as soon as it's done.
+auto_play = false
 
 [models]
 # Used by scripts/download_models.py. Each model is saved to dir/<name>/.
