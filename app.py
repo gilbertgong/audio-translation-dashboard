@@ -298,7 +298,7 @@ def main():
     ]
 
     def ready():
-        print("\n".join(banner) + "  (Ctrl+C to stop)")
+        print("\n".join(banner))
         log.info("started\n  " + "\n  ".join(banner))
 
     app.run(host, port, on_ready=ready)
