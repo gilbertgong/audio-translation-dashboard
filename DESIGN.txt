@@ -135,7 +135,24 @@ Milestone 1 - Web server and audio capture                       [done]
     recorder-worklet.js, style.css).
   - Run: python app.py   then open http://localhost:8080/
 
-Milestone 2 - STT via whisper.cpp                                 [planned]
+Milestone 2 - STT via whisper.cpp                                 [in progress]
+  - scripts/install_api_servers.py (standard library only, run from the
+    project root) downloads prebuilt whisper.cpp and llama.cpp binaries from
+    GitHub releases into api_servers/<name>/ (git-ignored).
+    Settings are in the [api_servers] section of config.toml: binary_type
+    (default "win-cuda-12.*-x64"), plus a repo, release ("latest" or a tag)
+    and file-name patterns for each server. Supports --dry-run and --force.
+  - Note: both projects publish their binaries on b#### pre-release builds, so
+    "latest" means the newest release that has matching files, not GitHub's
+    "latest release".
+  - scripts/download_models.py downloads the models in the [models] section
+    of config.toml into models/<name>/ (git-ignored). whisper takes a model
+    name (default "large-v3") or a URL; llama takes a GGUF URL (default
+    Qwen3.8-27B UD-IQ3_XXS, ~10.9 GB). Interrupted downloads resume.
+  - scripts/common.py holds helpers shared by the scripts (config loading,
+    paths, downloading).
+  - Next: starting whisper-server, and calling /inference from the app.
+    The STT language defaults to automatic so mixed-language speech works.
 Milestone 3 - Translation via llama.cpp                           [planned]
 
 

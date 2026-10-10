@@ -14,3 +14,49 @@ temp_dir = "tmp/audio"
 sample_rate = 16000
 # Uploads larger than this are rejected.
 max_upload_mb = 50
+
+[api_servers]
+# Used by scripts/install_api_servers.py and launch.sh. Prebuilt binaries are
+# downloaded from GitHub releases into install_dir/<name>/ (relative paths are
+# relative to this file).
+install_dir = "api_servers"
+# Which build to download. Substituted for {binary_type} in the asset patterns
+# below. Examples: "win-cuda-12.*-x64" (NVIDIA, CUDA 12), "win-cuda-13.*-x64",
+# "win-vulkan-x64". Non-CUDA builds also need the cudart entry removed below.
+binary_type = "win-cuda-12.*-x64"
+
+[api_servers.whisper]
+repo = "ggml-org/whisper.cpp"
+# "latest" = newest release (including b#### pre-release builds) that has files
+# matching every pattern in assets. Or pin a tag, e.g. "b5454".
+release = "latest"
+# Release file names to download and unzip (* and ? wildcards allowed).
+assets = ["whisper-bin-{binary_type}.zip"]
+# How launch.sh runs it: the model (from [models]), --host and --port are added
+# automatically; args are any extra command-line options.
+executable = "whisper-server"
+host = "127.0.0.1"
+port = 8081
+args = ["--language", "auto"]
+
+[api_servers.llama]
+repo = "ggml-org/llama.cpp"
+release = "latest"
+# The cudart zip holds the CUDA runtime DLLs that the CUDA build needs.
+assets = ["llama-*-bin-{binary_type}.zip", "cudart-llama-bin-{binary_type}.zip"]
+executable = "llama-server"
+host = "127.0.0.1"
+port = 8082
+# llama-server puts all layers on the GPU and fits memory use automatically by
+# default; --ctx-size caps the context (the model's default is 262144 tokens).
+args = ["--ctx-size", "8192"]
+
+[models]
+# Used by scripts/download_models.py. Each model is saved to dir/<name>/
+# (relative paths are relative to this file).
+dir = "models"
+# A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
+# (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
+whisper = "large-v3"
+# Full URL to a GGUF model file.
+llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"
