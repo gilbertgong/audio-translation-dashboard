@@ -1,0 +1,16 @@
+# Audio Translation Dashboard configuration.
+# Edit this file before starting the app; changes take effect on restart.
+
+[server]
+# Keep host on 127.0.0.1/localhost: browsers only allow microphone access on
+# localhost or HTTPS pages.
+host = "127.0.0.1"
+port = 8080
+
+[audio]
+# Where recorded WAV files are written. Relative paths are relative to this file.
+temp_dir = "tmp/audio"
+# Recordings are saved as mono 16-bit PCM WAV at this rate (whisper.cpp expects 16000).
+sample_rate = 16000
+# Uploads larger than this are rejected.
+max_upload_mb = 50

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audio Translation Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <button id="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="true"
+            title="Show/hide activity log">&#9776;</button>
+    <h1>Audio Translation Dashboard</h1>
+  </header>
+
+  <div class="layout">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h2>Activity</h2>
+        <button id="clear-log" type="button">Clear</button>
+      </div>
+      <div id="activity-log" aria-live="polite">
+        <p class="placeholder">No activity yet.</p>
+      </div>
+    </aside>
+
+    <main>
+      <section id="translation-window">
+        <p class="placeholder">Translations will appear here.</p>
+      </section>
+
+      <div class="controls">
+        <button id="record-btn" type="button">Start Recording</button>
+        <span id="status">Idle</span>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

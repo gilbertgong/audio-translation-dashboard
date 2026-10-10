@@ -1,0 +1,166 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1d2125;
+  --muted: #6b7280;
+  --border: #d9dde3;
+  --accent: #2563eb;
+  --recording: #dc2626;
+  --sidebar-width: 320px;
+  --header-height: 50px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a;
+    --panel: #1f2226;
+    --text: #e6e8eb;
+    --muted: #9aa1ab;
+    --border: #33373d;
+    --accent: #3b82f6;
+    --recording: #ef4444;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  height: var(--header-height);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+h1 { font-size: 1.1rem; margin: 0; }
+h2 { font-size: 0.95rem; margin: 0; }
+
+button { font: inherit; color: inherit; }
+
+#sidebar-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.layout {
+  display: flex;
+  height: calc(100vh - var(--header-height));
+}
+
+/* Sidebar (activity log) */
+
+#sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+body.sidebar-hidden #sidebar { display: none; }
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+#clear-log {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+#activity-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px;
+}
+
+.entry {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.entry time { color: var(--muted); margin-right: 6px; }
+.entry.error { color: var(--recording); }
+
+.placeholder { color: var(--muted); }
+
+/* Main area */
+
+main {
+  flex: 1;
+  min-width: 0;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#translation-window {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#record-btn {
+  font-size: 1rem;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  min-width: 170px;
+}
+
+#record-btn.recording { background: var(--recording); }
+#record-btn:disabled { opacity: 0.6; cursor: default; }
+
+#status { color: var(--muted); }
+
+/* On narrow screens the sidebar overlays the main area. */
+@media (max-width: 700px) {
+  #sidebar {
+    position: fixed;
+    top: var(--header-height);
+    bottom: 0;
+    left: 0;
+    width: min(var(--sidebar-width), 85vw);
+    z-index: 10;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+  }
+}

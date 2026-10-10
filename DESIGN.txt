@@ -1,0 +1,148 @@
+AUDIO TRANSLATION DASHBOARD - HIGH LEVEL DESIGN (MVP)
+=====================================================
+
+1. PURPOSE
+----------
+A local, self-hosted tool that captures speech from the microphone, transcribes
+it, translates it, and shows both the original and translated text in one
+window. The MVP is deliberately minimal so later features (streaming, file
+input, multiple languages, TTS, etc.) can be added without restructuring it.
+
+
+2. DESIGN PRINCIPLES
+--------------------
+- Simple first: one button, one window, one linear pipeline.
+- Use existing engines instead of reimplementing them: whisper.cpp for
+  speech-to-text (STT) and llama.cpp for translation.
+- Loose coupling: each engine runs as its own local server, and the app talks
+  to it over HTTP. Swapping a model, engine, or machine only means changing
+  a URL in the config.
+- Pipeline of small stages: Capture -> Transcribe -> Translate -> Display.
+  Each stage has one input and one output, so new stages can be inserted later
+  (e.g. TTS after Translate).
+- Config file only: no settings UI. All settings live in one file that is
+  read at startup.
+- Local and private: everything runs on the user's machine by default.
+
+
+3. COMPONENTS
+-------------
+  +------------------+      audio       +-------------------+
+  |  Dashboard (UI)  | ---------------> |   App Backend     |
+  |  - Record button |                  |   (orchestrator)  |
+  |  - Text window   | <--------------- |                   |
+  +------------------+  original +      +---------+---------+
+                        translation               |
+                                     +------------+------------+
+                                     |                         |
+                                     v                         v
+                          +---------------------+   +---------------------+
+                          | whisper.cpp server  |   | llama.cpp server    |
+                          | (STT)               |   | (translation)       |
+                          +---------------------+   +---------------------+
+
+a) Dashboard (UI)
+   - A single page served by the backend and opened in a browser.
+   - One toggle button: Start Recording / Stop Recording.
+   - A scrolling window that shows each entry as a pair:
+       Original:    <transcribed text>
+       Translation: <translated text>
+   - A small status line (Idle / Recording / Transcribing / Translating / Error).
+
+b) App Backend (orchestrator)
+   - A small Python web server.
+   - Serves the dashboard page.
+   - Receives the recorded audio clip from the UI.
+   - Runs the pipeline: sends the audio to whisper.cpp, sends the resulting text
+     to llama.cpp with a translation prompt, and returns both texts to the UI.
+   - Reads the config file at startup.
+
+c) whisper.cpp server
+   - The stock whisper.cpp HTTP server, run separately with the chosen model.
+   - Input: audio (WAV, 16 kHz mono). Output: transcribed text.
+
+d) llama.cpp server
+   - The stock llama.cpp HTTP server (llama-server), run separately with the
+     chosen model.
+   - Called through its chat-completions endpoint with a translation prompt
+     (for example: "Translate the following text from {source} to {target}.
+     Output only the translation.").
+
+
+4. MVP FLOW
+-----------
+  1. User clicks "Start Recording". The browser starts capturing the microphone.
+  2. User clicks "Stop Recording". The browser sends the audio clip to the backend.
+  3. The backend converts the clip to 16 kHz mono WAV if needed and sends it to
+     whisper.cpp. It gets back the original text.
+  4. The backend sends the original text to llama.cpp. It gets back the
+     translated text.
+  5. The backend returns both texts, and the UI adds them to the window.
+
+  Processing happens in batches: nothing is translated until recording stops.
+
+
+5. CONFIGURATION
+----------------
+A single file (config.toml) next to the app, edited before launch.
+Example:
+
+  [server]
+  host = "127.0.0.1"
+  port = 8080
+
+  [stt]
+  whisper_url = "http://127.0.0.1:8081"
+  language    = "auto"          # or "en", "ja", ...
+
+  [translation]
+  llama_url       = "http://127.0.0.1:8082"
+  source_language = "auto"
+  target_language = "English"
+  prompt_template = "Translate the following text to {target}. Output only the translation.\n\n{text}"
+  temperature     = 0.2
+
+Starting whisper.cpp and llama.cpp (which model, GPU settings) is left to the
+user or a launch script. The app only needs their URLs.
+
+
+6. OUT OF SCOPE FOR MVP
+-----------------------
+- Real-time/streaming transcription
+- Configuration UI
+- Saving or exporting transcripts
+- Audio file input, system/loopback audio capture
+- Text-to-speech output
+- Multiple target languages at once
+- Automatic start/stop of the whisper.cpp and llama.cpp servers
+
+
+7. MILESTONES
+-------------
+Milestone 1 - Web server and audio capture                       [done]
+  - Python web server (standard library only, Python 3.11+) serving the
+    dashboard page. The translation window is a placeholder.
+  - A collapsible "Activity" sidebar on the left (toggled with the header
+    button) logs events such as saved recordings and errors. The browser
+    remembers whether it was open or closed.
+  - A Start/Stop button records from the microphone in the browser.
+  - The browser converts the audio to mono 16-bit PCM WAV at 16 kHz (the format
+    whisper.cpp expects), so no ffmpeg is needed, and uploads it to the backend.
+  - The backend saves each recording to the configured temp directory.
+  - config.toml provides [server] host/port and [audio] temp_dir, sample_rate
+    and max_upload_mb.
+  - Files: app.py, config.toml, static/ (index.html, app.js,
+    recorder-worklet.js, style.css).
+  - Run: python app.py   then open http://localhost:8080/
+
+Milestone 2 - STT via whisper.cpp                                 [planned]
+Milestone 3 - Translation via llama.cpp                           [planned]
+
+
+8. EXTENSION POINTS (FUTURE)
+----------------------------
+- Add stages to the pipeline (TTS, summarization, glossary/terminology pass).
+- Add more input sources (file upload, system audio) feeding the same pipeline.
+- Replace batch mode with chunked or streaming capture.
+- Add other backends behind the same STT and translation interfaces
+  (e.g. cloud APIs).
