@@ -187,6 +187,15 @@ Milestone 3 - Translation via llama.cpp                           [in progress]
     appears first and the translation (in the accent color) follows below it.
     Errors show on the translation line and in the Activity log.
   - This completes the MVP pipeline: record -> whisper -> llama -> display.
+  - Mock mode, for working on the page without the API servers:
+    python app.py --mock. The page opens with the first two lines
+    (MOCK_PRELOAD) of a four-line sample conversation (MOCK_CONVERSATION in
+    app.py, mixed English/Chinese), drawn by the same code as real entries,
+    and shows a MOCK badge. Recording then picks up from line 3: each one
+    "transcribes" to the next sample line and "translates" to its paired
+    translation, with a 0.8 s delay so the in-progress states are visible,
+    wrapping around after the last line. Reloading the page starts over.
+    Nothing is saved, and whisper/llama are not contacted.
 
 
 8. EXTENSION POINTS (FUTURE)

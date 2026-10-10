@@ -1,13 +1,18 @@
 """Audio Translation Dashboard - backend server.
 
-Usage: python app.py [path/to/config.toml]
+Usage: python app.py [--mock] [path/to/config.toml]
+
+--mock runs without whisper-server or llama-server, for working on the page
+itself: the dashboard opens with the first lines of a sample conversation, and
+each recording "transcribes" to the next sample line after a short delay.
 
 Standard library only (Python 3.11+ for tomllib).
 """
 
+import argparse
+import itertools
 import json
 import logging
-import sys
 import time
 import tomllib
 import urllib.error
@@ -30,6 +35,24 @@ LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 log = logging.getLogger("app")
+
+# Sample conversation for --mock mode. "language" is as whisper reports it.
+MOCK_CONVERSATION = [
+    {"text": "Hi Li Wei, are we still meeting tomorrow afternoon?",
+     "language": "english",
+     "translation": "嗨，李伟，我们明天下午还见面吗？"},
+    {"text": "是的，三点在二楼的会议室，别迟到。",
+     "language": "chinese",
+     "translation": "Yes, three o'clock in the second-floor meeting room. Don't be late."},
+    {"text": "Great, I'll bring the latest budget numbers so we can go through them together.",
+     "language": "english",
+     "translation": "太好了，我会带上最新的预算数据，我们可以一起过一遍。"},
+    {"text": "好的，到时候我们先 review 一下 Q4 的计划，然后再讨论预算。",
+     "language": "chinese",
+     "translation": "Okay, then we'll first review the Q4 plan and discuss the budget after that."},
+]
+MOCK_DELAY = 0.8  # seconds; long enough to see the in-progress states
+MOCK_PRELOAD = 2  # lines shown when the page loads; recordings continue from there
 
 
 def setup_logging(config_dir):
@@ -164,7 +187,12 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/config":
             # Only the settings the browser needs.
-            self.send_json(200, {"sample_rate": self.config["audio"]["sample_rate"]})
+            payload = {"sample_rate": self.config["audio"]["sample_rate"], "mock": self.server.mock}
+            if self.server.mock:
+                # A page (re)load starts the sample conversation over.
+                payload["mock_conversation"] = MOCK_CONVERSATION[:MOCK_PRELOAD]
+                self.server.mock_counter = itertools.count(MOCK_PRELOAD)
+            self.send_json(200, payload)
             return
         super().do_GET()
 
@@ -192,6 +220,13 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if not text:
             self.send_json(400, {"error": "no text to translate"})
+            return
+
+        if self.server.mock:
+            time.sleep(MOCK_DELAY)
+            known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
+            self.send_json(200, {"translation": known.get(text, f"[mock translation] {text}"),
+                                 "llm_seconds": MOCK_DELAY})
             return
 
         start = time.monotonic()
@@ -222,6 +257,15 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "not a WAV file"})
             return
 
+        if self.server.mock:
+            # Don't save or transcribe; answer with the next sample line.
+            time.sleep(MOCK_DELAY)
+            item = MOCK_CONVERSATION[next(self.server.mock_counter) % len(MOCK_CONVERSATION)]
+            self.send_json(201, {"file": "(mock mode: not saved)", "bytes": len(data),
+                                 "text": item["text"], "language": item["language"],
+                                 "stt_seconds": MOCK_DELAY})
+            return
+
         temp_dir = self.config["audio"]["temp_dir"]
         temp_dir.mkdir(parents=True, exist_ok=True)
         path = temp_dir / datetime.now().strftime("recording_%Y%m%d_%H%M%S_%f.wav")
@@ -245,7 +289,14 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_CONFIG
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("config", nargs="?", default=DEFAULT_CONFIG, type=Path,
+                        help="config file (default: config.toml next to app.py)")
+    parser.add_argument("--mock", action="store_true",
+                        help="sample data instead of whisper/llama, for styling the page")
+    args = parser.parse_args()
+
+    config_path = args.config
     config = load_config(config_path)
     log_path = setup_logging(config["_config_dir"])
     host = config["server"]["host"]
@@ -253,9 +304,12 @@ def main():
 
     server = ThreadingHTTPServer((host, port), Handler)
     server.config = config
+    server.mock = args.mock
+    server.mock_counter = itertools.count(MOCK_PRELOAD)
 
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
     banner = [
+        *(["Mode:       MOCK (sample data; whisper and llama are not used)"] if args.mock else []),
         f"Config:     {config_path.resolve()}",
         f"Log:        {log_path}",
         f"Recordings: {config['audio']['temp_dir']}",

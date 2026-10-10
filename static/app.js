@@ -93,9 +93,27 @@ try {
 async function loadConfig() {
   try {
     const res = await fetch("/api/config");
-    targetSampleRate = (await res.json()).sample_rate;
+    const config = await res.json();
+    targetSampleRate = config.sample_rate;
+    if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
+  }
+}
+
+// Mock mode (app.py --mock): show the sample conversation, built the same way
+// as real entries, so the page can be styled without whisper or llama.
+function showMockConversation(items) {
+  const badge = document.createElement("span");
+  badge.className = "mock-badge";
+  badge.textContent = "MOCK";
+  document.querySelector("header h1").append(" ", badge);
+  addEntry("Mock mode: sample data, whisper and llama are not used");
+  for (const item of items) {
+    const div = addUtterance();
+    div.querySelector(".meta").textContent += ` · ${item.language}`;
+    setLine(div, ".original", item.text);
+    setLine(div, ".translation", item.translation);
   }
 }
 
