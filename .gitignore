@@ -4,3 +4,5 @@ api_servers/*
 !api_servers/.gitkeep
 models/*
 !models/.gitkeep
+logs/*
+!logs/.gitkeep

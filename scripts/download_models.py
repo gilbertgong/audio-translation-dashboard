@@ -12,10 +12,11 @@ Standard library only (Python 3.11+ for tomllib).
 """
 
 import argparse
-import sys
 from pathlib import Path
 
-from common import download, load_config, model_path, model_url
+from common import download, load_config, model_path, model_url, run_script, setup_logging
+
+NAME = "download_models"
 
 
 def main():
@@ -27,6 +28,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    log = setup_logging(cfg, NAME)
     names = [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, str)]
 
     for name in names:
@@ -37,18 +39,17 @@ def main():
 
         if dest.is_file() and not args.force:
             print(f"   already downloaded ({dest.stat().st_size / 2**30:.2f} GB) in {dest.parent}")
+            log.info("%s model already downloaded: %s", name, dest)
         elif args.dry_run:
             print(f"   would download to {dest.parent}")
         else:
             if args.force:
                 dest.unlink(missing_ok=True)
+            log.info("downloading %s model from %s", name, url)
             download(url, dest, resume=not args.force)
             print(f"   saved to {dest}")
+            log.info("downloaded %s model to %s", name, dest)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\ninterrupted; run again to resume")
-        sys.exit(130)
+    run_script(main, NAME, interrupted="interrupted; run again to resume")

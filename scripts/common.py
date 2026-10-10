@@ -1,6 +1,8 @@
 """Shared helpers for the scripts in this directory. Standard library only."""
 
+import logging
 import shutil
+import sys
 import tomllib
 import urllib.error
 import urllib.parse
@@ -11,6 +13,46 @@ USER_AGENT = "audio-translation-dashboard-scripts"
 
 # Whisper model names (e.g. "large-v3") expand to files in this repository.
 WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
+
+# Shared log file and line format; app.py and launch.sh write the same format.
+LOG_FILE = "logs/app.log"
+LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def setup_logging(cfg, name):
+    """Append log messages to logs/app.log (next to config.toml); return a logger."""
+    path = config_path(cfg, LOG_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    return logging.getLogger(name)
+
+
+def run_script(main, name, interrupted="interrupted"):
+    """Run a script's main(), recording errors and interruptions in the log.
+
+    Errors raised before the config is loaded can't be logged (the log lives
+    next to the config), so they are only printed.
+    """
+    log = logging.getLogger(name)
+    logging_ready = lambda: bool(logging.getLogger().handlers)
+    try:
+        main()
+    except KeyboardInterrupt:
+        if logging_ready():
+            log.warning(interrupted)
+        print(f"\n{interrupted}")
+        sys.exit(130)
+    except SystemExit as err:
+        if isinstance(err.code, str) and logging_ready():
+            log.error(err.code.removeprefix("error: "))
+        raise
+    except Exception:
+        if logging_ready():
+            log.exception("failed")
+        raise
 
 
 def load_config(path):

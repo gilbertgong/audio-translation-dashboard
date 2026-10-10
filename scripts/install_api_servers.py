@@ -14,13 +14,16 @@ Standard library only (Python 3.11+ for tomllib).
 import argparse
 import fnmatch
 import json
+import logging
 import shutil
-import sys
 import urllib.request
 import zipfile
 from pathlib import Path
 
-from common import USER_AGENT, config_path, download, load_config
+from common import USER_AGENT, config_path, download, load_config, run_script, setup_logging
+
+NAME = "install_api_servers"
+log = logging.getLogger(NAME)
 
 
 def github(path):
@@ -92,6 +95,7 @@ def install(name, dest, tag, urls):
         raise SystemExit(f"error: could not replace {dest} (is the {name} server still running?): {err}")
     staging.rename(dest)
     print(f"   installed to {dest}")
+    log.info("installed %s %s to %s", name, tag, dest)
 
 
 def main():
@@ -103,6 +107,7 @@ def main():
     args = parser.parse_args()
 
     full_cfg = load_config(args.config)
+    setup_logging(full_cfg, NAME)
     cfg = full_cfg["api_servers"]
     install_dir = config_path(full_cfg, cfg.get("install_dir", "api_servers"))
 
@@ -119,14 +124,13 @@ def main():
         version_file = dest / "VERSION"
         if not args.force and version_file.is_file() and version_file.read_text().strip() == tag:
             print(f"   already installed in {dest}")
+            log.info("%s %s already installed in %s", name, tag, dest)
         elif args.dry_run:
             print(f"   would install to {dest}")
         else:
+            log.info("installing %s %s from %s", name, tag, ", ".join(urls))
             install(name, dest, tag, urls)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        sys.exit(130)
+    run_script(main, NAME)

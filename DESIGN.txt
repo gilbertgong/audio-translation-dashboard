@@ -154,9 +154,18 @@ Milestone 2 - STT via whisper.cpp                                 [in progress]
   - launch.sh checks Python, runs both scripts, starts whisper-server and
     then llama-server (waiting for each /health; llama-server sizes itself to
     the GPU memory whisper leaves), then runs app.py. Ctrl+C stops all of it.
-    Server output goes to tmp/logs/. scripts/server_command.py builds each
-    server's command line from [api_servers.<name>] (executable, host, port,
-    args) and [models].
+    scripts/server_command.py builds each server's command line from
+    [api_servers.<name>] (executable, host, port, args) and [models];
+    launch.sh passes it through tmp/<name>_cmd.out, deleted once the server
+    is ready.
+  - Logging (git-ignored logs/ directory):
+      logs/app.log      one shared log, one format
+                        ("2026-10-09 21:13:05 <source> INFO: message"), written
+                        by app.py, the scripts and launch.sh: server launch
+                        commands, installs/downloads, each recording,
+                        transcription and translation, and errors.
+      logs/<name>.log   each server's own output (whisper, llama).
+    app.py also prints a startup banner, and warnings, to the console.
   - app.py sends each saved recording to whisper-server's /inference
     (verbose_json, language auto-detected via "--language auto") and returns
     the text and detected language. The translation window shows one entry

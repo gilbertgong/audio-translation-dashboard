@@ -6,6 +6,7 @@ Standard library only (Python 3.11+ for tomllib).
 """
 
 import json
+import logging
 import sys
 import time
 import tomllib
@@ -23,14 +24,36 @@ STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
 MAX_TEXT_BYTES = 1024 * 1024  # largest /api/translate request body
 
+# Shared log file and line format (same as scripts/common.py and launch.sh).
+LOG_FILE = "logs/app.log"
+LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+log = logging.getLogger("app")
+
+
+def setup_logging(config_dir):
+    """Log to logs/app.log (next to config.toml); warnings also go to the console."""
+    path = Path(config_dir) / LOG_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(path, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, console])
+    return path
+
 
 def load_config(path):
     with open(path, "rb") as f:
         config = tomllib.load(f)
+    config_dir = Path(path).resolve().parent
+    config["_config_dir"] = config_dir
     # Resolve relative paths against the config file's directory.
     temp_dir = Path(config["audio"]["temp_dir"])
     if not temp_dir.is_absolute():
-        temp_dir = Path(path).resolve().parent / temp_dir
+        temp_dir = config_dir / temp_dir
     config["audio"]["temp_dir"] = temp_dir
     whisper = config["api_servers"]["whisper"]
     config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
@@ -126,6 +149,10 @@ class Handler(SimpleHTTPRequestHandler):
     def config(self):
         return self.server.config
 
+    def log_message(self, format, *args):
+        # Per-request lines ("GET / HTTP/1.1" 200) are only logged at debug level.
+        log.debug("%s %s", self.address_string(), format % args)
+
     def send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -171,11 +198,14 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             translation = translate(self.config, text)
         except (OSError, RuntimeError, ValueError, KeyError, IndexError) as err:
-            self.send_json(502, {"error": f"translation failed: {err}"
-                                 f" (is llama-server running at {self.config['llama_url']}?)"})
+            error = (f"translation failed: {err}"
+                     f" (is llama-server running at {self.config['llama_url']}?)")
+            log.warning("%s; text: %r", error, text)
+            self.send_json(502, {"error": error})
             return
-        self.send_json(200, {"translation": translation,
-                             "llm_seconds": round(time.monotonic() - start, 2)})
+        seconds = round(time.monotonic() - start, 2)
+        log.info("translated in %ss: %r -> %r", seconds, text, translation)
+        self.send_json(200, {"translation": translation, "llm_seconds": seconds})
 
     def post_recording(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -196,6 +226,7 @@ class Handler(SimpleHTTPRequestHandler):
         temp_dir.mkdir(parents=True, exist_ok=True)
         path = temp_dir / datetime.now().strftime("recording_%Y%m%d_%H%M%S_%f.wav")
         path.write_bytes(data)
+        log.info("saved recording %s (%d bytes)", path, len(data))
         response = {"file": str(path), "bytes": len(data)}
 
         start = time.monotonic()
@@ -204,15 +235,19 @@ class Handler(SimpleHTTPRequestHandler):
         except (OSError, RuntimeError, ValueError) as err:
             # OSError: connection problems; RuntimeError: errors from whisper-server.
             response["error"] = f"transcription failed: {err} (is whisper-server running at {self.config['whisper_url']}?)"
+            log.warning("%s; recording: %s", response["error"], path.name)
             self.send_json(502, response)
             return
         response["stt_seconds"] = round(time.monotonic() - start, 2)
+        log.info("transcribed %s in %ss (%s): %r", path.name, response["stt_seconds"],
+                 response["language"], response["text"])
         self.send_json(201, response)
 
 
 def main():
     config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_CONFIG
     config = load_config(config_path)
+    log_path = setup_logging(config["_config_dir"])
     host = config["server"]["host"]
     port = config["server"]["port"]
 
@@ -220,18 +255,24 @@ def main():
     server.config = config
 
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
-    print(f"Config:     {config_path.resolve()}")
-    print(f"Recordings: {config['audio']['temp_dir']}")
-    print(f"Whisper:    {config['whisper_url']}")
-    print(f"Llama:      {config['llama_url']}")
-    print(f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}")
-    print(f"Dashboard:  http://{shown_host}:{port}/  (Ctrl+C to stop)")
+    banner = [
+        f"Config:     {config_path.resolve()}",
+        f"Log:        {log_path}",
+        f"Recordings: {config['audio']['temp_dir']}",
+        f"Whisper:    {config['whisper_url']}",
+        f"Llama:      {config['llama_url']}",
+        f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}",
+        f"Dashboard:  http://{shown_host}:{port}/",
+    ]
+    print("\n".join(banner) + "  (Ctrl+C to stop)")
+    log.info("started\n  " + "\n  ".join(banner))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
+        log.info("stopped")
 
 
 if __name__ == "__main__":
