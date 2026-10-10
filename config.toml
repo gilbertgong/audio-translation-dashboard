@@ -96,9 +96,9 @@ llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 # llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
 
 [api_servers]
-# Used by scripts/install_api_servers.py and launch.sh. Prebuilt binaries are
-# downloaded from GitHub releases into install_dir/<name>/ (relative paths are
-# relative to this file).
+# Used by scripts/install_api_servers.py and scripts/run_servers.py. Prebuilt
+# binaries are downloaded from GitHub releases into install_dir/<name>/
+# (relative paths are relative to this file).
 install_dir = "api_servers"
 # Which build to download. Substituted for {binary_type} in the asset patterns
 # below. Examples: "win-cuda-12.*-x64" (NVIDIA, CUDA 12), "win-cuda-13.*-x64",
@@ -106,22 +106,32 @@ install_dir = "api_servers"
 binary_type = "win-cuda-12.*-x64"
 
 [api_servers.whisper]
+# false: don't install or start this server, or download its model (the app
+# still uses host and port below; using an instance you already run is planned).
+start = true
 repo = "ggml-org/whisper.cpp"
 # "latest" = newest release (including b#### pre-release builds) that has files
 # matching every pattern in assets. Or pin a tag, e.g. "b5454".
 release = "latest"
+# false: keep whatever build is installed (no network access); download only
+# if none is. true: on every run, make sure the release above is installed
+# (the newest for "latest", or exactly the pinned tag).
+ensure_version = false
 # Release file names to download and unzip (* and ? wildcards allowed).
 assets = ["whisper-bin-{binary_type}.zip"]
-# How launch.sh runs it: the model (from [models]), --host and --port are added
-# automatically; args are any extra command-line options.
+# How scripts/run_servers.py runs it: the model (from [models]), --host and
+# --port are added automatically; args are any extra command-line options.
 executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081
 args = ["--language", "auto"]
 
 [api_servers.llama]
+# start, release and ensure_version: as for whisper above.
+start = true
 repo = "ggml-org/llama.cpp"
 release = "latest"
+ensure_version = false
 # The cudart zip holds the CUDA runtime DLLs that the CUDA build needs.
 assets = ["llama-*-bin-{binary_type}.zip", "cudart-llama-bin-{binary_type}.zip"]
 executable = "llama-server"

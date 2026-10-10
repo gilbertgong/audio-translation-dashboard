@@ -30,7 +30,7 @@ DEFAULT_CONFIG = ROOT / "config.toml"
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
 
-# Shared log file and line format (same as scripts/common.py and launch.sh).
+# Shared log file and line format (same as scripts/common.py).
 LOG_FILE = "logs/app.log"
 LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"

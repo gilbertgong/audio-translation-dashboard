@@ -1,8 +1,12 @@
 """Shared helpers for the scripts in this directory. Standard library only."""
 
+import sys
+
+if sys.version_info < (3, 11):  # before importing tomllib, which needs 3.11
+    raise SystemExit(f"error: Python 3.11+ is required (this is {sys.version.split()[0]})")
+
 import logging
 import shutil
-import sys
 import tomllib
 import urllib.error
 import urllib.parse
@@ -14,7 +18,7 @@ USER_AGENT = "audio-translation-dashboard-scripts"
 # Whisper model names (e.g. "large-v3") expand to files in this repository.
 WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
 
-# Shared log file and line format; app.py and launch.sh write the same format.
+# Shared log file and line format; app.py writes the same format.
 LOG_FILE = "logs/app.log"
 LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -71,6 +75,16 @@ def config_path(cfg, value):
     """Resolve a path from the config; relative paths are relative to config.toml."""
     p = Path(value)
     return p if p.is_absolute() else cfg["_config_dir"] / p
+
+
+def api_servers(cfg):
+    """The [api_servers.<name>] sections, as {name: settings}, in config order."""
+    return {k: v for k, v in cfg["api_servers"].items() if isinstance(v, dict)}
+
+
+def starts(cfg, name):
+    """Whether we install and start server `name` (its start setting; default true)."""
+    return cfg["api_servers"].get(name, {}).get("start", True)
 
 
 def model_url(name, value):

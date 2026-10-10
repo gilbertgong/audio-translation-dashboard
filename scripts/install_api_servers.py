@@ -4,6 +4,15 @@ as configured in the [api_servers] section of config.toml.
 Usage, from the project root:
     python scripts/install_api_servers.py [--dry-run] [--force] [config.toml]
 
+Per server, in config.toml:
+    start = false            skip the server entirely
+    ensure_version = false   keep whatever build is installed, without contacting
+                             GitHub; download only if none is installed
+    ensure_version = true    check GitHub on every run and make sure the
+                             configured release is installed (the newest for
+                             release = "latest", or exactly a pinned tag)
+--force reinstalls the configured release regardless.
+
 The config defaults to ./config.toml (the current directory). Each server is
 unzipped into <install_dir>/<name>/ (e.g. api_servers/whisper/), with the
 release tag written to VERSION.
@@ -20,19 +29,22 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from common import USER_AGENT, config_path, download, load_config, run_script, setup_logging
+from common import (USER_AGENT, api_servers, config_path, download, load_config, run_script,
+                    setup_logging, starts)
 
 NAME = "install_api_servers"
 log = logging.getLogger(NAME)
 
 
 def github(path):
+    url = "https://api.github.com/repos/" + path
     req = urllib.request.Request(
-        "https://api.github.com/repos/" + path,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
+        url, headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)
+    except OSError as err:  # includes HTTP errors and no network
+        raise SystemExit(f"error: could not get {url}: {err}") from None
 
 
 def find_release(repo, release, patterns):
@@ -103,7 +115,7 @@ def main():
     parser.add_argument("config", nargs="?", default=Path("config.toml"), type=Path,
                         help="config file (default: ./config.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
-    parser.add_argument("--force", action="store_true", help="reinstall even if already up to date")
+    parser.add_argument("--force", action="store_true", help="reinstall the configured release")
     args = parser.parse_args()
 
     full_cfg = load_config(args.config)
@@ -111,18 +123,29 @@ def main():
     cfg = full_cfg["api_servers"]
     install_dir = config_path(full_cfg, cfg.get("install_dir", "api_servers"))
 
-    servers = {k: v for k, v in cfg.items() if isinstance(v, dict)}
-    for name, server in servers.items():
-        patterns = [p.format(binary_type=cfg["binary_type"]) for p in server["assets"]]
-        tag, urls = find_release(server["repo"], server.get("release", "latest"), patterns)
+    for name, server in api_servers(full_cfg).items():
+        if not starts(full_cfg, name):
+            print(f"== {name}: skipped (start = false)")
+            log.info("%s skipped (start = false)", name)
+            continue
         dest = install_dir / name
+        release = server.get("release", "latest")
+        version_file = dest / "VERSION"
+        installed = version_file.read_text().strip() if version_file.is_file() else None
+
+        if installed and not server.get("ensure_version", False) and not args.force:
+            print(f"== {name}: {installed} (installed; ensure_version = false)")
+            log.info("%s %s installed; not checking for a newer release", name, installed)
+            continue
+
+        patterns = [p.format(binary_type=cfg["binary_type"]) for p in server["assets"]]
+        tag, urls = find_release(server["repo"], release, patterns)
 
         print(f"== {name}: {tag}")
         for url in urls:
             print(f"   {url.rsplit('/', 1)[-1]}")
 
-        version_file = dest / "VERSION"
-        if not args.force and version_file.is_file() and version_file.read_text().strip() == tag:
+        if not args.force and installed == tag:
             print(f"   already installed in {dest}")
             log.info("%s %s already installed in %s", name, tag, dest)
         elif args.dry_run:

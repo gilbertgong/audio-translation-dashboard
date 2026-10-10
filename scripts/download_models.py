@@ -6,7 +6,8 @@ Usage, from the project root:
 
 The config defaults to ./config.toml (the current directory). Each model is
 saved to <models.dir>/<name>/ (e.g. models/whisper/ggml-large-v3.bin).
-Interrupted downloads resume where they left off when run again.
+Interrupted downloads resume where they left off when run again. Models for
+servers set to start = false in [api_servers.<name>] are skipped.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -14,7 +15,7 @@ Standard library only (Python 3.11+ for tomllib).
 import argparse
 from pathlib import Path
 
-from common import download, load_config, model_path, model_url, run_script, setup_logging
+from common import download, load_config, model_path, model_url, run_script, setup_logging, starts
 
 NAME = "download_models"
 
@@ -32,6 +33,10 @@ def main():
     names = [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, str)]
 
     for name in names:
+        if not starts(cfg, name):
+            print(f"== {name}: skipped (start = false)")
+            log.info("%s model skipped (start = false)", name)
+            continue
         url = model_url(name, cfg["models"][name])
         dest = model_path(cfg, name)
         print(f"== {name}: {dest.name}")

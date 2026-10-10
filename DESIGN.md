@@ -74,15 +74,23 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 | `[auto_split]`   | Continuous Audio Mode: initial state and pause-detection tuning.          |
 | `[llama_prompt]` | The two languages, the translation prompt, temperature, thinking on/off.  |
 | `[models]`       | The whisper and llama models, with suggestions by GPU memory.             |
-| `[api_servers]`  | Where and which server builds to download, and how to run them.          |
+| `[api_servers]`  | Per server: whether to start it, which build to download and whether to keep it current (`ensure_version`), and how to run it. |
 
 ## Running
 
 ```bash
-./launch.sh [--skip-setup]
+./launch.sh
 ```
 
-Installs or updates the server binaries and models (unless `--skip-setup`), starts whisper-server and llama-server, waits until both are ready, then runs the dashboard at <http://localhost:8080/>. Ctrl+C stops everything.
+A development convenience that runs the three steps below in order; each can also be run by hand from the project root. All the logic is in the Python scripts, so `launch.sh` stays bare scaffolding:
+
+```bash
+python scripts/install_api_servers.py           # the servers, if needed
+python scripts/download_models.py               # their models, if needed
+python scripts/run_servers.py python app.py     # start the servers, then the dashboard
+```
+
+The dashboard is at <http://localhost:8080/>; Ctrl+C stops everything.
 
 ```bash
 python app.py --mock
@@ -94,14 +102,14 @@ The dashboard alone with sample data, for working on the page without the server
 
 In `scripts/`, run from the project root; each supports `--help`.
 
-- **`install_api_servers.py`** — downloads the whisper.cpp and llama.cpp binaries into `api_servers/`.
-- **`download_models.py`** — downloads the models into `models/`; interrupted downloads resume.
-- **`server_command.py`** — builds each server's command line for `launch.sh`.
+- **`install_api_servers.py`** — downloads the whisper.cpp and llama.cpp binaries into `api_servers/`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. Servers with `start = false` are skipped.
+- **`download_models.py`** — downloads the models into `models/`; interrupted downloads resume. Skips models for servers with `start = false`.
+- **`run_servers.py`** — starts the servers with `start = true` (in config order), waits until each answers on `/health`, runs the given command (e.g. `python app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
 - **`common.py`** — helpers shared by the scripts.
 
 ### Logs
 
-- **`logs/app.log`** — one shared log from `app.py`, the scripts and `launch.sh`: server commands, downloads, each recording, transcription and translation, and errors.
+- **`logs/app.log`** — one shared log from `app.py` and the scripts: server commands, downloads, each recording, transcription and translation, and errors.
 - **`logs/<name>.log`** — each server's own output.
 
 Generated, git-ignored directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
@@ -149,6 +157,7 @@ Generated, git-ignored directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
   - Stream llama's output token by token so translations appear as they are generated.
   - Live provisional text while speaking: re-send the current phrase's audio about once a second, show whisper's result as provisional, and translate only finished phrases. The browser keeps the audio, so the server stays stateless.
 - **Continuous Audio Mode:** better voice detection (a small ML model in the browser, or whisper.cpp's VAD); filtering results with high `no_speech_prob`; passing the previous phrase to whisper as a prompt for continuity.
+- **External servers:** use whisper or llama instances that are already running (set `start = false` and point `host`/`port` at them); the setting exists, the rest isn't built yet.
 - **Housekeeping:** a retention limit for `tmp/audio/` (it grows by about 115 MB per hour of recorded speech).
 - Add stages to the pipeline (TTS, summarization, glossary/terminology pass).
 - Add more input sources (file upload, system audio) feeding the same pipeline.
