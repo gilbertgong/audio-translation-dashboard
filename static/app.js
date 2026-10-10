@@ -1,16 +1,54 @@
-// Dashboard front end: microphone capture -> 16-bit mono WAV -> POST to backend.
+// Dashboard front end: microphone capture -> 16-bit mono WAV -> POST to backend,
+// which transcribes it; the result is shown in the translation window.
 
 const recordBtn = document.getElementById("record-btn");
 const statusEl = document.getElementById("status");
+const windowEl = document.getElementById("translation-window");
 const logEl = document.getElementById("activity-log");
 const sidebarToggle = document.getElementById("sidebar-toggle");
 const clearLogBtn = document.getElementById("clear-log");
 
 let targetSampleRate = 16000;
 let session = null; // active recording: { stream, ctx, source, node, chunks }
+let pending = 0; // recordings still being processed
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function updateIdleStatus() {
+  if (!session) setStatus(pending ? `Transcribing (${pending})...` : "Idle");
+}
+
+// Translation window: one entry per recording, filled in when processing finishes.
+
+function addUtterance() {
+  const placeholder = windowEl.querySelector(".placeholder");
+  if (placeholder) placeholder.remove();
+  const div = document.createElement("div");
+  div.className = "utterance pending";
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = new Date().toLocaleTimeString();
+  const original = document.createElement("div");
+  original.className = "original";
+  original.textContent = "Transcribing...";
+  div.append(meta, original);
+  windowEl.appendChild(div);
+  windowEl.scrollTop = windowEl.scrollHeight;
+  return div;
+}
+
+function fillUtterance(div, result) {
+  div.classList.remove("pending");
+  if (result.language) div.querySelector(".meta").textContent += ` · ${result.language}`;
+  div.querySelector(".original").textContent = result.text || "(no speech detected)";
+}
+
+function failUtterance(div, message) {
+  div.classList.remove("pending");
+  div.classList.add("error");
+  div.querySelector(".original").textContent = message;
 }
 
 // Activity log (sidebar)
@@ -155,8 +193,32 @@ async function uploadWav(wav) {
     body: wav,
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    if (body.file) addEntry(`Saved recording to ${body.file}`);
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
   return body;
+}
+
+// Upload and transcribe in the background so the next recording can start.
+async function processRecording(wav) {
+  const seconds = (wav.size - 44) / 2 / targetSampleRate;
+  const div = addUtterance();
+  pending++;
+  updateIdleStatus();
+  try {
+    const result = await uploadWav(wav);
+    addEntry(`Saved ${seconds.toFixed(1)} s recording to ${result.file}`);
+    addEntry(`Transcribed in ${result.stt_seconds} s (${result.language || "unknown language"})`);
+    fillUtterance(div, result);
+  } catch (err) {
+    console.error(err);
+    addEntry(`Error: ${err.message}`, true);
+    failUtterance(div, `Error: ${err.message}`);
+  } finally {
+    pending--;
+    updateIdleStatus();
+  }
 }
 
 recordBtn.addEventListener("click", async () => {
@@ -170,12 +232,8 @@ recordBtn.addEventListener("click", async () => {
     } else {
       recordBtn.textContent = "Start Recording";
       recordBtn.classList.remove("recording");
-      setStatus("Saving...");
       const wav = await stopRecording();
-      const seconds = (wav.size - 44) / 2 / targetSampleRate;
-      const result = await uploadWav(wav);
-      addEntry(`Saved ${seconds.toFixed(1)} s recording to ${result.file}`);
-      setStatus("Idle");
+      processRecording(wav); // not awaited: runs in the background
     }
   } catch (err) {
     console.error(err);

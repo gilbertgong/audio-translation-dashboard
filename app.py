@@ -7,7 +7,11 @@ Standard library only (Python 3.11+ for tomllib).
 
 import json
 import sys
+import time
 import tomllib
+import urllib.error
+import urllib.request
+import uuid
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 DEFAULT_CONFIG = ROOT / "config.toml"
+STT_TIMEOUT = 300  # seconds to wait for whisper-server
 
 
 def load_config(path):
@@ -25,7 +30,39 @@ def load_config(path):
     if not temp_dir.is_absolute():
         temp_dir = Path(path).resolve().parent / temp_dir
     config["audio"]["temp_dir"] = temp_dir
+    whisper = config["api_servers"]["whisper"]
+    config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
     return config
+
+
+def multipart(fields, files):
+    """Encode a multipart/form-data body. files: {name: (filename, content_type, bytes)}."""
+    boundary = uuid.uuid4().hex
+    parts = []
+    for name, value in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
+                     f"{value}\r\n".encode())
+    for name, (filename, content_type, data) in files.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                     f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'.encode()
+                     + data + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def transcribe(whisper_url, wav, filename):
+    """Send a WAV to whisper-server; return {"text", "language"}."""
+    body, content_type = multipart(
+        {"response_format": "verbose_json", "temperature": "0.0"},
+        {"file": (filename, "audio/wav", wav)},
+    )
+    req = urllib.request.Request(f"{whisper_url}/inference", data=body,
+                                 headers={"Content-Type": content_type})
+    with urllib.request.urlopen(req, timeout=STT_TIMEOUT) as resp:
+        result = json.load(resp)
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    return {"text": result["text"].strip(), "language": result.get("detected_language")}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -82,8 +119,18 @@ class Handler(SimpleHTTPRequestHandler):
         temp_dir.mkdir(parents=True, exist_ok=True)
         path = temp_dir / datetime.now().strftime("recording_%Y%m%d_%H%M%S_%f.wav")
         path.write_bytes(data)
+        response = {"file": str(path), "bytes": len(data)}
 
-        self.send_json(201, {"file": str(path), "bytes": len(data)})
+        start = time.monotonic()
+        try:
+            response.update(transcribe(self.config["whisper_url"], data, path.name))
+        except (OSError, RuntimeError, ValueError) as err:
+            # OSError covers connection errors and HTTP errors from urllib.
+            response["error"] = f"transcription failed: {err} (is whisper-server running at {self.config['whisper_url']}?)"
+            self.send_json(502, response)
+            return
+        response["stt_seconds"] = round(time.monotonic() - start, 2)
+        self.send_json(201, response)
 
 
 def main():
@@ -98,6 +145,7 @@ def main():
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
     print(f"Config:     {config_path.resolve()}")
     print(f"Recordings: {config['audio']['temp_dir']}")
+    print(f"Whisper:    {config['whisper_url']}")
     print(f"Dashboard:  http://{shown_host}:{port}/  (Ctrl+C to stop)")
     try:
         server.serve_forever()

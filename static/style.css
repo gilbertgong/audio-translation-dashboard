@@ -130,6 +130,26 @@ main {
   padding: 12px 16px;
 }
 
+.utterance {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.utterance .meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.utterance .original {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.utterance.pending .original { color: var(--muted); font-style: italic; }
+.utterance.error .original { color: var(--recording); font-size: 0.9rem; }
+
 .controls {
   display: flex;
   align-items: center;

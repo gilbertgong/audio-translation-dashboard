@@ -151,8 +151,17 @@ Milestone 2 - STT via whisper.cpp                                 [in progress]
     Qwen3.8-27B UD-IQ3_XXS, ~10.9 GB). Interrupted downloads resume.
   - scripts/common.py holds helpers shared by the scripts (config loading,
     paths, downloading).
-  - Next: starting whisper-server, and calling /inference from the app.
-    The STT language defaults to automatic so mixed-language speech works.
+  - launch.sh checks Python, runs both scripts, starts whisper-server and
+    then llama-server (waiting for each /health; llama-server sizes itself to
+    the GPU memory whisper leaves), then runs app.py. Ctrl+C stops all of it.
+    Server output goes to tmp/logs/. scripts/server_command.py builds each
+    server's command line from [api_servers.<name>] (executable, host, port,
+    args) and [models].
+  - app.py sends each saved recording to whisper-server's /inference
+    (verbose_json, language auto-detected via "--language auto") and returns
+    the text and detected language. The translation window shows one entry
+    per recording, filled in when transcription finishes; recording can
+    continue meanwhile. Errors show in the entry and the Activity log.
 Milestone 3 - Translation via llama.cpp                           [planned]
 
 
