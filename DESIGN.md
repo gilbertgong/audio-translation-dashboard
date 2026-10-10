@@ -1,0 +1,196 @@
+# Audio Translation Dashboard — Design
+
+## 1. Purpose
+
+A local, self-hosted tool that captures speech from the microphone, transcribes it, translates it, and shows the original and translated text side by side with timing and debugging details. Leverages whisper.cpp and llama.cpp as external services, and includes helpers that download and spin up instances, including basic model fetching.
+
+## 2. Design principles
+
+- **Simple first:** one page, one linear pipeline.
+- **Use existing engines** instead of reimplementing them: whisper.cpp for speech-to-text (STT) and llama.cpp for translation.
+- **Loose coupling:** each engine runs as its own local server, and the app talks to it over HTTP. Swapping a model, engine, or machine only means changing the config.
+- **Pipeline of small stages:** Capture → Transcribe → Translate → Display. Each stage has one input and one output, so new stages can be inserted later (e.g. TTS after Translate).
+- **Settings live in one config file** (`config.toml`), read at startup. The page only has controls you'd change while using it (record, Continuous Audio Mode, gain, showing/hiding the Activity column).
+- **No dependencies** beyond Python's standard library (3.11+) and a browser.
+- **Easy to extend or modify** by virtue of simplicity.
+
+## 3. Components
+
+```
++--------------------+     WAV audio      +--------------------+
+|  Dashboard (page)  | -----------------> |  app.py (backend)  |
+|  capture, meter,   | <----------------- |  saves recordings, |
+|  splitting, display|  text, timings,    |  calls the servers |
++--------------------+  raw responses     +---------+----------+
+                                                    |
+                                       +------------+------------+
+                                       v                         v
+                            +---------------------+   +---------------------+
+                            | whisper-server      |   | llama-server        |
+                            | (STT, port 8081)    |   | (translation, 8082) |
+                            +---------------------+   +---------------------+
+```
+
+### a) Dashboard
+
+`static/`: `index.html`, `app.js`, `style.css`, `recorder-worklet.js`. Served by `app.py`; opened at <http://localhost:8080/>.
+
+- **Capture:** the microphone runs through Web Audio: source → software gain → an AudioWorklet that hands raw sample blocks to the page. The page resamples to 16 kHz mono and builds the WAV itself (no MediaRecorder, no ffmpeg), so whisper gets lossless audio in the format it expects.
+- **Translation window:** a two-column grid. Each recording is a row:
+  - **Conversation (left):** time and detected language, the original text, and the translation (accent color). Rows in `language2` are right-aligned, others left-aligned.
+  - **Activity (right):** timings first and largest — audio length (with a play button), transcribe time and translate time (each with a `{ }` button for the raw request/response) — then details such as the saved file name or how a Continuous Audio Mode phrase ended. Collapsible.
+- **Controls panel** (below the window, same two-tone background and divider):
+
+  |       | Left (under Conversation)                              | Right (under Activity)                         |
+  |-------|--------------------------------------------------------|------------------------------------------------|
+  | Row 1 | "Space to start/stop" hint                             | Status (Idle / Recording / Listening / Speaking…) |
+  | Row 2 | Start/Stop button, Continuous Audio Mode switch, Gain slider | Level meter + dB readout                 |
+
+  The right column has exactly the Activity column's width, so the indicators sit under it.
+- **Level meter** (while recording): −60..0 dB bar, fast rise / slow fall. Colored gray (too quiet, < −45 dB), green (good), amber (very loud, > −10 dB), red with a "CLIP" readout (clipping). A marker holds the highest peak of the current recording. In Continuous Audio Mode it also shows the speech threshold (dashed line) and a green outline while speech is detected. The readout shows "−∞ dB" when the microphone is off.
+- **Gain slider:** −12..+6 dB in 1 dB steps (ticks every 3 dB, double-click to reset), applied before the meter, speech detection and recording. Remembered per browser. For fine adjustment; the main level belongs in Windows sound settings.
+- **Space** starts/stops recording from anywhere on the page (except text fields and the raw-response viewer).
+- **Play buttons** play the exact audio sent to whisper, kept in browser memory (about 2 MB per minute of recorded speech); starting a recording stops playback. **`{ }`** opens a dialog with the formatted JSON and a Copy button.
+
+### b) app.py (backend)
+
+A small standard-library HTTP server (`ThreadingHTTPServer`).
+
+| Endpoint               | Body        | Does                                                                                                   | Returns                                                  |
+|------------------------|-------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------|
+| `GET /api/config`      | —           | Settings the page needs: sample rate, languages, `[auto_split]`, browser audio processing, mock data   | JSON                                                     |
+| `POST /api/recordings` | WAV         | Saves it to `tmp/audio/`, sends it to whisper-server `/inference` (`verbose_json`)                      | `{file, text, language, stt_seconds, stt_raw}`           |
+| `POST /api/translate`  | `{"text"}`  | Sends it to llama-server `/v1/chat/completions` with the system prompt and `enable_thinking` (via `chat_template_kwargs`) | `{translation, llm_seconds, llm_raw}` |
+
+`stt_raw` / `llm_raw` are the request and full server response, for the page's `{ }` viewer. `--mock` runs without the servers (see [Running](#6-running)).
+
+### c) whisper-server and llama-server
+
+Stock binaries from the whisper.cpp and llama.cpp GitHub releases, run as separate processes by `launch.sh`. whisper runs with `--language auto` so mixed-language speech works; llama-server puts the model on the GPU and sizes its memory use automatically, with `--ctx-size 8192`.
+
+## 4. Flow
+
+**Manual mode** (Continuous Audio Mode off — the default):
+
+1. Start (button or Space) opens the microphone; Stop closes it.
+2. The page builds a 16 kHz mono WAV and adds a row ("Transcribing...").
+3. `app.py` saves it and gets the text from whisper; the row shows it, with the detected language.
+4. The page sends the text to `/api/translate`; the row shows the translation.
+
+Recording can start again while earlier rows are still processing.
+
+**Continuous Audio Mode** (switch on; called *auto-split* in code and config):
+
+1. Start opens the microphone and keeps listening until Stop.
+2. A loudness-based voice activity detector in the page splits the audio into phrases at pauses; each phrase goes through steps 2–4 above as its own row. Silence between phrases is not sent.
+3. Stop sends any phrase in progress.
+
+## 5. Configuration (`config.toml`)
+
+Edited before starting; changes take effect on restart. Relative paths are relative to `config.toml`.
+
+| Section          | Settings                                                                                                                                                                         |
+|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `[server]`       | `host`, `port` of the dashboard (keep `127.0.0.1`: browsers only allow microphone access on localhost or HTTPS).                                                                  |
+| `[audio]`        | `temp_dir` for recordings, `sample_rate` (16000), `max_upload_mb`, and the browser's microphone processing: `auto_gain_control` (default `false`), `noise_suppression` and `echo_cancellation` (default `true`). |
+| `[auto_split]`   | Continuous Audio Mode: `enabled` (initial switch state), `pause_ms`, `threshold_db`, `min_threshold_db`, `pre_roll_ms`, `tail_ms`, `min_speech_ms`, `max_phrase_s`.             |
+| `[llama_prompt]` | `language1` / `language2` (default English / Chinese), the `system` prompt with `{language1}`/`{language2}` placeholders, `temperature` (0.2), `enable_thinking` (`false`).      |
+| `[models]`       | `dir`, and the `whisper` (name or URL) and `llama` (GGUF URL) models; comments suggest models for 24 GB, 8 GB and 6 GB of GPU memory.                                            |
+| `[api_servers]`  | `install_dir`, `binary_type` (default `"win-cuda-12.*-x64"`), and per server (`whisper`, `llama`): GitHub `repo`, `release` (`"latest"` or a tag), `assets` patterns, `executable`, `host`, `port` and extra `args`. |
+
+## 6. Running
+
+```bash
+./launch.sh [--skip-setup]
+```
+
+Checks Python (3.11+), runs `scripts/install_api_servers.py` and `scripts/download_models.py` (skipped with `--skip-setup`), starts whisper-server and then llama-server (waiting for each `/health`, whisper first so llama sizes itself to the GPU memory left), then runs `app.py` in the foreground. Ctrl+C stops everything. The `PYTHON` and `CONFIG` environment variables override the interpreter and config file.
+
+```bash
+python app.py [--mock] [config.toml]
+```
+
+The dashboard alone. `--mock` needs no servers: the page opens with the first two lines (`MOCK_PRELOAD`) of a four-line mixed English/Chinese sample conversation (`MOCK_CONVERSATION` in `app.py`), with sample timings, silent play buttons and placeholder raw data, plus a MOCK badge. Each recording "transcribes" to the next sample line after a 0.8 s delay, wrapping around; reloading starts over. Nothing is saved.
+
+### Scripts
+
+In `scripts/`; run from the project root. Standard library only.
+
+#### `install_api_servers.py`
+
+```bash
+python scripts/install_api_servers.py [--dry-run] [--force]
+```
+
+Downloads the server binaries into `api_servers/<name>/`. Both projects publish binaries on `b####` pre-release builds, so "latest" means the newest release with matching files. Skips what's already installed; a newer "latest" build is installed when one appears.
+
+#### `download_models.py`
+
+```bash
+python scripts/download_models.py [--dry-run] [--force]
+```
+
+Downloads the models into `models/<name>/`; interrupted downloads resume.
+
+#### `server_command.py`
+
+```bash
+python scripts/server_command.py NAME [--url]
+```
+
+Prints a server's command line (NUL-separated) or URL for `launch.sh`, which passes it through `tmp/<name>_cmd.out` (deleted once the server is ready).
+
+#### `common.py`
+
+Shared helpers used by the scripts: config loading, paths, logging, downloading.
+
+### Logging
+
+In `logs/` (git-ignored):
+
+| File              | Contents |
+|-------------------|----------|
+| `logs/app.log`    | One shared log in one format (`2026-10-09 21:13:05 <source> INFO: message`), written by `app.py`, the scripts and `launch.sh`: server launch commands, installs/downloads, each recording, transcription and translation (with text), and errors. |
+| `logs/<name>.log` | Each server's own output (whisper, llama). |
+
+Git-ignored generated directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
+
+## 7. Milestones
+
+### Milestone 1 — Web server and audio capture ✅
+
+- Standard-library Python server, a page with a Start/Stop button, and 16 kHz mono WAV capture in the browser, saved by the backend.
+
+### Milestone 2 — STT via whisper.cpp ✅
+
+- Install, model-download and launch scripts; shared logging.
+- Each recording is transcribed by whisper-server (language auto-detected) and shown as soon as it's ready.
+
+### Milestone 3 — Translation via llama.cpp ✅
+
+- Configurable two-language system prompt; translation with thinking off. Measured on Qwen3.8-27B: with thinking on, "Hello, testing." took 3.5 s and 118 tokens; with it off, 0.3 s and 5 tokens.
+- Mock mode for working on the page without the servers.
+- Completes the MVP pipeline: record → whisper → llama → display.
+
+### Milestone 4 — Automatic splitting on pauses ✅ (tuning)
+
+- Continuous Audio Mode (see [Flow](#4-flow)). The detector measures background noise for the first 400 ms, then tracks it continuously (falls fast, rises slowly — more slowly mid-phrase); speech is anything `threshold_db` above it, never below `min_threshold_db`. A phrase starts at the first loud block (with `pre_roll_ms` of earlier audio) and ends after `pause_ms` of quiet (keeping `tail_ms`) or at `max_phrase_s`; phrases with less than `min_speech_ms` of speech are dropped.
+- **Known limitation:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the phrase (deliberate, so constant noise can't hold it open).
+
+### Milestone 5 — Dashboard layout and debugging aids ✅
+
+- Conversation/activity grid with left/right alignment by language; timings as the main activity information; collapsible Activity column.
+- Controls panel aligned with the window; level meter; gain slider; Space shortcut.
+- Play buttons and raw whisper/llama request/response viewers.
+- Browser microphone processing in the config, with automatic gain control off by default: Chrome's AGC restarts every time the microphone opens and can swing the level (including the Windows microphone level) during the first seconds, which mangled short recordings on a laptop's built-in mic.
+
+## 8. Extension points (future)
+
+- **Streaming:**
+  - Stream llama's output token by token so translations appear as they are generated.
+  - Live provisional text while speaking: re-send the current phrase's audio about once a second, show whisper's result as provisional, and translate only finished phrases. The browser keeps the audio, so the server stays stateless.
+- **Continuous Audio Mode:** better voice detection (a small ML model in the browser, or whisper.cpp's VAD); filtering results with high `no_speech_prob`; passing the previous phrase to whisper as a prompt for continuity.
+- **Housekeeping:** a retention limit for `tmp/audio/` (it grows by about 115 MB per hour of recorded speech).
+- Add stages to the pipeline (TTS, summarization, glossary/terminology pass).
+- Add more input sources (file upload, system audio) feeding the same pipeline.
+- Add other backends behind the same STT and translation interfaces (e.g. cloud APIs).
