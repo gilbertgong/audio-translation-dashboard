@@ -44,7 +44,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 
 ### Backend (`app.py`)
 
-A standard-library HTTP server that serves the page and runs the pipeline:
+Serves the page and runs the pipeline. The HTTP plumbing lives in `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py` is just the app: config, the whisper and llama calls, and its endpoints as decorated functions:
 
 | Endpoint               | Purpose                                                               |
 |------------------------|-----------------------------------------------------------------------|
@@ -134,6 +134,14 @@ Generated, git-ignored directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
 - Controls panel aligned with the window; level meter; gain slider; Space shortcut.
 - Play buttons and raw whisper/llama request/response viewers.
 - Browser microphone processing in the config, with automatic gain control off by default: Chrome's AGC restarts every time the microphone opens and can swing the level (including the Windows microphone level) during the first seconds, which mangled short recordings on a laptop's built-in mic.
+
+### Milestone 6 — microweb ✅
+
+- `microweb.py`: Flask-style, not Flask-compatible. `@app.get`/`@app.post` routes with exact paths; handlers take a request (`method`, `path`, `query`, `headers`, `client`, `body()`, `json()`) and return a dict/list (JSON), str, bytes, `None` or `(body, status)`; `HTTPError(status, message, **extra)` becomes a JSON error. Static files from `static/` with explicit content types and `no-cache`; no directory listings.
+- Request bodies need a `Content-Length` (411 otherwise: browsers always send one, and it lets oversized bodies be rejected before reading) and are limited to 1 MB unless a handler allows more (recordings use `max_upload_mb`).
+- Wrong method → 405 with `Allow`; unexpected exceptions → 500 with the traceback logged. `app.handle()` runs a request without a network connection, for tests.
+- On Windows, Python's HTTP server would let a second server bind a port already in use; microweb disables that, so a taken port gives a clear error.
+- Handlers use module-level state in `app.py` (`config`, `mock`), set in `main()`.
 
 ## Extension points (future)
 
