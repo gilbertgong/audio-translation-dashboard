@@ -25,6 +25,8 @@ Handlers take one argument, the Request (req), and return:
     str               -> text/plain, status 200
     bytes             -> application/octet-stream, status 200
     None              -> 204 No Content
+    Stream(chunks, content_type)
+                      -> the chunks sent one by one as they're produced
     (body, status)    -> any of the above with that status
 raise HTTPError(status, message, **extra) -> JSON {"error": message, **extra}.
 Any other exception -> 500 {"error": "internal error"}, traceback logged.
@@ -81,6 +83,23 @@ class HTTPError(Exception):
         self.status = status
         self.message = message
         self.extra = extra
+
+
+class Stream:
+    """Return from a handler to send the body in pieces as they're produced.
+
+    chunks: an iterable (e.g. a generator) of bytes or str. Each piece is sent
+    as soon as it's produced; the response ends when the iterable does (the
+    connection closes, so no Content-Length is needed).
+    """
+
+    def __init__(self, chunks, content_type="application/octet-stream"):
+        self.chunks = chunks
+        self.content_type = content_type
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            yield chunk.encode("utf-8") if isinstance(chunk, str) else chunk
 
 
 class Request:
@@ -200,6 +219,8 @@ class App:
             message["Content-Length"] = str(len(body))
         req = Request(method, path, message, io.BytesIO(body), "test", self.max_body)
         status, response_headers, data = self._dispatch(req)
+        if isinstance(data, Stream):
+            data = b"".join(data)  # collect the whole stream
         return status, dict(response_headers), data
 
     # Internals
@@ -239,6 +260,8 @@ class App:
             return status, [("Content-Type", "text/plain; charset=utf-8")], result.encode("utf-8")
         if isinstance(result, bytes):
             return status, [("Content-Type", "application/octet-stream")], result
+        if isinstance(result, Stream):
+            return status, [("Content-Type", result.content_type), ("Cache-Control", "no-cache")], result
         raise TypeError(f"handler returned unsupported type {type(result).__name__}")
 
     @staticmethod
@@ -266,14 +289,28 @@ class App:
                 req = Request(self.command, self.path, self.headers, self.rfile,
                               self.client_address[0], app.max_body)
                 status, headers, body = app._dispatch(req)
+                streaming = isinstance(body, Stream)
                 try:
                     self.send_response(status)
                     for name, value in headers:
                         self.send_header(name, value)
-                    self.send_header("Content-Length", str(len(body)))
+                    if not streaming:
+                        self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
-                    if self.command != "HEAD":
+                    if self.command == "HEAD":
+                        return
+                    if not streaming:
                         self.wfile.write(body)
+                        return
+                    try:
+                        for chunk in body:
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                        raise
+                    except Exception:
+                        # Headers are already sent, so all we can do is stop.
+                        log.exception("%s %s failed while streaming", req.method, req.path)
                 except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     log.debug("%s %s: client disconnected", req.method, req.path)
 

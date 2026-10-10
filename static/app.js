@@ -603,15 +603,86 @@ async function uploadWav(wav) {
   return body;
 }
 
-async function requestTranslation(text) {
+// Translate text, streamed. The server sends our "request" event, then
+// llama-server's response exactly as llama sent it (OpenAI-style chunks:
+// "data: {...}" ... "data: [DONE]"), and an "error" event if relaying fails.
+// onText(textSoFar) is called as pieces arrive. Returns
+// { translation, seconds, firstSeconds, raw }; raw has the request and every
+// event, in order, for the raw viewer.
+async function requestTranslation(text, onText) {
+  const start = performance.now();
   const res = await fetch("/api/translate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-  return body;
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      message = (await res.json()).error || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  const raw = { request: null, response: [] };
+  let translation = "";
+  let firstSeconds = null;
+  let error = null;
+
+  // One server-sent event: optional "event: name" plus "data: ..." line(s).
+  const handleEvent = (block) => {
+    let name = "message";
+    const data = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) name = line.slice(6).trim();
+      else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+    }
+    if (!data.length) return;
+    const payload = data.join("\n");
+    if (name === "request") {
+      raw.request = JSON.parse(payload);
+      return;
+    }
+    if (name === "error") {
+      error = JSON.parse(payload).error;
+      raw.response.push({ event: "error", ...JSON.parse(payload) });
+      return;
+    }
+    let chunk;
+    try {
+      chunk = JSON.parse(payload);
+    } catch {
+      raw.response.push(payload); // e.g. "[DONE]"
+      return;
+    }
+    raw.response.push(chunk);
+    if (chunk.error) error = chunk.error.message || JSON.stringify(chunk.error);
+    const piece = chunk.choices?.[0]?.delta?.content;
+    if (piece) {
+      if (firstSeconds === null) firstSeconds = (performance.now() - start) / 1000;
+      translation += piece;
+      onText(translation);
+    }
+  };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, "\n");
+    let end;
+    while ((end = buffer.indexOf("\n\n")) >= 0) {
+      handleEvent(buffer.slice(0, end));
+      buffer = buffer.slice(end + 2);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) handleEvent(buffer);
+
+  const seconds = (performance.now() - start) / 1000;
+  if (error) throw Object.assign(new Error(error), { raw, seconds });
+  return { translation: translation.trim(), seconds, firstSeconds, raw };
 }
 
 // Shows a saved file by name; the full path is in the tooltip.
@@ -656,12 +727,15 @@ async function processRecording(wav, note = "") {
     setLine(row, ".translation", "Translating...", "pending");
     setTiming(row, "llm", null);
     try {
-      const result = await requestTranslation(stt.text);
-      setTiming(row, "llm", result.llm_seconds);
-      if (result.llm_raw) addRawButton(row, "llm", "llama request and response", result.llm_raw);
-      setLine(row, ".translation", result.translation);
+      const result = await requestTranslation(stt.text, (soFar) => setLine(row, ".translation", soFar));
+      setTiming(row, "llm", result.seconds);
+      if (result.firstSeconds !== null) addDetail(row, `first token after ${result.firstSeconds.toFixed(2)}s`);
+      addRawButton(row, "llm", "llama request and streamed response", result.raw);
+      if (result.translation) setLine(row, ".translation", result.translation);
+      else setLine(row, ".translation", "(empty translation)", "pending");
     } catch (err) {
       setTiming(row, "llm", "failed");
+      if (err.raw) addRawButton(row, "llm", "llama request and streamed response", err.raw);
       setLine(row, ".translation", `Error: ${err.message}`, "error");
       throw err;
     }

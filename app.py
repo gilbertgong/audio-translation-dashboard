@@ -14,6 +14,7 @@ import argparse
 import itertools
 import json
 import logging
+import re
 import time
 import tomllib
 import urllib.error
@@ -22,7 +23,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from microweb import App, HTTPError
+from microweb import App, HTTPError, Stream
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
@@ -138,19 +139,31 @@ def multipart(fields, files):
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
-def call_server(url, body, content_type, timeout):
-    """Call whisper-server or llama-server: POST body to url and return the
-    parsed JSON response.
+def open_server(url, body, content_type, timeout):
+    """POST body to whisper-server or llama-server and return the open response
+    as soon as the server starts answering (the caller reads and closes it).
 
     HTTP errors are raised as RuntimeError including the server's error text.
     """
     outgoing = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
     try:
-        with urllib.request.urlopen(outgoing, timeout=timeout) as resp:
-            return json.load(resp)
+        return urllib.request.urlopen(outgoing, timeout=timeout)
     except urllib.error.HTTPError as err:
         detail = err.read().decode("utf-8", "replace").strip()
         raise RuntimeError(f"HTTP {err.code}: {detail[:500]}") from err
+
+
+def call_server(url, body, content_type, timeout):
+    """Call whisper-server or llama-server: POST body to url and return the
+    parsed JSON response."""
+    with open_server(url, body, content_type, timeout) as resp:
+        return json.load(resp)
+
+
+def sse_event(name, data):
+    """One server-sent event of our own, named so it can't be mistaken for
+    llama's (unnamed) events."""
+    return f"event: {name}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
 
 
 def transcribe(whisper_url, wav, filename):
@@ -170,12 +183,9 @@ def transcribe(whisper_url, wav, filename):
             "stt_raw": raw}
 
 
-def translate(config, text):
-    """Translate text with llama-server's OpenAI-style chat endpoint.
-
-    Returns (translation, raw), where raw is the full request and llama's full
-    reply, for debugging.
-    """
+def translation_request(config, text):
+    """The (url, body) of a streamed translation request to llama-server's
+    OpenAI-style chat endpoint."""
     prompt = config["llama_prompt"]
     body = {
         "messages": [
@@ -185,14 +195,63 @@ def translate(config, text):
         "temperature": prompt.get("temperature", 0.2),
         # Passed to the model's chat template, which switches thinking on or off.
         "chat_template_kwargs": {"enable_thinking": prompt.get("enable_thinking", False)},
+        "stream": True,
+        "stream_options": {"include_usage": True},  # token counts in the last chunk
     }
-    url = f"{config['llama_url']}/v1/chat/completions"
-    result = call_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
-    content = result["choices"][0]["message"].get("content") or ""
-    # llama-server normally moves thinking to a separate field; drop it if not.
-    if "</think>" in content:
-        content = content.split("</think>", 1)[1]
-    return content.strip(), {"request": {"url": url, "body": body}, "response": result}
+    return f"{config['llama_url']}/v1/chat/completions", body
+
+
+def stream_content(line):
+    """The translation text in one line of llama's stream ("data: {...}"), if any."""
+    if not line.startswith(b"data: {"):
+        return None
+    try:
+        chunk = json.loads(line[len(b"data: "):])
+        return chunk["choices"][0]["delta"].get("content")
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
+def relay_translation(text, url, body, resp, start):
+    """Our "request" event, then llama's response exactly as it arrives. The
+    stream is also read as it passes, to log the finished translation."""
+    yield sse_event("request", {"url": url, "body": body})
+    pieces = []
+    first = None
+    try:
+        with resp:
+            for line in resp:
+                yield line
+                content = stream_content(line)
+                if content:
+                    first = first if first is not None else time.monotonic() - start
+                    pieces.append(content)
+    except OSError as err:
+        error = f"relaying llama's response failed: {err}"
+        log.warning("%s; text: %r", error, text)
+        yield sse_event("error", {"error": error})
+    seconds = time.monotonic() - start
+    log.info("translated in %.2fs (first token after %.2fs): %r -> %r",
+             seconds, first or 0, text, "".join(pieces).strip())
+
+
+def mock_translation_stream(text):
+    """A made-up stream in llama's format, word by word, for --mock."""
+    known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
+    translation = known.get(text, f"[mock translation] {text}")
+    yield sse_event("request", {"mock": True, "text": text})
+    time.sleep(MOCK_DELAY / 2)
+    # Pieces like a tokenizer's: single CJK characters, or words with their spaces.
+    for piece in re.findall(r"[㐀-鿿　-〿＀-￯]|[^㐀-鿿　-〿＀-￯\s]+\s*|\s+",
+                            translation):
+        chunk = {"choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}],
+                 "object": "chat.completion.chunk", "model": "mock"}
+        yield f"data: {json.dumps(chunk)}\n\n"
+        time.sleep(0.06)
+    done = {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "object": "chat.completion.chunk", "model": "mock"}
+    yield f"data: {json.dumps(done)}\n\n"
+    yield "data: [DONE]\n\n"
 
 
 # The web app. Handlers use the module-level settings below, set in main().
@@ -228,7 +287,13 @@ def get_config(req):
 
 @app.post("/api/translate")
 def post_translate(req):
-    """Body: {"text": "..."}. Returns {"translation", "llm_seconds", "llm_raw"}."""
+    """Body: {"text": "..."}. Streams text/event-stream:
+        event: request    ours: the request sent to llama-server
+        data: {...}       llama's streamed response, unchanged
+        ...
+        data: [DONE]
+        event: error      ours, only if relaying fails midway
+    If llama-server can't be reached, a 502 JSON error instead."""
     data = req.json()
     text = data.get("text") if isinstance(data, dict) else None
     if not isinstance(text, str):
@@ -238,22 +303,18 @@ def post_translate(req):
         raise HTTPError(400, "no text to translate")
 
     if mock:
-        time.sleep(MOCK_DELAY)
-        known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
-        translation = known.get(text, f"[mock translation] {text}")
-        return {"translation": translation, "llm_seconds": MOCK_DELAY,
-                "llm_raw": {"mock": True, "text": text, "translation": translation}}
+        return Stream(mock_translation_stream(text), "text/event-stream")
 
+    url, body = translation_request(config, text)
     start = time.monotonic()
     try:
-        translation, raw = translate(config, text)
-    except (OSError, RuntimeError, ValueError, KeyError, IndexError) as err:
+        # Connect before returning the stream, so an unreachable server is a plain 502.
+        resp = open_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
+    except (OSError, RuntimeError) as err:
         error = f"translation failed: {err} (is llama-server running at {config['llama_url']}?)"
         log.warning("%s; text: %r", error, text)
         raise HTTPError(502, error) from err
-    seconds = round(time.monotonic() - start, 2)
-    log.info("translated in %ss: %r -> %r", seconds, text, translation)
-    return {"translation": translation, "llm_seconds": seconds, "llm_raw": raw}
+    return Stream(relay_translation(text, url, body, resp, start), "text/event-stream")
 
 
 @app.post("/api/recordings")
