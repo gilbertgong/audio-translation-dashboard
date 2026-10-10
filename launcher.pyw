@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Audio Translation Dashboard - launcher.
 
-A window that does what launch.sh does: creates config.toml if missing,
-installs the servers and downloads their models if needed, then starts the
-servers and the dashboard, showing their output. Stop, or closing the window,
+A window that does what launch.sh does: installs the servers and downloads
+their models if needed, then starts the servers and the dashboard, showing their output. Stop, or closing the window,
 stops everything.
 
 Double-click to run (.pyw: no console window), or: python launcher.pyw
@@ -15,7 +14,6 @@ import codecs
 import os
 import queue
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -96,9 +94,6 @@ class Launcher:
         self.stopping = False
         self.launch_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
-        if not CONFIG.exists():
-            shutil.copyfile(DEFAULTS, CONFIG)
-            self.write("Created config.toml from config/defaults.toml\n")
         threading.Thread(target=self.run_steps, daemon=True).start()
 
     def stop(self):
@@ -109,8 +104,12 @@ class Launcher:
             stop_tree(self.proc)
 
     def open_dashboard(self):
-        with open(CONFIG, "rb") as f:
-            port = tomllib.load(f)["server"]["port"]
+        # The port from config.toml if it sets one, else from the defaults.
+        port = None
+        for path in (CONFIG, DEFAULTS):
+            if port is None and path.is_file():
+                with open(path, "rb") as f:
+                    port = tomllib.load(f).get("server", {}).get("port")
         webbrowser.open(f"http://localhost:{port}/")
 
     def close(self):

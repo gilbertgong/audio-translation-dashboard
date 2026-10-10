@@ -13,9 +13,9 @@ Per server, in config.toml:
                              release = "latest", or exactly a pinned tag)
 --force reinstalls the configured release regardless.
 
-The config defaults to ./config.toml (the current directory). Each server is
-unzipped into <install_dir>/<name>/ (e.g. api_servers/whisper/), with the
-release tag written to VERSION.
+Settings come from config/defaults.toml, with config.toml (or the given file)
+on top. Each server is unzipped into <install_dir>/<name>/ (e.g.
+api_servers/whisper/), with the release tag written to VERSION.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -29,7 +29,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from common import (USER_AGENT, api_servers, config_path, download, load_config, run_script,
+from common import (CONFIG_FILE, USER_AGENT, api_servers, config_path, download, load_config, run_script,
                     setup_logging, starts)
 
 NAME = "install_api_servers"
@@ -112,8 +112,8 @@ def install(name, dest, tag, urls):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("config", nargs="?", default=Path("config.toml"), type=Path,
-                        help="config file (default: ./config.toml)")
+    parser.add_argument("config", nargs="?", default=CONFIG_FILE, type=Path,
+                        help="settings over config/defaults.toml (default: the project's config.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="reinstall the configured release")
     args = parser.parse_args()

@@ -4,10 +4,11 @@ of config.toml.
 Usage, from the project root:
     python scripts/download_models.py [--dry-run] [--force] [config.toml]
 
-The config defaults to ./config.toml (the current directory). Each model is
-saved to <models.dir>/<name>/ (e.g. models/whisper/ggml-large-v3.bin).
-Interrupted downloads resume where they left off when run again. Models for
-servers set to start = false in [api_servers.<name>] are skipped.
+Settings come from config/defaults.toml, with config.toml (or the given file)
+on top. Each model is saved to <models.dir>/<name>/ (e.g.
+models/whisper/ggml-large-v3.bin). Interrupted downloads resume where they left
+off when run again. Models for servers set to start = false in
+[api_servers.<name>] are skipped.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -15,15 +16,15 @@ Standard library only (Python 3.11+ for tomllib).
 import argparse
 from pathlib import Path
 
-from common import download, load_config, model_path, model_url, run_script, setup_logging, starts
+from common import CONFIG_FILE, download, load_config, model_path, model_url, run_script, setup_logging, starts
 
 NAME = "download_models"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("config", nargs="?", default=Path("config.toml"), type=Path,
-                        help="config file (default: ./config.toml)")
+    parser.add_argument("config", nargs="?", default=CONFIG_FILE, type=Path,
+                        help="settings over config/defaults.toml (default: the project's config.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="download again even if the file exists")
     args = parser.parse_args()

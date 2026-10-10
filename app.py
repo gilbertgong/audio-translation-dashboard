@@ -26,7 +26,8 @@ from microweb import App, HTTPError
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
-DEFAULT_CONFIG = ROOT / "config.toml"
+DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
+CONFIG_FILE = ROOT / "config.toml"  # your settings, on top of the defaults (optional)
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
 
@@ -74,15 +75,37 @@ def setup_logging(config_dir):
     return path
 
 
+def merge(base, override):
+    """Settings from override on top of base: tables merge key by key; any
+    other value (including lists) is replaced."""
+    result = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def load_config(path):
-    with open(path, "rb") as f:
+    """config/defaults.toml with the settings in path on top. The default
+    config.toml may be missing (all defaults); an explicitly given path may not.
+    (Same rules as scripts/common.py.)"""
+    with open(DEFAULTS_FILE, "rb") as f:
         config = tomllib.load(f)
-    config_dir = Path(path).resolve().parent
-    config["_config_dir"] = config_dir
-    # Resolve relative paths against the config file's directory.
+    path = Path(path)
+    if path.is_file():
+        with open(path, "rb") as f:
+            try:
+                config = merge(config, tomllib.load(f))
+            except tomllib.TOMLDecodeError as err:
+                raise SystemExit(f"error: {path.resolve()}: {err}") from None
+    elif path.resolve() != CONFIG_FILE:
+        raise SystemExit(f"error: config file not found: {path.resolve()}")
+    config["_config_dir"] = ROOT  # relative paths are relative to the project folder
     temp_dir = Path(config["audio"]["temp_dir"])
     if not temp_dir.is_absolute():
-        temp_dir = config_dir / temp_dir
+        temp_dir = ROOT / temp_dir
     config["audio"]["temp_dir"] = temp_dir
     whisper = config["api_servers"]["whisper"]
     config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
@@ -273,7 +296,7 @@ def post_recording(req):
 def main():
     global config, mock
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("config", nargs="?", default=DEFAULT_CONFIG, type=Path,
+    parser.add_argument("config", nargs="?", default=CONFIG_FILE, type=Path,
                         help="config file (default: config.toml next to app.py)")
     parser.add_argument("--mock", action="store_true",
                         help="sample data instead of whisper/llama, for styling the page")
@@ -288,7 +311,8 @@ def main():
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
     banner = [
         *(["Mode:       MOCK (sample data; whisper and llama are not used)"] if mock else []),
-        f"Config:     {args.config.resolve()}",
+        f"Config:     {DEFAULTS_FILE}" + (f" + {args.config.resolve()}" if args.config.is_file()
+                                            else " (no config.toml: defaults only)"),
         f"Log:        {log_path}",
         f"Recordings: {config['audio']['temp_dir']}",
         f"Whisper:    {config['whisper_url']}",

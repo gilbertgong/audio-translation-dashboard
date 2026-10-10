@@ -1,5 +1,15 @@
-# Audio Translation Dashboard configuration.
-# Edit this file before starting the app; changes take effect on restart.
+# Audio Translation Dashboard: default settings.
+#
+# Don't edit this file. Put the settings you want to change in config.toml in
+# the project folder (create it if needed), under the same [section] headers;
+# they override the values here, and anything you leave out keeps its default.
+# For example:
+#
+#   [llama_prompt]
+#   language2 = "Japanese"
+#
+# Settings are read at startup; changes take effect on restart. Relative paths
+# are relative to the project folder.
 
 [server]
 # Keep host on 127.0.0.1/localhost: browsers only allow microphone access on
@@ -8,7 +18,7 @@ host = "127.0.0.1"
 port = 8080
 
 [audio]
-# Where recorded WAV files are written. Relative paths are relative to this file.
+# Where recorded WAV files are written.
 temp_dir = "tmp/audio"
 # Recordings are saved as mono 16-bit PCM WAV at this rate (whisper.cpp expects 16000).
 sample_rate = 16000
@@ -71,8 +81,7 @@ temperature = 0.2
 enable_thinking = false
 
 [models]
-# Used by scripts/download_models.py. Each model is saved to dir/<name>/
-# (relative paths are relative to this file).
+# Used by scripts/download_models.py. Each model is saved to dir/<name>/.
 dir = "models"
 # A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
 # (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
@@ -97,8 +106,7 @@ llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 
 [api_servers]
 # Used by scripts/install_api_servers.py and scripts/run_servers.py. Prebuilt
-# binaries are downloaded from GitHub releases into install_dir/<name>/
-# (relative paths are relative to this file).
+# binaries are downloaded from GitHub releases into install_dir/<name>/.
 install_dir = "api_servers"
 # Which build to download. Substituted for {binary_type} in the asset patterns
 # below. Examples: "win-cuda-12.*-x64" (NVIDIA, CUDA 12), "win-cuda-13.*-x64",

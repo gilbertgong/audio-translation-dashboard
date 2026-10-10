@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import (LOG_FILE, api_servers, config_path, load_config, model_path, run_script,
+from common import (CONFIG_FILE, LOG_FILE, api_servers, config_path, load_config, model_path, run_script,
                     setup_logging, starts)
 
 NAME = "run_servers"
@@ -117,8 +117,8 @@ def run_command(command, log):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--config", default=Path("config.toml"), type=Path,
-                        help="config file (default: ./config.toml)")
+    parser.add_argument("--config", default=CONFIG_FILE, type=Path,
+                        help="settings over config/defaults.toml (default: the project's config.toml)")
     parser.add_argument("command", nargs=argparse.REMAINDER,
                         help="command to run while the servers are up (e.g. python app.py)")
     args = parser.parse_args()

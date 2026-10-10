@@ -15,6 +15,10 @@ from pathlib import Path
 
 USER_AGENT = "audio-translation-dashboard-scripts"
 
+ROOT = Path(__file__).resolve().parent.parent  # the project folder
+DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
+CONFIG_FILE = ROOT / "config.toml"  # your settings, on top of the defaults (optional)
+
 # Whisper model names (e.g. "large-v3") expand to files in this repository.
 WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
 
@@ -59,20 +63,39 @@ def run_script(main, name, interrupted="interrupted"):
         raise
 
 
+def merge(base, override):
+    """Settings from override on top of base: tables merge key by key; any
+    other value (including lists) is replaced."""
+    result = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def load_config(path):
-    """Load config.toml, exiting with a helpful message if it's missing."""
-    path = Path(path)
-    if not path.is_file():
-        raise SystemExit(f"error: config file not found: {path.resolve()}"
-                         " (run from the project root, or pass the config path)")
-    with open(path, "rb") as f:
+    """config/defaults.toml with the settings in path on top. The default
+    config.toml may be missing (all defaults); an explicitly given path may not.
+    (Same rules as app.py.)"""
+    with open(DEFAULTS_FILE, "rb") as f:
         cfg = tomllib.load(f)
-    cfg["_config_dir"] = path.resolve().parent
+    path = Path(path)
+    if path.is_file():
+        with open(path, "rb") as f:
+            try:
+                cfg = merge(cfg, tomllib.load(f))
+            except tomllib.TOMLDecodeError as err:
+                raise SystemExit(f"error: {path.resolve()}: {err}") from None
+    elif path.resolve() != CONFIG_FILE:
+        raise SystemExit(f"error: config file not found: {path.resolve()}")
+    cfg["_config_dir"] = ROOT  # relative paths are relative to the project folder
     return cfg
 
 
 def config_path(cfg, value):
-    """Resolve a path from the config; relative paths are relative to config.toml."""
+    """Resolve a path from the config; relative paths are relative to the project folder."""
     p = Path(value)
     return p if p.is_absolute() else cfg["_config_dir"] / p
 
