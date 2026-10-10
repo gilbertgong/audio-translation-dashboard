@@ -1,7 +1,7 @@
 # Audio Translation Dashboard: default settings.
 #
-# Don't edit this file. Put the settings you want to change in config.toml in
-# the project folder (create it if needed), under the same [section] headers;
+# Don't edit this file. Put the settings you want to change in config_local.toml
+# in the project folder (create it if needed), under the same [section] headers;
 # they override the values here, and anything you leave out keeps its default.
 # For example:
 #

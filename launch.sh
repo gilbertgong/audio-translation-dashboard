@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Development convenience: the steps to get everything running, in order.
 # Each is a plain command you can also run by hand from the project root.
-# Settings: config/defaults.toml, overridden by config.toml if present.
+# Settings: config/defaults.toml, overridden by config_local.toml if present.
 # Logs are in logs/.
 
 set -e

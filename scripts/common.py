@@ -17,7 +17,7 @@ USER_AGENT = "audio-translation-dashboard-scripts"
 
 ROOT = Path(__file__).resolve().parent.parent  # the project folder
 DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
-CONFIG_FILE = ROOT / "config.toml"  # your settings, on top of the defaults (optional)
+CONFIG_LOCAL_FILE = ROOT / "config_local.toml"  # your settings, on top of the defaults (optional)
 
 # Whisper model names (e.g. "large-v3") expand to files in this repository.
 WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
@@ -29,7 +29,7 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def setup_logging(cfg, name):
-    """Append log messages to logs/app.log (next to config.toml); return a logger."""
+    """Append log messages to logs/app.log (next to config_local.toml); return a logger."""
     path = config_path(cfg, LOG_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(path, encoding="utf-8")
@@ -77,7 +77,7 @@ def merge(base, override):
 
 def load_config(path):
     """config/defaults.toml with the settings in path on top. The default
-    config.toml may be missing (all defaults); an explicitly given path may not.
+    config_local.toml may be missing (all defaults); an explicitly given path may not.
     (Same rules as app.py.)"""
     with open(DEFAULTS_FILE, "rb") as f:
         cfg = tomllib.load(f)
@@ -88,7 +88,7 @@ def load_config(path):
                 cfg = merge(cfg, tomllib.load(f))
             except tomllib.TOMLDecodeError as err:
                 raise SystemExit(f"error: {path.resolve()}: {err}") from None
-    elif path.resolve() != CONFIG_FILE:
+    elif path.resolve() != CONFIG_LOCAL_FILE:
         raise SystemExit(f"error: config file not found: {path.resolve()}")
     cfg["_config_dir"] = ROOT  # relative paths are relative to the project folder
     return cfg

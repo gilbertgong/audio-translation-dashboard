@@ -2,7 +2,7 @@
 them running while a command runs, e.g. the dashboard.
 
 Usage, from the project root:
-    python scripts/run_servers.py [--config config.toml] [COMMAND ...]
+    python scripts/run_servers.py [--config config_local.toml] [COMMAND ...]
 
 Starts each server with start = true in [api_servers], in config order, and
 waits until it answers on /health. Voices listed in [api_servers.<name>.voices]
@@ -29,7 +29,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import (CONFIG_FILE, LOG_FILE, api_servers, config_path, load_config, model_files, run_script,
+from common import (CONFIG_LOCAL_FILE, LOG_FILE, api_servers, config_path, load_config, model_files, run_script,
                     setup_logging, starts)
 
 NAME = "run_servers"
@@ -149,8 +149,8 @@ def run_command(command, log):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--config", default=CONFIG_FILE, type=Path,
-                        help="settings over config/defaults.toml (default: the project's config.toml)")
+    parser.add_argument("--config", default=CONFIG_LOCAL_FILE, type=Path,
+                        help="settings over config/defaults.toml (default: the project's config_local.toml)")
     parser.add_argument("command", nargs=argparse.REMAINDER,
                         help="command to run while the servers are up (e.g. python app.py)")
     args = parser.parse_args()

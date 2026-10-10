@@ -115,7 +115,7 @@ function stopMeter() {
 // noise level, which is tracked continuously (falling quickly, rising slowly).
 // A phrase starts at the first loud block (plus some pre-roll audio), and ends
 // after pause_ms of quiet or at max_phrase_s; it is then sent like a manual
-// recording. Settings come from [auto_split] in config.toml.
+// recording. Settings come from [auto_split] in config_local.toml.
 
 const autoSplitToggle = document.getElementById("auto-split");
 const autoSplit = {
@@ -220,7 +220,7 @@ async function sendPhrase(samples, sampleRate, reason) {
 }
 
 // Microphone input: the browser's processing options (from [audio] in
-// config.toml) and a software gain stage between the microphone and the
+// config_local.toml) and a software gain stage between the microphone and the
 // recorder, so the meter, speech detection and recordings all see the
 // adjusted level. The slider value is remembered per browser.
 

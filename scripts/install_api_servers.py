@@ -1,10 +1,10 @@
 """Download prebuilt whisper.cpp and llama.cpp binaries from GitHub releases,
-as configured in the [api_servers] section of config.toml.
+as configured in the [api_servers] section of config_local.toml.
 
 Usage, from the project root:
-    python scripts/install_api_servers.py [--dry-run] [--force] [config.toml]
+    python scripts/install_api_servers.py [--dry-run] [--force] [config_local.toml]
 
-Per server, in config.toml:
+Per server, in config_local.toml:
     start = false            skip the server entirely
     ensure_version = false   keep whatever build is installed, without contacting
                              GitHub; download only if none is installed
@@ -13,7 +13,7 @@ Per server, in config.toml:
                              release = "latest", or exactly a pinned tag)
 --force reinstalls the configured release regardless.
 
-Settings come from config/defaults.toml, with config.toml (or the given file)
+Settings come from config/defaults.toml, with config_local.toml (or the given file)
 on top. Each server is unzipped into <install_dir>/<name>/ (e.g.
 api_servers/whisper/), with the release tag written to VERSION.
 
@@ -29,7 +29,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from common import (CONFIG_FILE, USER_AGENT, api_servers, config_path, download, load_config, run_script,
+from common import (CONFIG_LOCAL_FILE, USER_AGENT, api_servers, config_path, download, load_config, run_script,
                     setup_logging, starts)
 
 NAME = "install_api_servers"
@@ -112,8 +112,8 @@ def install(name, dest, tag, urls):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("config", nargs="?", default=CONFIG_FILE, type=Path,
-                        help="settings over config/defaults.toml (default: the project's config.toml)")
+    parser.add_argument("config", nargs="?", default=CONFIG_LOCAL_FILE, type=Path,
+                        help="settings over config/defaults.toml (default: the project's config_local.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="reinstall the configured release")
     args = parser.parse_args()

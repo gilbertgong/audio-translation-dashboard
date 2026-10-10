@@ -6,4 +6,4 @@ models/*
 !models/.gitkeep
 logs/*
 !logs/.gitkeep
-/config.toml
+/config_local.toml

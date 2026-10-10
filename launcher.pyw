@@ -26,7 +26,7 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 
 ROOT = Path(__file__).resolve().parent
-CONFIG = ROOT / "config.toml"
+CONFIG_LOCAL_FILE = ROOT / "config_local.toml"
 DEFAULTS = ROOT / "config" / "defaults.toml"
 
 # Run the steps with python.exe, not the pythonw.exe running this window: with
@@ -104,9 +104,9 @@ class Launcher:
             stop_tree(self.proc)
 
     def open_dashboard(self):
-        # The port from config.toml if it sets one, else from the defaults.
+        # The port from config_local.toml if it sets one, else from the defaults.
         port = None
-        for path in (CONFIG, DEFAULTS):
+        for path in (CONFIG_LOCAL_FILE, DEFAULTS):
             if port is None and path.is_file():
                 with open(path, "rb") as f:
                     port = tomllib.load(f).get("server", {}).get("port")
