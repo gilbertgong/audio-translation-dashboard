@@ -10,11 +10,11 @@ runs the dashboard alone with sample data instead (what mock.sh does).
 Launch and Mock each stop the other first, since both use the dashboard's port.
 
 Generate config: detects the GPU's memory (nvidia-smi), suggests a recipe from
-config/recipes/, takes the two languages to translate between, previews the
-result (the languages, the recipe's fragments from config/fragments/ pasted
-together, and start = false for the servers it turns off) and saves it to
-config_generated.toml, which the next Launch uses: on top of the defaults,
-under config_local.toml.
+config/recipes/, takes the two languages to translate between (from whisper's
+list, config/whisper_languages.json), previews the result (the languages, the
+recipe's fragments from config/fragments/ pasted together, and start = false
+for the servers it turns off) and saves it to config_generated.toml, which the
+next Launch uses: on top of the defaults, under config_local.toml.
 
 Kill servers: lists this project's running processes (servers from
 api_servers/, Python running src/ scripts), e.g. strays left by an earlier
@@ -271,13 +271,17 @@ class GenerateConfigWindow:
         self.details = ttk.Label(top, text="")  # the selected recipe's VRAM and description
         self.details.pack(anchor="w", pady=(6, 0))
 
-        # The two languages to translate between; the preview follows as you type.
+        # The two languages to translate between, chosen from the ones whisper
+        # knows (config/whisper_languages.json), in its order, capitalized
+        # ("Chinese"): the dashboard's language checks need whisper's names.
         row = ttk.Frame(top)
         row.pack(fill="x", pady=(8, 0))
+        self.language_names = [name.title() for _code, name in configuration.whisper_languages()]
         self.languages = [tk.StringVar(value=value) for value in initial_languages()]
         for i, var in enumerate(self.languages, 1):
             ttk.Label(row, text=f"Language {i}:").pack(side="left", padx=(12 if i > 1 else 0, 0))
-            ttk.Entry(row, textvariable=var, width=20).pack(side="left", padx=(6, 0))
+            ttk.Combobox(row, textvariable=var, values=self.language_names, state="readonly",
+                         width=18).pack(side="left", padx=(6, 0))
             var.trace_add("write", lambda *args: self.show())
 
         self.status = ttk.Label(top, text="")
@@ -333,9 +337,13 @@ class GenerateConfigWindow:
         name = self.selected()
         self.details.configure(text=self.describe(name))
         languages = [var.get().strip() for var in self.languages]
+        known = {name.lower() for name in self.language_names}
         try:
             if not all(languages):
-                raise ValueError("enter both languages")
+                raise ValueError("choose both languages")
+            unknown = [language for language in languages if language.lower() not in known]
+            if unknown and known:  # e.g. a hand-written "Chinese-simplified" from an earlier file
+                raise ValueError(f"not a whisper language: {', '.join(unknown)}; choose one from the list")
             self.text = assemble(name, self.recipes[name], languages)
             self.status.configure(text=f"Save writes {GENERATED_FILE.name}.")
             set_enabled(self.save_button, True)

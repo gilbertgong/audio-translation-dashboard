@@ -11,6 +11,7 @@ const activityToggle = document.getElementById("activity-toggle");
 let targetSampleRate = 16000;
 let language1 = ""; // the two languages to translate between ([languages])
 let language2 = ""; // entries detected in this language are right-aligned
+let languageChecks = true; // off when a language isn't one whisper knows (see app.py)
 // Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
 let session = null;
@@ -300,6 +301,7 @@ function setMeta(row, time) {
 // Record the detected language (again, if a recheck corrects it): shown in
 // the meta line, and rows in language2 are right-aligned.
 function setLanguage(row, language) {
+  row.dataset.language = language || "";
   const meta = row.querySelector(".meta");
   meta.textContent = language ? `${row.dataset.time} · ${language}` : row.dataset.time;
   const isLang2 = !!language && language.toLowerCase() === language2.toLowerCase();
@@ -424,6 +426,16 @@ function pcmToFloat(bytes) {
   return samples;
 }
 
+// Which of the two languages a row's translation is in: the other one than
+// the row's (whisper's, or a recheck's); "" if the row's is neither. The
+// server picks [tts] voice_language1/voice_language2 by it.
+function speechTarget(row) {
+  const heard = (row.dataset.language || "").toLowerCase();
+  if (heard === language1.toLowerCase()) return "language2";
+  if (heard === language2.toLowerCase()) return "language1";
+  return "";
+}
+
 async function speakTranslation(row, btn, text) {
   stopSpeech();
   stopRecordingPlayback();
@@ -443,7 +455,7 @@ async function speakTranslation(row, btn, text) {
     const res = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, target: speechTarget(row) || undefined }),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -660,6 +672,7 @@ async function loadConfig() {
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
+    languageChecks = config.language_checks !== false;
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
@@ -1028,7 +1041,7 @@ async function processRecording(wav, note = "") {
     // whisper's own check didn't already recheck, recheck now and translate
     // the corrected text.
     const others = unexpectedLanguages(result.languages);
-    if (others.length && !rechecked) {
+    if (languageChecks && others.length && !rechecked) {
       const before = stt.text;
       stt = await recheck(row, stt, `llama read it as ${others.join(", ")}`);
       if (stt.text !== before) result = await translateRow(row, stt.text);

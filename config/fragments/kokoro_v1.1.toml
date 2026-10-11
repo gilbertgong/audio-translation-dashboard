@@ -20,8 +20,6 @@ args = ["--lib", "{server_dir}/lib", "--threads", "4"]
 kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx"
 
 [tts]
-# The dashboard speaks through this server, in this voice: one of Kokoro's 103,
-# af_maple, af_sol, bf_vale (English), zf_001...zf_099 (Chinese female),
-# zm_009...zm_100 (Chinese male); the list: GET /v1/audio/voices.
+# The dashboard speaks through this server (its voices: see [tts] and
+# [api_servers.kokoro] in config/defaults.toml).
 server = "kokoro"
-voice = "zf_001"

@@ -98,6 +98,7 @@ def load_config(path):
     tts = config["api_servers"][config["tts"]["server"]]  # the [api_servers] section of the TTS engine
     config["tts_url"] = f"http://{tts['host']}:{tts['port']}"
     config["system_prompt"] = render_prompt(config["llama_prompt"], config["languages"])
+    config["unknown_languages"] = unknown_languages(config["languages"])
     return config
 
 
@@ -178,8 +179,22 @@ def transcribe(whisper_url, wav, filename, language=None):
             else result.get("detected_language"), "confidence": confidence, "stt_raw": raw}
 
 
+def unknown_languages(languages):
+    """The [languages] values that aren't one of whisper's language names
+    (config/whisper_languages.json), e.g. "Chinese-simplified": whisper can't
+    be told them, so the language checks are off while there are any. [] if
+    the list itself is missing: without it, nothing can be judged unknown."""
+    names = {name for _code, name in configuration.whisper_languages()}
+    if not names:
+        return []
+    return [languages[key] for key in ("language1", "language2") if languages[key].lower() not in names]
+
+
 def expected_language(language):
-    """Whether whisper's language name is one of the two in [languages]."""
+    """Whether whisper's language name is one of the two in [languages]
+    (always true while the language checks are off: see unknown_languages)."""
+    if config["unknown_languages"]:
+        return True
     pair = {config["languages"][key].lower() for key in ("language1", "language2")}
     return (language or "").lower() in pair
 
@@ -283,6 +298,8 @@ def get_config(req):
         "sample_rate": config["audio"]["sample_rate"],
         "language1": languages["language1"],
         "language2": languages["language2"],
+        # The page's own check (llama's language tag) is off along with whisper's.
+        "language_checks": not config["unknown_languages"],
         "auto_split": config.get("auto_split", {}),
         "auto_play": config["tts"].get("auto_play", False),
         # Browser microphone processing, passed to getUserMedia.
@@ -363,7 +380,7 @@ def get_health(req):
 @app.get("/api/voices")
 def get_voices(req):
     """The TTS server's voices, for the test page: {"voices": [names], "default"}."""
-    default = config["tts"]["voice"]
+    default = choose_voice()
     if mock:
         return {"voices": [default], "default": default}
     url = f"{config['tts_url']}/v1/audio/voices"
@@ -379,17 +396,41 @@ def get_voices(req):
     return {"voices": [str(n) for n in names if n], "default": default}
 
 
+def choose_voice(voice=None, target=None):
+    """The voice to speak in, for text in target ("language1", "language2" or
+    None). First match: the voice given; [tts] voice_language1/voice_language2
+    for the target (for anything unusual); the TTS server's language_voices by
+    the target language's name (e.g. english = "af_maple"); [tts] voice; the
+    TTS server's default_voice. The server's voices live in its own
+    [api_servers] section, so they can't leak into another server's setup."""
+    tts = config["tts"]
+    server = config["api_servers"][tts["server"]]
+    fallback = tts.get("voice") or server.get("default_voice") or ""
+    if voice:
+        return voice
+    if target:
+        name = config["languages"][target].lower()
+        return tts.get(f"voice_{target}") or server.get("language_voices", {}).get(name) or fallback
+    return fallback
+
+
 @app.post("/api/speak")
 def post_speak(req):
-    """Body: {"text": "...", "voice": optional, default the configured one}.
-    Streams the TTS server's audio for the text unchanged: raw PCM (see
-    TTS_PCM_TYPE). If the TTS server can't be reached, a 502 JSON error instead."""
+    """Body: {"text": "...", "target": optional "language1" or "language2" (the
+    language the text is in), "voice": optional}. Streams the TTS server's
+    audio for the text unchanged: raw PCM (see TTS_PCM_TYPE). If the TTS server
+    can't be reached, a 502 JSON error instead.
+
+    The voice: see choose_voice."""
     data = req.json()
     text = data.get("text") if isinstance(data, dict) else None
     if not isinstance(text, str) or not text.strip():
         raise HTTPError(400, 'expected JSON {"text": "..."} with some text')
     text = text.strip()
-    voice = data.get("voice") or config["tts"]["voice"]
+    target = data.get("target")
+    if target not in (None, "language1", "language2"):
+        raise HTTPError(400, 'target must be "language1" or "language2"')
+    voice = choose_voice(data.get("voice"), target)
     if not isinstance(voice, str):
         raise HTTPError(400, "voice must be a string")
 
@@ -520,8 +561,12 @@ def main():
         f"Recordings: {config['audio']['temp_dir']}",
         f"Whisper:    {config['whisper_url']}",
         f"Llama:      {config['llama_url']}",
-        f"TTS:        {config['tts_url']} ({config['tts']['server']}, voice {config['tts']['voice']!r})",
+        f"TTS:        {config['tts_url']} ({config['tts']['server']}; voices: "
+        + ", ".join(f"{config['languages'][key]} {choose_voice(target=key)!r}" for key in ("language1", "language2"))
+        + f", otherwise {choose_voice()!r})",
         f"Languages:  {config['languages']['language1']} <-> {config['languages']['language2']}",
+        *([f"            WARNING: not a whisper language: {', '.join(config['unknown_languages'])}; "
+           "language checks are off (see config/whisper_languages.json)"] if config["unknown_languages"] else []),
         f"Dashboard:  http://{shown_host}:{port}/",
         f"All services started, and ready for translation.",
     ]

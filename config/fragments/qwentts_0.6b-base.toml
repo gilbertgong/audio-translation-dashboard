@@ -17,12 +17,7 @@ args = ["--lang", "auto"]
 model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-0.6b-base-Q8_0.gguf"
 codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
 
-[api_servers.qwentts.voices]
-# Cloned voices (name = WAV of one speaker, 10-30 s; no transcript needed),
-# registered by run_servers.py each time the server starts. See voices/README.md.
-beth = "voices/beth_thomas.wav"
-
 [tts]
-# The dashboard speaks through this server, in this voice (from the table above).
+# The dashboard speaks through this server (its voices: see [tts] and
+# [api_servers.qwentts] in config/defaults.toml).
 server = "qwentts"
-voice = "beth"

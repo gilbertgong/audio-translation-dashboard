@@ -100,15 +100,26 @@ enable_thinking = false
 
 [tts]
 # Which [api_servers] section speaks translations: "kokoro" (default) or
-# "qwentts". To switch, set start = true on the other one, start = false on
-# this one, and voice to one of its voices.
+# "qwentts". To switch, set start = true on the other one and start = false on
+# this one (a TTS fragment does all of that).
 server = "kokoro"
-# Kokoro: one of its 103 voices, af_maple, af_sol, bf_vale (American/British
-# English female), zf_001 ... zf_099 (Chinese female), zm_009 ... zm_100
-# (Chinese male); each speaks both languages. The full list: GET
-# /v1/audio/voices on the server. Qwen3-TTS: a name from its voices table
-# ([api_servers.qwentts.voices]), e.g. "beth".
-voice = "zf_001"
+# The voice: each server has its own defaults (default_voice, and a voice per
+# language in language_voices, in its [api_servers] section), so switching
+# servers never leaves another's voice names behind. A translation is spoken
+# in the first of these that's set:
+#   1. voice_language1 / voice_language2 here, for translations in language1
+#      or language2 of [languages]: for anything unusual (a language whisper
+#      doesn't know, a voice just for this machine);
+#   2. the server's language_voices, by the language's name;
+#   3. voice here: one voice for everything, overriding the server's default;
+#   4. the server's default_voice.
+# Kokoro's voices: af_maple, af_sol, bf_vale (American/British English
+# female), zf_001 ... zf_099 (Chinese female), zm_009 ... zm_100 (Chinese
+# male); the full list: GET /v1/audio/voices on the server. Qwen3-TTS: a name
+# from its voices table ([api_servers.qwentts.voices]), e.g. "beth_thomas".
+# voice = ""
+# voice_language1 = ""
+# voice_language2 = ""
 # Whether the page's "Automatic Translation Playback" switch starts out on:
 # each translation is spoken as soon as it's done.
 auto_play = false
@@ -215,12 +226,20 @@ script = "src/sherpa_server_win.py"
 host = "127.0.0.1"
 port = 8083
 args = ["--lib", "{server_dir}/lib", "--threads", "4"]
+# The voice used unless a better one is set (see [tts]).
+default_voice = "zf_001"
+
+[api_servers.kokoro.language_voices]
+# A native voice per language, by whisper's language name: used for
+# translations spoken in that language (see [tts] above).
+english = "af_maple"
+chinese = "zf_001"
 
 [api_servers.qwentts]
 # Qwen3-TTS, an alternative (off by default): tts-server from qwentts.cpp, with
 # voice cloning, on the GPU, as built by the public release workflow in the
 # Zyeine fork. The Vulkan build is small and runs on most GPUs without a CUDA
-# runtime. Tested with the voice "beth"; see [tts] for switching.
+# runtime. Tested with the voice "beth_thomas"; see [tts] for switching.
 start = false
 repo = "Zyeine/qwentts.cpp"
 release = "mellon-v0.1.0"
@@ -231,13 +250,15 @@ host = "127.0.0.1"
 port = 8085
 # Language detected per text (it is set for the whole server in this build).
 args = ["--lang", "auto"]
+# The voice used unless a better one is set (see [tts]); from the table below.
+default_voice = "beth_thomas"
 
 [api_servers.qwentts.voices]
 # Cloned voices, registered by src/run_servers.py every time tts-server
 # starts (it keeps them in memory only), then selected by name when speaking.
 # name = WAV file of one speaker, about 10-30 s (relative to the project
 # folder); no transcript needed. See voices/README.md.
-beth = "voices/beth_thomas.wav"
+beth_thomas = "voices/beth_thomas.wav"
 
 [api_servers.llama]
 # start, release and ensure_version: as for whisper above.

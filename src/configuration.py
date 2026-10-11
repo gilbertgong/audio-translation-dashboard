@@ -11,6 +11,7 @@ paths in settings are relative to the project folder.
 Standard library only (Python 3.11+ for tomllib).
 """
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -18,6 +19,17 @@ ROOT = Path(__file__).resolve().parent.parent  # the project folder (this file i
 DEFAULTS_FILE = ROOT / "config" / "defaults.toml"
 GENERATED_FILE = ROOT / "config_generated.toml"
 CONFIG_LOCAL_FILE = ROOT / "config_local.toml"
+WHISPER_LANGUAGES_FILE = ROOT / "config" / "whisper_languages.json"  # see whisper_languages()
+
+
+def whisper_languages():
+    """whisper's languages as [(code, name)], in whisper's order, e.g.
+    ("zh", "chinese"); [] if the file is missing or unreadable."""
+    try:
+        with open(WHISPER_LANGUAGES_FILE, encoding="utf-8") as f:
+            return [(entry["code"], entry["name"]) for entry in json.load(f)["languages"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
 
 
 def merge(base, override):
