@@ -4,7 +4,6 @@
 // the left, its activity (timings first, then details) on the right.
 
 const recordBtn = document.getElementById("record-btn");
-const statusEl = document.getElementById("status");
 const windowEl = document.getElementById("translation-window");
 const activityToggle = document.getElementById("activity-toggle");
 
@@ -16,25 +15,47 @@ let languageChecks = true; // off when a language isn't one whisper knows (see a
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
 let session = null;
 let capture = null; // a running audio capture (see Capture audio, below)
-let pending = 0; // recordings still being processed
+const pending = { mic: 0, capture: 0 }; // each source's phrases still being processed
 
-function setStatus(text) {
-  statusEl.textContent = text;
+// The status row: three independent, unlabeled indicators (kept short; the
+// tooltip names each and spells it out). Capture and Mic: each source's own
+// session (off, calibrating = measuring the background, listening, speech; or
+// for a manual recording, recording) and how many of its phrases are still
+// being transcribed and translated. Playback: automatic playback's queue, which
+// waits for both to be quiet (see playNextSpeech), or what's playing.
+function setIndicator(key, text, state = "", tip = text) {
+  const item = document.getElementById(`status-${key}`);
+  item.textContent = text;
+  item.title = `${item.dataset.name}: ${tip}`;
+  item.dataset.state = state;
 }
 
-// Status line when it isn't simply "Recording...": idle/processing, or the
-// auto-split listening state.
-function updateStatus() {
-  const active = session || capture?.session; // the microphone first, else a capture
-  if (active?.splitter) {
-    const sp = active.splitter;
-    const state = sp.calibrating ? "Listening (measuring background)..."
-      : sp.speaking ? "Speaking..." : "Listening...";
-    const both = session && capture ? " · capturing too" : "";
-    setStatus(pending ? `${state}${both} · processing ${pending}` : state + both);
-  } else if (!active) {
-    setStatus(pending ? `Processing (${pending})...` : "Idle");
+function sourceStatus(recording, key) {
+  let text = "off";
+  let state = "";
+  let tip;
+  const sp = recording?.splitter;
+  if (recording && !sp) [text, state] = ["recording", "active"];
+  else if (key === "capture" && capture?.selected === null) [text, state, tip] = ["no sound yet", "waiting", "waiting for sound to choose a channel"];
+  else if (sp?.calibrating) [text, state, tip] = ["calibrating", "waiting", "measuring the background noise"];
+  else if (sp) [text, state] = sp.speaking ? ["speech", "active"] : ["listening", ""];
+  tip ??= text;
+  if (pending[key]) {
+    text += ` · ${pending[key]}…`;
+    tip += ` · ${pending[key]} being translated`;
   }
+  setIndicator(key, text, state, tip);
+}
+
+function updateStatus() {
+  sourceStatus(capture?.session, "capture");
+  sourceStatus(session, "mic");
+  const waiting = speechQueue.length;
+  if (speech) setIndicator("playback", speech.item ? "speaking" : "speaking (▶)", "active");
+  else if (playingBtn) setIndicator("playback", "playing", "active", "playing a recording");
+  else if (waiting) setIndicator("playback", `${waiting} queued`, "waiting", `${waiting} waiting for a pause in the speech`);
+  else setIndicator("playback", ...(autoPlayToggle.checked
+    ? ["auto", "", "automatic playback, idle"] : ["▶ only", "", "plays only with ▶ (automatic playback is off)"]));
 }
 
 // Microphone level meter, running while recording. Audio blocks from the
@@ -139,10 +160,12 @@ const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-phrase
 
 // label: where the audio comes from, noted with each phrase ("continuous
 // mode" for the microphone, "captured audio").
-function createSplitter(sampleRate, label = "continuous mode") {
+// source: "mic" or "capture", for the status row.
+function createSplitter(sampleRate, label = "continuous mode", source = "mic") {
   return {
     sampleRate,
     label,
+    source,
     elapsedMs: 0,
     calibrating: true,
     noiseDb: null, // background level estimate
@@ -222,13 +245,13 @@ function endPhrase(sp, reason) {
   updateStatus();
 
   if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
-  sendPhrase(samples, sp.sampleRate, `${sp.label} (${reason})`);
+  sendPhrase(samples, sp.sampleRate, `${sp.label} (${reason})`, sp.source);
 }
 
-async function sendPhrase(samples, sampleRate, note) {
+async function sendPhrase(samples, sampleRate, note, source) {
   try {
     const resampled = await resample(samples, sampleRate, targetSampleRate);
-    processRecording(encodeWav(resampled, targetSampleRate), note);
+    processRecording(encodeWav(resampled, targetSampleRate), note, source);
   } catch (err) {
     console.error(err);
     addNote(`Error: ${err.message}`, true);
@@ -369,6 +392,7 @@ function stopRecordingPlayback() {
     playingBtn.textContent = "▶";
     playingBtn.title = "Play this recording";
     playingBtn = null;
+    updateStatus();
   }
 }
 
@@ -399,6 +423,7 @@ function addPlayButton(row, wav) {
       stopPlayback();
     });
     playingBtn = btn;
+    updateStatus();
     btn.textContent = "■";
     btn.title = "Stop playback";
   });
@@ -430,6 +455,7 @@ function stopSpeech() {
   controller.abort();
   ctx.close();
   setSpeakButton(btn, "idle");
+  updateStatus();
 }
 
 // Convert 16-bit little-endian PCM bytes to samples (-1..1).
@@ -464,6 +490,7 @@ async function speakTranslation(row, btn, text, item = null) {
   const controller = new AbortController();
   const current = { ctx, controller, btn, item };
   speech = current;
+  updateStatus();
   setSpeakButton(btn, "waiting");
   setTiming(row, "tts", null);
   const start = performance.now();
@@ -539,6 +566,7 @@ async function speakTranslation(row, btn, text, item = null) {
 // the oldest is dropped. Stopping playback (or starting a recording) drops the
 // waiting ones. The ▶ buttons play at once.
 const autoPlayToggle = document.getElementById("auto-play");
+autoPlayToggle.addEventListener("change", () => updateStatus());
 const speechQueue = []; // [{ row, btn, text }]
 let turnPauseMs = 2000;
 let maxBacklog = 3;
@@ -564,6 +592,7 @@ function queueSpeech(row, btn, text) {
     addDetail(dropped.row, "Not spoken automatically: too many waiting");
   }
   playNextSpeech();
+  updateStatus();
 }
 
 // Speak the next waiting translation, once nothing is playing and the
@@ -733,6 +762,7 @@ async function loadConfig() {
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;
     maxBacklog = config.max_backlog ?? maxBacklog;
+    updateStatus(); // the playback indicator depends on the switch
     if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
@@ -1064,7 +1094,8 @@ async function recheck(row, stt, reason) {
 
 // Transcribe, then translate, in the background so the next recording can start.
 // note: optional detail for the activity cell (e.g. how an auto-split phrase ended).
-async function processRecording(wav, note = "") {
+// source: "mic" or "capture" (for the status row's counts).
+async function processRecording(wav, note = "", source = "mic") {
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
   setMeta(row, new Date().toLocaleTimeString());
@@ -1073,7 +1104,7 @@ async function processRecording(wav, note = "") {
   addPlayButton(row, wav);
   setTiming(row, "stt", null);
   if (note) addInfo(row, `Split by: ${note}`);
-  pending++;
+  pending[source]++;
   updateStatus();
   try {
     let stt;
@@ -1117,7 +1148,7 @@ async function processRecording(wav, note = "") {
   } catch (err) {
     console.error(err);
   } finally {
-    pending--;
+    pending[source]--;
     updateStatus();
   }
 }
@@ -1132,8 +1163,7 @@ recordBtn.addEventListener("click", async () => {
       await startRecording(auto);
       recordBtn.textContent = auto ? "Stop Listening" : "Stop Recording";
       recordBtn.classList.add("recording");
-      if (auto) updateStatus();
-      else setStatus("Recording...");
+      updateStatus();
     } else {
       recordBtn.textContent = "Start Recording";
       recordBtn.classList.remove("recording");
@@ -1145,7 +1175,7 @@ recordBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     addNote(`Error: ${err.message}`, true);
-    setStatus("Error");
+    setIndicator("mic", "error", "error");
     stopMeter();
     if (session) {
       session.stream.getTracks().forEach((t) => t.stop());
@@ -1284,7 +1314,7 @@ async function startCapture() {
       return { analyser, gate, ...makeChannelRow(name, i) };
     });
     const node = new AudioWorkletNode(ctx, "recorder");
-    const splitter = createSplitter(ctx.sampleRate, "captured audio");
+    const splitter = createSplitter(ctx.sampleRate, "captured audio", "capture");
     // Its level goes to the phrase splitting only: the meter by Start Recording is
     // the microphone's (the sidebar has the capture's, per channel).
     node.port.onmessage = (e) => splitterBlock(splitter, e.data, blockLevel(e.data).rms);

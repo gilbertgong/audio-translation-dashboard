@@ -60,7 +60,15 @@
          level). Bottom row: button, mode switch, gain, level. -->
     <div class="controls">
       <span class="shortcut-hint"><kbd>Space</kbd> to start/stop</span>
-      <span id="status">Idle</span>
+      <!-- Three independent indicators, left to right (filled in by app.js):
+           the capture and the microphone (each its own session), and
+           playback, which waits for both to be quiet. Unlabeled: the position
+           says which is which (and the tooltip). -->
+      <div id="status" class="statuses" aria-live="polite">
+        <span class="status-item" id="status-capture" data-name="Capture">off</span>
+        <span class="status-item" id="status-mic" data-name="Mic">off</span>
+        <span class="status-item" id="status-playback" data-name="Playback">off</span>
+      </div>
 
       <button id="record-btn" type="button" title="Start/stop recording (Space)">Start Recording</button>
       <!-- "Continuous Audio Mode" in the UI; called auto-split in the code and config. -->

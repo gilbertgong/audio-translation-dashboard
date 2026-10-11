@@ -376,7 +376,7 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 /* Controls */
 
 /* Two rows on a shared grid so each indicator sits above its control:
-     row 1:  Space hint |        |      | status
+     row 1:  Space hint |        |      | capture, mic, playback statuses
      row 2:  button     | switch | gain | level (meter bar + dB readout)
      row 3:             | switch |      |
    The gain column takes the leftover space (1fr), which pushes the last
@@ -409,10 +409,9 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 .controls .shortcut-hint { grid-row: 1; grid-column: 1; justify-self: center; }
 .controls #status {
   grid-row: 1;
-  grid-column: 4;
-  justify-self: stretch;
-  padding: 0 14px;
-  text-align: center;
+  grid-column: 2 / 5; /* room to grow leftward when the text is long */
+  justify-self: end;
+  padding-right: 14px; /* ends where the level does */
 }
 /* Rows 2-3: the two switches stacked (left-aligned, so their tracks line
    up); the other controls span both rows, centered vertically. */
@@ -446,7 +445,16 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 #record-btn.recording { background: var(--recording); }
 #record-btn:disabled { opacity: 0.6; cursor: default; }
 
-#status { font-size: 0.8rem; color: var(--muted); }
+/* The status row above the level: capture (left), mic (middle), playback
+   (right), unlabeled, with light dividers, each colored by what it's doing. */
+.statuses { display: flex; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.status-item { padding: 0 8px; }
+.status-item:first-child { padding-left: 0; }
+.status-item:last-child { padding-right: 0; }
+.status-item + .status-item { border-left: 1px solid var(--border); }
+.status-item[data-state="active"] { color: #16a34a; }
+.status-item[data-state="waiting"] { color: #d97706; }
+.status-item[data-state="error"] { color: var(--recording); }
 
 .shortcut-hint {
   font-size: 0.8rem;
