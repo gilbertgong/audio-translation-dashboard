@@ -11,6 +11,8 @@
   --activity-full-width: 220px; /* the Activity column when shown */
   --activity-width: var(--activity-full-width); /* current width (narrow when collapsed) */
   --header-height: 50px;
+  --header-btn-bg: #e6e8ec; /* header link buttons: just off the page background */
+  --header-btn-hover: #dcdfe4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +26,8 @@
     --border: #33373d;
     --accent: #3b82f6;
     --recording: #ef4444;
+    --header-btn-bg: #24272c;
+    --header-btn-hover: #2c3036;
   }
 }
 
@@ -46,6 +50,20 @@ header {
 }
 
 h1 { font-size: 1.1rem; margin: 0; }
+
+/* Link to the other page (dashboard <-> component tests), at the right:
+   shaped like the record button, but a quiet gray. */
+.header-link {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--header-btn-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.header-link:hover { background: var(--header-btn-hover); }
 
 .mock-badge {
   font-size: 0.7rem;

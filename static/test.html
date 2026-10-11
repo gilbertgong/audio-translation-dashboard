@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Component Tests</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="test.css">
+</head>
+<body>
+  <header>
+    <h1>Component Tests</h1>
+    <a class="header-link" href="/">Dashboard</a>
+  </header>
+
+  <!-- Each panel tests one stage through the dashboard's own endpoints, so a
+       result here is what the dashboard would get. -->
+  <main class="tests">
+    <section class="test" id="stt">
+      <h2>Transcribe <span class="via">whisper · /api/recordings</span></h2>
+      <div class="row">
+        <button type="button" id="stt-record">Record</button>
+        <label class="file-btn">Upload audio file…<input type="file" id="stt-file" accept="audio/*"></label>
+        <span class="status" id="stt-status"></span>
+      </div>
+      <div class="result" id="stt-result" hidden>
+        <div class="text" id="stt-text"></div>
+        <div class="meta" id="stt-meta"></div>
+        <div class="row">
+          <button type="button" id="stt-play">▶ Play what was sent</button>
+          <button type="button" id="stt-to-llm">Translate this ↓</button>
+        </div>
+        <details><summary>Raw response</summary><pre id="stt-raw"></pre></details>
+      </div>
+    </section>
+
+    <section class="test" id="llm">
+      <h2>Translate <span class="via">llama · /api/translate</span></h2>
+      <textarea id="llm-input" rows="3" placeholder="Text in either language"></textarea>
+      <div class="row">
+        <button type="button" id="llm-go">Translate</button>
+        <span class="samples" data-target="llm-input"></span>
+        <span class="status" id="llm-status"></span>
+      </div>
+      <div class="result" id="llm-result" hidden>
+        <div class="text" id="llm-text"></div>
+        <div class="meta" id="llm-meta"></div>
+        <div class="row">
+          <button type="button" id="llm-to-tts">Speak this ↓</button>
+        </div>
+        <details><summary>Raw request and streamed response</summary><pre id="llm-raw"></pre></details>
+      </div>
+    </section>
+
+    <section class="test" id="tts">
+      <h2>Speak <span class="via">TTS server · /api/speak</span></h2>
+      <textarea id="tts-input" rows="3" placeholder="Text to speak"></textarea>
+      <div class="row">
+        <label>Voice <select id="tts-voice"></select></label>
+        <button type="button" id="tts-go">Speak</button>
+        <span class="samples" data-target="tts-input"></span>
+        <span class="status" id="tts-status"></span>
+      </div>
+      <div class="result" id="tts-result" hidden>
+        <div class="meta" id="tts-meta"></div>
+        <div class="row">
+          <button type="button" id="tts-replay">▶ Play again</button>
+          <a id="tts-download" download="speech.wav">Download WAV</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="test.js"></script>
+</body>
+</html>

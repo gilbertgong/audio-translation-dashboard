@@ -335,21 +335,42 @@ def post_translate(req):
     return Stream(relay_translation(text, url, body, resp, start), "text/event-stream")
 
 
+@app.get("/api/voices")
+def get_voices(req):
+    """The TTS server's voices, for the test page: {"voices": [names], "default"}."""
+    default = config["tts"]["voice"]
+    if mock:
+        return {"voices": [default], "default": default}
+    url = f"{config['tts_url']}/v1/audio/voices"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            result = json.load(resp)
+    except (OSError, ValueError) as err:
+        raise HTTPError(502, f"could not list voices: {err} (is the TTS server running at "
+                             f"{config['tts_url']}?)") from err
+    # Kokoro's server lists names; other servers may list objects with a name.
+    voices = result.get("voices", result) if isinstance(result, dict) else result
+    names = [v.get("name") if isinstance(v, dict) else v for v in voices or []]
+    return {"voices": [str(n) for n in names if n], "default": default}
+
+
 @app.post("/api/speak")
 def post_speak(req):
-    """Body: {"text": "..."}. Streams the TTS server's audio for the text, in the
-    configured voice, unchanged: raw PCM (see TTS_PCM_TYPE). If the TTS server
-    can't be reached, a 502 JSON error instead."""
+    """Body: {"text": "...", "voice": optional, default the configured one}.
+    Streams the TTS server's audio for the text unchanged: raw PCM (see
+    TTS_PCM_TYPE). If the TTS server can't be reached, a 502 JSON error instead."""
     data = req.json()
     text = data.get("text") if isinstance(data, dict) else None
     if not isinstance(text, str) or not text.strip():
         raise HTTPError(400, 'expected JSON {"text": "..."} with some text')
     text = text.strip()
+    voice = data.get("voice") or config["tts"]["voice"]
+    if not isinstance(voice, str):
+        raise HTTPError(400, "voice must be a string")
 
     if mock:
         return Stream(mock_speech_stream(text), TTS_PCM_TYPE)
 
-    voice = config["tts"]["voice"]
     body = {"input": text, "voice": voice, "response_format": "pcm"}
     start = time.monotonic()
     try:
@@ -357,7 +378,9 @@ def post_speak(req):
         resp = open_server(f"{config['tts_url']}/v1/audio/speech", json.dumps(body).encode("utf-8"),
                            "application/json", TTS_TIMEOUT)
     except (OSError, RuntimeError) as err:
-        error = f"speech failed: {err} (is the TTS server running at {config['tts_url']}?)"
+        # RuntimeError: the server answered with an error; OSError: it couldn't be reached.
+        hint = "" if isinstance(err, RuntimeError) else f" (is the TTS server running at {config['tts_url']}?)"
+        error = f"speech failed: {err}{hint}"
         log.warning("%s; text: %r", error, text)
         raise HTTPError(502, error) from err
 

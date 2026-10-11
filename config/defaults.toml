@@ -17,6 +17,11 @@
 host = "127.0.0.1"
 port = 8080
 
+[launcher]
+# launcher.pyw: show a "Mock" button, which runs the dashboard alone with
+# sample data (app.py --mock) for working on the page without the servers.
+show_mock_button = false
+
 [audio]
 # Where recorded WAV files are written.
 temp_dir = "tmp/audio"

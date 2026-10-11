@@ -1,0 +1,78 @@
+/* Component test page (test.html), on top of style.css. */
+
+main.tests {
+  height: auto; /* the dashboard's main fills the window; this page scrolls */
+  max-width: 800px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.test {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.test h2 { margin: 0 0 10px; font-size: 1rem; }
+.test h2 .via { margin-left: 8px; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+
+.test .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.test button, .file-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.test button:hover, .file-btn:hover { border-color: var(--accent); }
+.test button.active { border-color: var(--recording); color: var(--recording); }
+.test button:disabled { opacity: 0.5; cursor: default; }
+.file-btn input { display: none; }
+
+.test textarea, .test select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.test textarea { width: 100%; padding: 6px 8px; resize: vertical; }
+.test label { font-size: 0.9rem; }
+
+.samples button { font-size: 0.8rem; padding: 2px 8px; color: var(--muted); }
+
+.status { font-size: 0.85rem; color: var(--muted); }
+.status.error { color: var(--recording); }
+
+.result { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.result .text { font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
+.result .meta { margin-top: 4px; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.result details { margin-top: 8px; font-size: 0.85rem; }
+.result summary { cursor: pointer; color: var(--muted); }
+
+.result pre {
+  max-height: 300px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  font-size: 0.75rem;
+  background: var(--bg);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#tts-download { font-size: 0.85rem; color: var(--accent); }

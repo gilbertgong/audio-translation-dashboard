@@ -458,8 +458,7 @@ def speech(req):
     voice = str(data.get("voice", "0"))
     sid = tts.speaker_id(voice)
     if sid is None:
-        raise HTTPError(400, f"unknown voice {voice!r}: see GET /v1/audio/voices",
-                        voices=tts.voices)
+        raise HTTPError(400, f"unknown voice {voice!r}: see GET /v1/audio/voices")
     try:
         speed = float(data.get("speed", 1.0))
     except (TypeError, ValueError):

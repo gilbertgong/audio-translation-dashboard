@@ -2,8 +2,12 @@
 """Audio Translation Dashboard - launcher.
 
 A window that does what launch.sh does: installs the servers and downloads
-their models if needed, then starts the servers and the dashboard, showing their output. Stop, or closing the window,
-stops everything.
+their models if needed, then starts the servers and the dashboard, showing
+their output. Stop, or closing the window, stops everything.
+
+With [launcher] show_mock_button = true in config_local.toml, a Mock button
+runs the dashboard alone with sample data instead (what mock.sh does).
+Launch and Mock each stop the other first, since both use the dashboard's port.
 
 Double-click to run (.pyw: no console window), or: python launcher.pyw
 
@@ -35,12 +39,18 @@ _exe = Path(sys.executable)
 _console_exe = _exe.with_name("python.exe")
 PYTHON = str(_console_exe if _exe.name.lower() == "pythonw.exe" and _console_exe.is_file() else _exe)
 
-# The launch.sh steps, in order.
-STEPS = [
-    ("Installing servers", [PYTHON, "scripts/install_api_servers.py"]),
-    ("Downloading models", [PYTHON, "scripts/download_models.py"]),
-    ("Running", [PYTHON, "scripts/run_servers.py", PYTHON, "app.py"]),
-]
+# What each button runs: a list of steps, in order. "launch": the launch.sh
+# steps; "mock": the dashboard alone with sample data (mock.sh).
+MODES = {
+    "launch": [
+        ("Installing servers", [PYTHON, "scripts/install_api_servers.py"]),
+        ("Downloading models", [PYTHON, "scripts/download_models.py"]),
+        ("Running", [PYTHON, "scripts/run_servers.py", PYTHON, "app.py"]),
+    ],
+    "mock": [
+        ("Running mock", [PYTHON, "app.py", "--mock"]),
+    ],
+}
 
 if os.name == "nt":
     # Hidden console; the servers inherit it.
@@ -48,6 +58,17 @@ if os.name == "nt":
 else:
     # Own process group, so Stop can signal the whole tree.
     CHILD_OPTIONS = {"start_new_session": True}
+
+
+def setting(section, key, default=None):
+    """A setting from config_local.toml if it sets it, else from the defaults."""
+    for path in (CONFIG_LOCAL_FILE, DEFAULTS):
+        if path.is_file():
+            with open(path, "rb") as f:
+                value = tomllib.load(f).get(section, {}).get(key)
+            if value is not None:
+                return value
+    return default
 
 
 def stop_tree(proc):
@@ -63,7 +84,8 @@ class Launcher:
     def __init__(self, root):
         self.root = root
         self.proc = None  # the step running now
-        self.running = False
+        self.mode = None  # what's running: "launch", "mock" or None
+        self.next_mode = None  # to start once the current run has stopped
         self.stopping = False
         self.output = queue.Queue()  # (kind, value) from the worker thread to the window
         self.carriage_return = False  # a "\r" was written: the next text replaces the line
@@ -71,13 +93,16 @@ class Launcher:
         root.title("Audio Translation Dashboard - Launcher")
         bar = ttk.Frame(root, padding=8)
         bar.pack(fill="x")
-        self.launch_button = ttk.Button(bar, text="Launch", command=self.launch)
+        self.launch_button = ttk.Button(bar, text="Launch", command=lambda: self.start("launch"))
         self.launch_button.pack(side="left")
         self.stop_button = ttk.Button(bar, text="Stop", command=self.stop, state="disabled")
         self.stop_button.pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="Open dashboard", command=self.open_dashboard).pack(side="left", padx=(6, 0))
         self.status = ttk.Label(bar, text="Ready")
         self.status.pack(side="left", padx=(12, 0))
+        self.mock_button = ttk.Button(bar, text="Mock", command=lambda: self.start("mock"))
+        if setting("launcher", "show_mock_button", False):
+            self.mock_button.pack(side="right")
 
         # Sized in characters, like a terminal; the window fits around it.
         self.log = ScrolledText(root, font=("Consolas", 10), width=120, height=30, wrap="word",
@@ -89,40 +114,47 @@ class Launcher:
 
     # --- buttons
 
-    def launch(self):
-        self.running = True
+    def start(self, mode):
+        """Run mode's steps; if something else is running, stop it first."""
+        if self.mode:
+            self.next_mode = mode  # started when the current run reports done
+            self.stop()
+            return
+        self.mode = mode
         self.stopping = False
-        self.launch_button.configure(state="disabled")
-        self.stop_button.configure(state="normal")
-        threading.Thread(target=self.run_steps, daemon=True).start()
+        self.update_buttons()
+        threading.Thread(target=self.run_steps, args=(MODES[mode],), daemon=True).start()
 
     def stop(self):
         self.stopping = True
-        self.stop_button.configure(state="disabled")
+        self.update_buttons()
         self.status.configure(text="Stopping...")
         if self.proc and self.proc.poll() is None:
             stop_tree(self.proc)
 
+    def update_buttons(self):
+        """Launch and Mock are available unless that mode is already running
+        (or a switch is under way); Stop while anything runs."""
+        busy = self.stopping and self.mode is not None
+        self.launch_button.configure(state="disabled" if busy or self.mode == "launch" else "normal")
+        self.mock_button.configure(state="disabled" if busy or self.mode == "mock" else "normal")
+        self.stop_button.configure(state="normal" if self.mode and not busy else "disabled")
+
     def open_dashboard(self):
-        # The port from config_local.toml if it sets one, else from the defaults.
-        port = None
-        for path in (CONFIG_LOCAL_FILE, DEFAULTS):
-            if port is None and path.is_file():
-                with open(path, "rb") as f:
-                    port = tomllib.load(f).get("server", {}).get("port")
-        webbrowser.open(f"http://localhost:{port}/")
+        webbrowser.open(f"http://localhost:{setting('server', 'port', 8080)}/")
 
     def close(self):
-        if self.running:
+        self.next_mode = None
+        if self.mode:
             self.stop()
         self.root.destroy()
 
     # --- worker thread: runs the steps, passing their output to the window
 
-    def run_steps(self):
+    def run_steps(self, steps):
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         result = "Dashboard exited"
-        for title, argv in STEPS:
+        for title, argv in steps:
             if self.stopping:
                 break
             self.output.put(("status", title + "..."))
@@ -155,9 +187,12 @@ class Launcher:
                 elif kind == "done":
                     self.write(f"== {value}\n\n")
                     self.status.configure(text=value)
-                    self.running = False
-                    self.launch_button.configure(state="normal")
-                    self.stop_button.configure(state="disabled")
+                    self.mode = None
+                    self.stopping = False
+                    self.update_buttons()
+                    if self.next_mode:  # Launch or Mock was pressed while the other ran
+                        mode, self.next_mode = self.next_mode, None
+                        self.start(mode)
         except queue.Empty:
             pass
         self.root.after(100, self.poll)
