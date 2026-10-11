@@ -81,9 +81,16 @@ temperature = 0.2
 enable_thinking = false
 
 [tts]
-# The voice translations are spoken in: a name from [api_servers.tts.voices]
-# (a cloned voice), or a preset speaker if the TTS model is a "customvoice" one.
-voice = "beth"
+# Which [api_servers] section speaks translations: "kokoro" (default) or
+# "qwentts". To switch, set start = true on the other one, start = false on
+# this one, and voice to one of its voices.
+server = "kokoro"
+# Kokoro: one of its 103 voices, af_maple, af_sol, bf_vale (American/British
+# English female), zf_001 ... zf_099 (Chinese female), zm_009 ... zm_100
+# (Chinese male); each speaks both languages. The full list: GET
+# /v1/audio/voices on the server. Qwen3-TTS: a name from its voices table
+# ([api_servers.qwentts.voices]), e.g. "beth".
+voice = "zf_001"
 # Whether the page's "Automatic Translation Playback" switch starts out on:
 # each translation is spoken as soon as it's done.
 auto_play = false
@@ -112,12 +119,22 @@ llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 # whisper = "large-v3-turbo-q5_0"
 # llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
 
-# Text-to-speech: Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices
-# (see voices/), about 4GB of GPU memory. Two files: the talker and its codec,
-# passed to tts-server as --model and --codec (the keys here are the flag names).
-# Smaller: qwen-talker-0.6b-base-Q8_0.gguf (about 3GB). Preset voices (serena,
-# vivian, ryan, ...) instead of cloning: a "customvoice" talker.
-[models.tts]
+# Text-to-speech, one entry per engine in [api_servers] (only the started
+# one's model is downloaded). Keys are the server's flag names (kokoro -> --kokoro).
+#
+# Kokoro v1.1 (Chinese + English, 82M parameters): runs on the CPU with no GPU
+# memory, about 3x real time on one thread. The archive is unpacked into
+# models/kokoro/ and the file after # is passed. Use this fp32 model, not the
+# int8 one: int8 is smaller but about half as fast (see sherpa_server_win.py).
+[models.kokoro]
+kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx"
+
+# Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices (see voices/),
+# about 4GB of GPU memory. Two files: the talker and its codec, passed to
+# tts-server as --model and --codec. Smaller: qwen-talker-0.6b-base-Q8_0.gguf
+# (about 3GB). Preset voices (serena, vivian, ryan, ...) instead of cloning: a
+# "customvoice" talker.
+[models.qwentts]
 model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf"
 codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
 
@@ -151,24 +168,44 @@ host = "127.0.0.1"
 port = 8081
 args = ["--language", "auto"]
 
-[api_servers.tts]
-# Text-to-speech: tts-server from qwentts.cpp (Qwen3-TTS), as built by the public
-# release workflow in the Zyeine fork. The Vulkan build is small and runs on most
-# GPUs without a CUDA runtime. The voice used is set in [tts].
-# Servers start in the order listed here; tts comes before llama because
-# llama-server sizes itself to the GPU memory left over.
+# Text-to-speech engines: one is started and used, chosen by [tts] server.
+# They start before llama because llama-server sizes itself to the GPU memory
+# left over (servers start in the order listed here).
+
+[api_servers.kokoro]
+# Kokoro (default), served by this project's sherpa_server_win.py: a script,
+# run with the same Python, that loads the sherpa-onnx library installed here
+# (CPU build, Windows x64). The release is pinned: sherpa_server_win.py mirrors
+# the C structures of exactly this version. {server_dir} in args is replaced by
+# the install folder (api_servers/kokoro). --threads: CPU threads (Kokoro: about
+# 3x real time on 1, 8x on 8).
 start = true
+repo = "k2-fsa/sherpa-onnx"
+release = "v1.13.8"
+ensure_version = false
+assets = ["sherpa-onnx-v*-win-x64-shared-MT-Release.tar.bz2"]
+script = "sherpa_server_win.py"
+host = "127.0.0.1"
+port = 8083
+args = ["--lib", "{server_dir}/lib", "--threads", "4"]
+
+[api_servers.qwentts]
+# Qwen3-TTS, an alternative (off by default): tts-server from qwentts.cpp, with
+# voice cloning, on the GPU, as built by the public release workflow in the
+# Zyeine fork. The Vulkan build is small and runs on most GPUs without a CUDA
+# runtime. Tested with the voice "beth"; see [tts] for switching.
+start = false
 repo = "Zyeine/qwentts.cpp"
 release = "mellon-v0.1.0"
 ensure_version = false
 assets = ["mellon-voice-engine-windows-vulkan.zip"]
 executable = "tts-server"
 host = "127.0.0.1"
-port = 8083
+port = 8085
 # Language detected per text (it is set for the whole server in this build).
 args = ["--lang", "auto"]
 
-[api_servers.tts.voices]
+[api_servers.qwentts.voices]
 # Cloned voices, registered by scripts/run_servers.py every time tts-server
 # starts (it keeps them in memory only), then selected by name when speaking.
 # name = WAV file of one speaker, about 10-30 s (relative to the project

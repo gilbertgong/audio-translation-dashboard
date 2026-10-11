@@ -1,5 +1,5 @@
-"""Download prebuilt whisper.cpp and llama.cpp binaries from GitHub releases,
-as configured in the [api_servers] section of config_local.toml.
+"""Download prebuilt server binaries (whisper.cpp, llama.cpp, sherpa-onnx) from
+GitHub releases, as configured in the [api_servers] section of the config.
 
 Usage, from the project root:
     python scripts/install_api_servers.py [--dry-run] [--force] [config_local.toml]
@@ -7,15 +7,16 @@ Usage, from the project root:
 Per server, in config_local.toml:
     start = false            skip the server entirely
     ensure_version = false   keep whatever build is installed, without contacting
-                             GitHub; download only if none is installed
+                             GitHub; download only if none is installed, or if
+                             release is pinned to a different tag
     ensure_version = true    check GitHub on every run and make sure the
                              configured release is installed (the newest for
                              release = "latest", or exactly a pinned tag)
 --force reinstalls the configured release regardless.
 
 Settings come from config/defaults.toml, with config_local.toml (or the given file)
-on top. Each server is unzipped into <install_dir>/<name>/ (e.g.
-api_servers/whisper/), with the release tag written to VERSION.
+on top. Each server is unpacked (.zip or .tar.*) into <install_dir>/<name>/
+(e.g. api_servers/whisper/), with the release tag written to VERSION.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -26,11 +27,10 @@ import json
 import logging
 import shutil
 import urllib.request
-import zipfile
 from pathlib import Path
 
 from common import (CONFIG_LOCAL_FILE, USER_AGENT, api_servers, config_path, download, load_config, run_script,
-                    setup_logging, starts)
+                    setup_logging, starts, unpack)
 
 NAME = "install_api_servers"
 log = logging.getLogger(NAME)
@@ -73,7 +73,7 @@ def find_release(repo, release, patterns):
 
 
 def install(name, dest, tag, urls):
-    # Download and unzip into a staging directory, then swap it into place,
+    # Download and unpack into a staging directory, then swap it into place,
     # so a failed download never leaves a half-installed server behind.
     staging = dest.with_name(dest.name + ".new")
     shutil.rmtree(staging, ignore_errors=True)
@@ -85,13 +85,12 @@ def install(name, dest, tag, urls):
         print(f"   downloading {filename}")
         try:
             download(url, archive)
-            with zipfile.ZipFile(archive) as zf:
-                zf.extractall(staging)
+            unpack(archive, staging)
         finally:
             archive.unlink(missing_ok=True)
             archive.with_name(archive.name + ".part").unlink(missing_ok=True)
 
-    # Some zips wrap everything in one top-level folder (e.g. Release/); flatten it.
+    # Some archives wrap everything in one top-level folder (e.g. Release/); flatten it.
     entries = list(staging.iterdir())
     if len(entries) == 1 and entries[0].is_dir():
         inner = staging.with_name(staging.name + ".inner")
@@ -133,7 +132,10 @@ def main():
         version_file = dest / "VERSION"
         installed = version_file.read_text().strip() if version_file.is_file() else None
 
-        if installed and not server.get("ensure_version", False) and not args.force:
+        # A pinned release that differs from the installed one (e.g. after switching
+        # this server to another project) is installed even with ensure_version = false.
+        pinned_elsewhere = release != "latest" and installed != release
+        if installed and not server.get("ensure_version", False) and not args.force and not pinned_elsewhere:
             print(f"== {name}: {installed} (installed; ensure_version = false)")
             log.info("%s %s installed; not checking for a newer release", name, installed)
             continue

@@ -7,10 +7,12 @@ if sys.version_info < (3, 11):  # before importing tomllib, which needs 3.11
 
 import logging
 import shutil
+import tarfile
 import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
 
 USER_AGENT = "audio-translation-dashboard-scripts"
@@ -124,6 +126,11 @@ def model_names(cfg):
     return [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, (str, dict))]
 
 
+def model_dir(cfg, name):
+    """Where a [models] entry's files go: <models.dir>/<name>/."""
+    return config_path(cfg, cfg["models"].get("dir", "models")) / name
+
+
 def model_files(cfg, name):
     """The files of a [models] entry, as [(flag, url, local path)].
 
@@ -131,15 +138,33 @@ def model_files(cfg, name):
     its server as -m; or a table of URLs keyed by the server's flag for each
     file, e.g. {model = ..., codec = ...} -> --model and --codec. Files are
     saved to <models.dir>/<name>/<file name from URL>.
+
+    A URL to an archive (.zip, .tar.bz2, ...) names the file to use inside it
+    after a #, e.g. ".../kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx":
+    the archive is unpacked into <models.dir>/<name>/ and that file is passed.
     """
-    models = cfg["models"]
-    entry = models[name]
-    folder = config_path(cfg, models.get("dir", "models")) / name
+    entry = cfg["models"][name]
+    folder = model_dir(cfg, name)
     if isinstance(entry, str):
         pairs = [("-m", model_url(name, entry))]
     else:
         pairs = [(f"--{key}", model_url(name, url)) for key, url in entry.items()]
-    return [(flag, url, folder / Path(urllib.parse.urlsplit(url).path).name) for flag, url in pairs]
+    files = []
+    for flag, url in pairs:
+        parts = urllib.parse.urlsplit(url)
+        files.append((flag, url, folder / (parts.fragment or Path(parts.path).name)))
+    return files
+
+
+def unpack(archive, dest):
+    """Extract a .zip or .tar.* archive into dest."""
+    archive = Path(archive)
+    if archive.suffix == ".zip":
+        with zipfile.ZipFile(archive) as zf:
+            zf.extractall(dest)
+    else:
+        with tarfile.open(archive) as tf:
+            tf.extractall(dest, filter="data")  # "data": no absolute paths, links out, etc.
 
 
 def download(url, dest, resume=False):
@@ -153,6 +178,7 @@ def download(url, dest, resume=False):
     part = dest.with_name(dest.name + ".part")
     done = part.stat().st_size if resume and part.exists() else 0
 
+    url = urllib.parse.urlsplit(url)._replace(fragment="").geturl()  # a "#file in archive" isn't sent
     headers = {"User-Agent": USER_AGENT}
     if done:
         headers["Range"] = f"bytes={done}-"

@@ -1,5 +1,7 @@
-"""sherpa_server.py - speech server on sherpa-onnx: text-to-speech, speech-to-text
-and voice activity detection, in one process, through sherpa-onnx's C API.
+"""sherpa_server_win.py - speech server on sherpa-onnx: text-to-speech,
+speech-to-text and voice activity detection, in one process, through
+sherpa-onnx's C API. Windows only for now: it loads sherpa-onnx-c-api.dll
+(other systems would load libsherpa-onnx-c-api.so/.dylib from their builds).
 
 Each engine is optional; only those given on the command line are loaded:
     --kokoro MODEL       Kokoro TTS (model.onnx; voices.bin etc. next to it)
@@ -35,8 +37,8 @@ Endpoints (each loaded engine's), shaped like the servers the dashboard already 
     GET  /health           {"status": "ok"} once loaded
 
 Usage:
-    python sherpa_server.py --lib DIR [--kokoro MODEL] [--sense-voice MODEL] [--vad MODEL]
-                            [--host 127.0.0.1] [--port 8084] [--threads 4] [--provider cpu]
+    python sherpa_server_win.py --lib DIR [--kokoro MODEL] [--sense-voice MODEL] [--vad MODEL]
+                                [--host 127.0.0.1] [--port 8084] [--threads 4] [--provider cpu]
 
 --lib is the folder with sherpa-onnx-c-api.dll (and onnxruntime.dll) from a
 sherpa-onnx release; the structs below mirror its c-api.h, so the release is

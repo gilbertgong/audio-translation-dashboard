@@ -1,4 +1,4 @@
-"""Start the API servers (whisper-server, tts-server, llama-server) and keep
+"""Start the API servers (whisper-server, the TTS server, llama-server) and keep
 them running while a command runs, e.g. the dashboard.
 
 Usage, from the project root:
@@ -41,19 +41,31 @@ def server_url(server):
 
 
 def server_argv(cfg, name, server):
-    """The server's command line: executable, model file(s), host, port and extra args."""
+    """The server's command line: executable, model file(s), host, port and extra args.
+
+    A server is either an executable from its install folder, or a Python
+    script of this project (script = "..."), run with this Python; "{server_dir}"
+    in args is replaced by its install folder (e.g. for the libraries it loads).
+    """
     install_dir = config_path(cfg, cfg["api_servers"].get("install_dir", "api_servers"))
-    exe = install_dir / name / server["executable"]
-    if not exe.is_file() and exe.with_suffix(".exe").is_file():
-        exe = exe.with_suffix(".exe")
+    server_dir = install_dir / name
+    if "script" in server:
+        program = [sys.executable, str(config_path(cfg, server["script"]))]
+        needed = [(server_dir / "VERSION", "install_api_servers.py")]
+    else:
+        exe = server_dir / server["executable"]
+        if not exe.is_file() and exe.with_suffix(".exe").is_file():
+            exe = exe.with_suffix(".exe")
+        program = [str(exe)]
+        needed = [(exe, "install_api_servers.py")]
     files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("-m", ..., model.gguf)
-    needed = [(exe, "install_api_servers.py")] + [(path, "download_models.py") for _, _, path in files]
+    needed += [(path, "download_models.py") for _, _, path in files]
     for path, hint in needed:
         if not path.is_file():
             raise SystemExit(f"error: {path} not found (run scripts/{hint})")
     model_args = [arg for flag, _, path in files for arg in (flag, str(path))]
-    return [str(exe), *model_args, "--host", server["host"], "--port", str(server["port"]),
-            *server.get("args", [])]
+    args = [arg.replace("{server_dir}", str(server_dir)) for arg in server.get("args", [])]
+    return [*program, *model_args, "--host", server["host"], "--port", str(server["port"]), *args]
 
 
 def health(url):
@@ -77,7 +89,7 @@ def start_server(cfg, name, server, log, log_dir):
     print(f"== Starting {name} at {url} (log: {server_log})")
     with open(server_log, "wb") as out:
         proc = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT)
-    log.info("launched %s with command\n  %s", Path(argv[0]).name, subprocess.list2cmdline(argv))
+    log.info("launched %s with command\n  %s", name, subprocess.list2cmdline(argv))
 
     start = time.monotonic()
     while health(url) != 200:

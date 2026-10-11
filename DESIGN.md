@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A local, self-hosted tool that captures speech from the microphone, transcribes it, translates it, shows the original and translation side by side (with timing and debugging details), and speaks the translation aloud. It uses whisper.cpp, llama.cpp and qwentts.cpp as external services, and includes helpers that download and start them, including their models.
+A local, self-hosted tool that captures speech from the microphone, transcribes it, translates it, shows the original and translation side by side (with timing and debugging details), and speaks the translation aloud. It uses whisper.cpp and llama.cpp as external services, and sherpa-onnx (Kokoro) for speech through a small server of its own, and includes helpers that download and start them, including their models.
 
 ## Approach
 
@@ -13,7 +13,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 ## Design principles
 
 - **Simple first:** one page, one linear pipeline.
-- **Use existing engines** instead of reimplementing them: whisper.cpp for speech-to-text (STT), llama.cpp for translation, qwentts.cpp for text-to-speech (TTS).
+- **Use existing engines** instead of reimplementing them: whisper.cpp for speech-to-text (STT), llama.cpp for translation, Kokoro on sherpa-onnx for text-to-speech (TTS). Where an engine ships a server, we run it; where it ships only a library (sherpa-onnx), a thin server of ours wraps it, with the same kind of HTTP API.
 - **Loose coupling:** each engine is its own local server, reached over HTTP. Swapping a model, engine or machine is a config change.
 - **Pipeline of small stages:** Capture → Transcribe → Translate → Display → Speak, so new stages can be inserted later.
 - **Stream where it helps:** translations appear token by token and speech starts playing while it's still being generated. Engine responses are relayed unchanged, so what the page shows (and the raw viewers) is exactly what the engine sent.
@@ -35,7 +35,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
                                       +------------------------+------------------------+
                                       v                        v                        v
                            +---------------------+  +---------------------+  +---------------------+
-                           |  whisper-server     |  |  llama-server       |  |  tts-server         |
+                           |  whisper-server     |  |  llama-server       |  |  sherpa_server_win  |
                            |  speech-to-text     |  |  translation        |  |  text-to-speech     |
                            |  (port 8081)        |  |  (port 8082)        |  |  (port 8083)        |
                            +---------------------+  +---------------------+  +---------------------+
@@ -58,12 +58,12 @@ Serves the page and runs the pipeline. The HTTP plumbing lives in `microweb.py`,
 | `GET /api/config`      | Settings the page needs.                                              |
 | `POST /api/recordings` | Save a WAV and transcribe it with whisper. Returns the text, timing and the raw whisper exchange. |
 | `POST /api/translate`  | Translate text with llama (system prompt from the config, thinking off), streamed as server-sent events. |
-| `POST /api/speak`      | Speak text with tts-server in the configured voice, streamed as raw PCM. |
+| `POST /api/speak`      | Speak text with the TTS server in the configured voice, streamed as raw PCM. |
 
 The two streaming endpoints relay the engine's response unchanged, wrapped as little as possible:
 
 - **`/api/translate`** sends one event of its own first (`event: request`, the exact request sent to llama, for the raw viewer), then llama's `stream: true` response byte for byte (OpenAI-style `data: {...}` chunks ending with `data: [DONE]`). If relaying fails midway, an `event: error` follows. The page assembles the text from the chunks' deltas and keeps every event for the raw viewer.
-- **`/api/speak`** returns tts-server's `response_format: "pcm"` audio as is, labelled `audio/pcm; rate=24000; channels=1` so the page knows the format.
+- **`/api/speak`** returns the TTS server's `response_format: "pcm"` audio as is, labelled `audio/pcm; rate=24000; channels=1` so the page knows the format.
 
 Both connect to the engine before the response starts, so an unreachable engine is a plain 502 JSON error rather than a broken stream. Each logs its result when the stream ends.
 
@@ -71,11 +71,18 @@ Both connect to the engine before the response starts, so an unreachable engine 
 
 Stock whisper-server and llama-server binaries from the projects' GitHub releases, run as separate processes. whisper auto-detects the language, so mixed-language speech works.
 
-For TTS, `tts-server` from qwentts.cpp (Qwen3-TTS in C++/ggml), as built by the public release workflow in the Zyeine fork (the upstream project publishes no binaries). It speaks OpenAI-style `POST /v1/audio/speech` and detects the language per text, so one voice speaks both English and Chinese.
+#### Text-to-speech: Kokoro on sherpa-onnx (`sherpa_server_win.py`)
 
-- **Model:** the 1.7B "base" talker plus its codec (two GGUF files), Vulkan build. The Vulkan build is small, needs no CUDA runtime, and was only slightly slower than CUDA in tests (about 5.5× vs 7× real time for the 1.7B; the 0.6B was about 6× vs 8×).
-- **Voice cloning:** the base model clones a voice from a reference recording, using its speaker embedding (timbre only, so no transcript is needed). Voices are WAV files in `voices/` (with attribution in `voices/README.md`); tts-server keeps registered voices in memory only, so `run_servers.py` registers them every time it starts the server (about 2 s for a 30 s sample).
-- **Order:** tts-server starts before llama-server, because llama-server sizes itself to the GPU memory left over.
+[Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) v1.1 is an 82M-parameter model built on StyleTTS 2 (without its diffusion stage), with 103 voices: 3 English, 100 Chinese, each speaking both languages. It runs on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), a speech toolkit on ONNX Runtime that ships prebuilt libraries but no TTS server, so `sherpa_server_win.py` (ours, in the project root) is that server:
+
+- **Binding:** it loads `sherpa-onnx-c-api.dll` with `ctypes` (standard library only) and mirrors the C structures field for field, so the sherpa-onnx release is pinned (v1.13.8); upgrading means checking `c-api.h` for changes. Windows only for now (other systems would load the `.so`/`.dylib`).
+- **API:** OpenAI-style `POST /v1/audio/speech` (`"voice"` by name, e.g. `zf_001`, or speaker id; `"speed"`; `pcm` streamed or `wav`), `GET /v1/audio/voices`, `GET /health`. The dashboard uses it as it would any OpenAI-style TTS server. Speech streams a sentence at a time: first audio after about 0.2–0.3 s, about 5.5× real time end to end.
+- **CPU, no GPU memory:** fp32 Kokoro runs about 3× real time on one thread and 8× on eight (Ryzen 7 9800X3D); on the GPU, 26×. The int8 model is smaller but much slower (about 1.5× on CPU, 1.3× on GPU): its quantized convolutions miss ONNX Runtime's fast paths, and `DynamicQuantizeLinear` converts data before nearly every layer. Small enough for a laptop's CPU, so `app.py` and Kokoro can run on a laptop while whisper and llama run on a desktop GPU.
+- **Also built in, not used by the dashboard yet:** speech-to-text with SenseVoice (`POST /inference`, whisper-server compatible; int8 about 90× real time on CPU, accurate Chinese, English weaker than whisper large-v3) and voice activity detection with Silero (`POST /vad`: a clip in, speech segments out, Silero's parameter names). Each engine loads only if its model is given. The recommended model files and URLs are in the script's docstring.
+
+#### Alternative: Qwen3-TTS (`[api_servers.qwentts]`, off by default)
+
+`tts-server` from qwentts.cpp (Qwen3-TTS in C++/ggml), as built by the public release workflow in the Zyeine fork (the upstream project publishes no binaries), with the 1.7B "base" talker on Vulkan. Its strength is **voice cloning** from a reference recording's speaker embedding (no transcript needed): voices are WAV files in `voices/` (attribution in `voices/README.md`), registered by `run_servers.py` every time the server starts, since it keeps them in memory only. About 5.5× real time on the GPU (4 GB of GPU memory), first audio after 0.03–0.05 s. It starts before llama-server, which sizes itself to the GPU memory left over. Switching is a few settings in `config_local.toml` (see `[tts]` in the defaults).
 
 ## Flow
 
@@ -122,9 +129,9 @@ The dashboard alone with sample data, for working on the page without the server
 
 In `scripts/`, run from the project root; each supports `--help`.
 
-- **`install_api_servers.py`** — downloads the whisper.cpp, llama.cpp and qwentts.cpp binaries into `api_servers/`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. Servers with `start = false` are skipped.
-- **`download_models.py`** — downloads the models into `models/`; interrupted downloads resume. A model is one file, or several passed under their own flags (the TTS talker and codec: `--model`, `--codec`). Skips models for servers with `start = false`.
-- **`run_servers.py`** — starts the servers with `start = true` (in config order), waits until each answers on `/health`, registers its voices (tts-server), runs the given command (e.g. `python app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
+- **`install_api_servers.py`** — downloads the whisper.cpp, llama.cpp and sherpa-onnx (or qwentts.cpp) builds into `api_servers/`, unpacking `.zip` or `.tar.*`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. A pinned release that differs from the installed one is always installed. Servers with `start = false` are skipped.
+- **`download_models.py`** — downloads the models into `models/`; interrupted downloads resume. A model is one file, or several passed under their own flags (Qwen's talker and codec: `--model`, `--codec`); a URL can name a file inside an archive (`url#path`), which is unpacked. Skips models for servers with `start = false`.
+- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`). Waits until each answers on `/health`, registers its voices (Qwen's tts-server), runs the given command (e.g. `python app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
 - **`common.py`** — helpers shared by the scripts.
 
 ### Logs
@@ -184,18 +191,27 @@ Generated, git-ignored directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
 - Dashboard cleanup: Continuous Audio Mode on by default; time to first token on the translate line; split and file details moved behind the `ⓘ` button.
 - **Known limitation:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new phrase. Headphones avoid it.
 
+### Milestone 9 — Kokoro on sherpa-onnx ✅
+
+- Qwen3-TTS works well but takes 2.2 GB of model files and 4 GB of GPU memory. Kokoro (a descendant of StyleTTS 2, 82M parameters) is a fraction of that; the only Windows binaries for it are sherpa-onnx's library, hence `sherpa_server_win.py`.
+- Benchmarked against a StyleTTS 2 baseline (same sentence, 10 runs): StyleTTS 2 0.75× real time on one CPU thread, 3–4× on eight, 24× on GPU; Kokoro fp32 3×, 8× and 26×. The first Kokoro test used the int8 model and looked slow (about 1.5×); the cause was int8 itself (above), not the model or the binding.
+- Kokoro became the default TTS; Qwen3-TTS stays configured but off. The scripts gained `.tar.bz2` support, models inside archives, and servers that are project scripts. One `[api_servers]` section per engine, chosen by `[tts] server`, so switching needs only overrides.
+- The same server got SenseVoice STT and Silero VAD endpoints for later (above). Lesson there: sherpa-onnx's newest SenseVoice release (2025-09-09) is a Cantonese fine-tune; the general model is 2024-07-17.
+
 ## Extension points (future)
 
 - **Streaming:**
   - Live provisional text while speaking: re-send the current phrase's audio about once a second, show whisper's result as provisional, and translate only finished phrases. The browser keeps the audio, so the server stays stateless.
-- **Continuous Audio Mode:** better voice detection (a small ML model in the browser, or whisper.cpp's VAD); filtering results with high `no_speech_prob`; passing the previous phrase to whisper as a prompt for continuity.
+- **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`; passing the previous phrase to whisper as a prompt for continuity.
 - **External servers:** use whisper or llama instances that are already running (set `start = false` and point `host`/`port` at them); the setting exists, the rest isn't built yet.
 - **Housekeeping:** a retention limit for `tmp/audio/` (it grows by about 115 MB per hour of recorded speech).
 - **Speech:**
   - Pause speech detection while a translation plays, so speakers can't feed it back into Continuous Audio Mode.
-  - A voice per language, or the speaker's own voice cloned from their recordings.
+  - A voice per language (e.g. a Chinese voice for Chinese, an English one for English), or the speaker's own voice cloned from their recordings (Qwen3-TTS).
   - Start speaking before the translation finishes (sentence by sentence).
-  - Speaking rate: tts-server accepts `speed` but ignores it in this build.
+  - Speaking rate: Kokoro supports `speed` (passed through by `sherpa_server_win.py`); not a setting yet. (Qwen's tts-server accepts it but ignores it.)
+  - `sherpa_server_win.py` on Linux/macOS: load the `.so`/`.dylib` and install those builds.
+- **Small devices:** SenseVoice STT (built into `sherpa_server_win.py`) plus Kokoro on the CPU and a small llama model, for a setup without a large GPU.
 - Add stages to the pipeline (summarization, glossary/terminology pass).
 - Add more input sources (file upload, system audio) feeding the same pipeline.
 - Add other backends behind the same STT and translation interfaces (e.g. cloud APIs).

@@ -1,23 +1,24 @@
-"""Download the whisper.cpp and llama.cpp models listed in the [models] section
-of config_local.toml.
+"""Download the models listed in the [models] section of the config (whisper,
+llama, TTS).
 
 Usage, from the project root:
     python scripts/download_models.py [--dry-run] [--force] [config_local.toml]
 
 Settings come from config/defaults.toml, with config_local.toml (or the given file)
 on top. Each model is saved to <models.dir>/<name>/ (e.g.
-models/whisper/ggml-large-v3.bin). Interrupted downloads resume where they left
-off when run again. Models for servers set to start = false in
-[api_servers.<name>] are skipped.
+models/whisper/ggml-large-v3.bin); archives (url#file) are unpacked there.
+Interrupted downloads resume where they left off when run again. Models for
+servers set to start = false in [api_servers.<name>] are skipped.
 
 Standard library only (Python 3.11+ for tomllib).
 """
 
 import argparse
+import urllib.parse
 from pathlib import Path
 
-from common import (CONFIG_LOCAL_FILE, download, load_config, model_files, model_names, run_script,
-                    setup_logging, starts)
+from common import (CONFIG_LOCAL_FILE, download, load_config, model_dir, model_files, model_names, run_script,
+                    setup_logging, starts, unpack)
 
 NAME = "download_models"
 
@@ -50,7 +51,17 @@ def main():
                 if args.force:
                     dest.unlink(missing_ok=True)
                 log.info("downloading %s model from %s", name, url)
-                download(url, dest, resume=not args.force)
+                parts = urllib.parse.urlsplit(url)
+                if parts.fragment:  # a file inside an archive: download, unpack, delete the archive
+                    archive = model_dir(cfg, name) / Path(parts.path).name
+                    download(url, archive, resume=not args.force)
+                    print(f"   unpacking {archive.name}")
+                    unpack(archive, archive.parent)
+                    archive.unlink()
+                    if not dest.is_file():
+                        raise SystemExit(f"error: {parts.fragment} not found in {archive.name}")
+                else:
+                    download(url, dest, resume=not args.force)
                 print(f"   saved to {dest}")
                 log.info("downloaded %s model to %s", name, dest)
 

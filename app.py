@@ -31,8 +31,9 @@ DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
 CONFIG_LOCAL_FILE = ROOT / "config_local.toml"  # your settings, on top of the defaults (optional)
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
-TTS_TIMEOUT = 120  # seconds to wait for tts-server
-# tts-server streams raw PCM: 16-bit little-endian samples, mono, at this rate.
+TTS_TIMEOUT = 120  # seconds to wait for the TTS server
+# The TTS server (Kokoro or Qwen3-TTS) streams raw PCM: 16-bit little-endian
+# samples, mono, at this rate.
 TTS_PCM_TYPE = "audio/pcm; rate=24000; channels=1"
 
 # Shared log file and line format (same as scripts/common.py).
@@ -115,7 +116,7 @@ def load_config(path):
     config["whisper_url"] = f"http://{whisper['host']}:{whisper['port']}"
     llama = config["api_servers"]["llama"]
     config["llama_url"] = f"http://{llama['host']}:{llama['port']}"
-    tts = config["api_servers"]["tts"]
+    tts = config["api_servers"][config["tts"]["server"]]  # the [api_servers] section of the TTS engine
     config["tts_url"] = f"http://{tts['host']}:{tts['port']}"
     config["system_prompt"] = render_prompt(config["llama_prompt"])
     return config
@@ -260,7 +261,7 @@ def mock_translation_stream(text):
 
 
 def mock_speech_stream(text):
-    """Silence in tts-server's format (s16le, 24 kHz), about as long as the text
+    """Silence in the TTS server's format (s16le, 24 kHz), about as long as the text
     would take to say, streamed in pieces, for --mock."""
     seconds = min(1.0 + 0.07 * len(text), 15.0)
     piece = bytes(2 * 24000 // 10)  # 0.1 s of silence
@@ -336,8 +337,8 @@ def post_translate(req):
 
 @app.post("/api/speak")
 def post_speak(req):
-    """Body: {"text": "..."}. Streams tts-server's audio for the text, in the
-    configured voice, unchanged: raw PCM (see TTS_PCM_TYPE). If tts-server
+    """Body: {"text": "..."}. Streams the TTS server's audio for the text, in the
+    configured voice, unchanged: raw PCM (see TTS_PCM_TYPE). If the TTS server
     can't be reached, a 502 JSON error instead."""
     data = req.json()
     text = data.get("text") if isinstance(data, dict) else None
@@ -356,7 +357,7 @@ def post_speak(req):
         resp = open_server(f"{config['tts_url']}/v1/audio/speech", json.dumps(body).encode("utf-8"),
                            "application/json", TTS_TIMEOUT)
     except (OSError, RuntimeError) as err:
-        error = f"speech failed: {err} (is tts-server running at {config['tts_url']}?)"
+        error = f"speech failed: {err} (is the TTS server running at {config['tts_url']}?)"
         log.warning("%s; text: %r", error, text)
         raise HTTPError(502, error) from err
 
@@ -436,7 +437,7 @@ def main():
         f"Recordings: {config['audio']['temp_dir']}",
         f"Whisper:    {config['whisper_url']}",
         f"Llama:      {config['llama_url']}",
-        f"TTS:        {config['tts_url']} (voice {config['tts']['voice']!r})",
+        f"TTS:        {config['tts_url']} ({config['tts']['server']}, voice {config['tts']['voice']!r})",
         f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}",
         f"Dashboard:  http://{shown_host}:{port}/",
         f"All services started, and ready for translation.",
