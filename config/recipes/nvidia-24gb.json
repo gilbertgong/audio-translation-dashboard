@@ -1,0 +1,12 @@
+{
+  "description": "Desktop, 24 GB NVIDIA: whisper large-v3, Qwen3.8-27B, Qwen3-TTS 1.7B",
+  "vram_gb": 24,
+  "fragments": [
+    "whisper_large-v3",
+    "llama_qwen3.8-27b-ud-iq3_xxs",
+    "qwentts_1.7b-base"
+  ],
+  "off": [
+    "kokoro"
+  ]
+}

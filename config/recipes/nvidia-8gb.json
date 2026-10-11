@@ -1,0 +1,12 @@
+{
+  "description": "Laptop, 8 GB NVIDIA: whisper large-v3 q5_0, Qwen3.5-9B Q3_K_XL, Kokoro (CPU)",
+  "vram_gb": 8,
+  "fragments": [
+    "whisper_large-v3-q5_0",
+    "llama_qwen3.5-9b-ud-q3_k_xl",
+    "kokoro_v1.1"
+  ],
+  "off": [
+    "qwentts"
+  ]
+}
