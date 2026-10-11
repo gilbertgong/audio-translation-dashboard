@@ -5,7 +5,7 @@
 # they override the values here, and anything you leave out keeps its default.
 # For example:
 #
-#   [llama_prompt]
+#   [languages]
 #   language2 = "Japanese"
 #
 # Layers, each on top of the one before (see configuration.py): this file, then
@@ -70,12 +70,16 @@ min_speech_ms = 300
 # 30-second windows).
 max_phrase_s = 25
 
-[llama_prompt]
-# The two languages to translate between, in either direction.
+[languages]
+# The two languages to translate between, in either direction. Rows the page
+# shows in language2 are right-aligned.
 language1 = "English"
 language2 = "Chinese"
+
+[llama_prompt]
 # System prompt sent to llama-server. {language1} and {language2} are replaced
-# with the values above. (A "\" at the end of a line joins it to the next one.)
+# with the values in [languages]. (A "\" at the end of a line joins it to the
+# next one.)
 system = """\
 You are an expert {language1}-{language2} translator. Your sole purpose is to \
 translate the user's text accurately, naturally, and contextually. If the user \

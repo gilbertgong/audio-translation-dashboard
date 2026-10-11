@@ -96,15 +96,15 @@ def load_config(path):
     config["llama_url"] = f"http://{llama['host']}:{llama['port']}"
     tts = config["api_servers"][config["tts"]["server"]]  # the [api_servers] section of the TTS engine
     config["tts_url"] = f"http://{tts['host']}:{tts['port']}"
-    config["system_prompt"] = render_prompt(config["llama_prompt"])
+    config["system_prompt"] = render_prompt(config["llama_prompt"], config["languages"])
     return config
 
 
-def render_prompt(prompt):
-    """Fill {language1} and {language2} into the [llama_prompt] system prompt."""
+def render_prompt(prompt, languages):
+    """Fill {language1} and {language2} from [languages] into the [llama_prompt] system prompt."""
     text = prompt["system"]
     for key in ("language1", "language2"):
-        text = text.replace("{" + key + "}", prompt[key])
+        text = text.replace("{" + key + "}", languages[key])
     return text
 
 
@@ -261,11 +261,11 @@ mock_counter = itertools.count(MOCK_PRELOAD)  # next sample line in mock mode
 def get_config(req):
     """The settings the browser needs."""
     global mock_counter
-    prompt = config["llama_prompt"]
+    languages = config["languages"]
     payload = {
         "sample_rate": config["audio"]["sample_rate"],
-        "language1": prompt["language1"],
-        "language2": prompt["language2"],
+        "language1": languages["language1"],
+        "language2": languages["language2"],
         "auto_split": config.get("auto_split", {}),
         "auto_play": config["tts"].get("auto_play", False),
         # Browser microphone processing, passed to getUserMedia.
@@ -439,7 +439,7 @@ def main():
         f"Whisper:    {config['whisper_url']}",
         f"Llama:      {config['llama_url']}",
         f"TTS:        {config['tts_url']} ({config['tts']['server']}, voice {config['tts']['voice']!r})",
-        f"Languages:  {config['llama_prompt']['language1']} <-> {config['llama_prompt']['language2']}",
+        f"Languages:  {config['languages']['language1']} <-> {config['languages']['language2']}",
         f"Dashboard:  http://{shown_host}:{port}/",
         f"All services started, and ready for translation.",
     ]
