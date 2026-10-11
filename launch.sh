@@ -14,7 +14,7 @@ if ! command -v "$PYTHON" >/dev/null; then
   exit 1
 fi
 
-# 1. Download the whisper.cpp and llama.cpp servers, if needed.
+# 1. Download the whisper.cpp, llama.cpp and qwentts.cpp servers, if needed.
 "$PYTHON" scripts/install_api_servers.py
 
 # 2. Download their models, if needed.
