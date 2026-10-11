@@ -2,7 +2,7 @@
 read from the installed whisper.cpp library.
 
 Usage, from the project root:
-    python src/generate_whisper_languages.py [--dry-run] [config_local.toml]
+    python src/tools/generate_whisper_languages.py [--dry-run] [config_local.toml]
 
 Loads the whisper library from the whisper server's install folder
 (<install_dir>/whisper/, from [api_servers]; installed by
@@ -22,6 +22,8 @@ import json
 import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # src/, for common and configuration
 
 from common import CONFIG_LOCAL_FILE, config_path, load_config, run_script, setup_logging
 from configuration import WHISPER_LANGUAGES_FILE
