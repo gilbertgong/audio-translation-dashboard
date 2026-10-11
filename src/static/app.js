@@ -9,6 +9,7 @@ const windowEl = document.getElementById("translation-window");
 const activityToggle = document.getElementById("activity-toggle");
 
 let targetSampleRate = 16000;
+let language1 = ""; // the two languages to translate between ([languages])
 let language2 = ""; // entries detected in this language are right-aligned
 // Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
@@ -292,24 +293,26 @@ function setLine(row, selector, text, state = "") {
 
 // The small line above a row's text: the time; setLanguage adds the language.
 function setMeta(row, time) {
+  row.dataset.time = time;
   row.querySelector(".meta").textContent = time;
 }
 
-// Record the detected language: shown in the meta line, and rows in
-// language2 are right-aligned.
+// Record the detected language (again, if a recheck corrects it): shown in
+// the meta line, and rows in language2 are right-aligned.
 function setLanguage(row, language) {
   const meta = row.querySelector(".meta");
-  if (language) meta.textContent += ` · ${language}`;
+  meta.textContent = language ? `${row.dataset.time} · ${language}` : row.dataset.time;
   const isLang2 = !!language && language.toLowerCase() === language2.toLowerCase();
   row.querySelector(".utterance").classList.toggle("lang2", isLang2);
 }
 
 // Set a timing in a row's activity cell, listed in the order first set:
 // "audio" (recording length), "stt" (transcription), "llm" (translation),
+// "recheck" (re-transcribing when whisper heard another language),
 // "tts" (time until the spoken translation starts playing).
 // seconds: a number, null while in progress, or "failed".
-const TIMING_LABELS = { audio: "audio", stt: "transcribe", llm: "translate", tts: "speak" };
-const TIMING_DECIMALS = { audio: 1, stt: 2, llm: 2, tts: 2 };
+const TIMING_LABELS = { audio: "audio", stt: "transcribe", recheck: "recheck", llm: "translate", tts: "speak" };
+const TIMING_DECIMALS = { audio: 1, stt: 2, recheck: 2, llm: 2, tts: 2 };
 
 function setTiming(row, kind, seconds) {
   const timings = row.querySelector(".timings");
@@ -626,6 +629,7 @@ async function loadConfig() {
     const res = await fetch("/api/config");
     const config = await res.json();
     targetSampleRate = config.sample_rate;
+    language1 = config.language1 || "";
     language2 = config.language2 || "";
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
@@ -791,9 +795,35 @@ async function uploadWav(wav) {
 // Translate text, streamed. The server sends our "request" event, then
 // llama-server's response exactly as llama sent it (OpenAI-style chunks:
 // "data: {...}" ... "data: [DONE]"), and an "error" event if relaying fails.
-// onText(textSoFar) is called as pieces arrive. Returns
-// { translation, seconds, firstSeconds, raw }; raw has the request and every
+// onText(textSoFar) is called as pieces arrive, without llama's language tag
+// (see splitLanguageTag). Returns { translation, languages, seconds,
+// firstSeconds, raw }; languages is from the tag; raw has the request and every
 // event, in order, for the raw viewer.
+// llama ends each translation with a tag naming the language(s) of the text it
+// was given, e.g. "Okay. [chinese]" (see [llama_prompt] system). Returns
+// { text, languages }: the translation without the tag, and the tag's
+// languages in lowercase ([] if there's none). While streaming, a tag that's
+// only partly there ("Okay. [chin") is hidden too.
+function splitLanguageTag(translation) {
+  const match = /\s*\[([^\]\n]*)\]?\s*$/.exec(translation);
+  if (!match) return { text: translation.trim(), languages: [] };
+  const languages = match[1].split(/,|\band\b|\//).map((l) => l.trim().toLowerCase()).filter(Boolean);
+  return { text: translation.slice(0, match.index).trim(), languages };
+}
+
+// Languages that are neither of the two configured ones (lowercase). A tag
+// that starts one of their names counts as it ("en" for English), and "zh" or
+// "mandarin" as Chinese, so a code instead of a name doesn't cause a recheck.
+const LANGUAGE_ALIASES = { zh: "chinese", mandarin: "chinese" };
+
+function unexpectedLanguages(languages) {
+  const pair = [language1.toLowerCase(), language2.toLowerCase()];
+  return languages.filter((l) => {
+    const name = LANGUAGE_ALIASES[l] || l;
+    return !pair.some((p) => p === name || p.startsWith(name));
+  });
+}
+
 async function requestTranslation(text, onText) {
   const start = performance.now();
   const res = await fetch("/api/translate", {
@@ -846,7 +876,7 @@ async function requestTranslation(text, onText) {
     if (piece) {
       if (firstSeconds === null) firstSeconds = (performance.now() - start) / 1000;
       translation += piece;
-      onText(translation);
+      onText(splitLanguageTag(translation).text);
     }
   };
 
@@ -867,11 +897,66 @@ async function requestTranslation(text, onText) {
 
   const seconds = (performance.now() - start) / 1000;
   if (error) throw Object.assign(new Error(error), { raw, seconds });
-  return { translation: translation.trim(), seconds, firstSeconds, raw };
+  const { text: translated, languages } = splitLanguageTag(translation);
+  return { translation: translated, languages, seconds, firstSeconds, raw };
 }
 
 function addFileInfo(row, path) {
   addInfo(row, `Saved as: ${path}`);
+}
+
+// Translate a row's text into its translation line (streamed), with its
+// timing and raw viewer; throws (after showing the error) if it fails. Run
+// again after a recheck, it replaces the earlier translation.
+async function translateRow(row, text) {
+  setLine(row, ".translation", "Translating...", "pending");
+  setTiming(row, "llm", null);
+  row.querySelector('.timing[data-kind="llm"] .row-btn')?.remove(); // an earlier attempt's raw viewer
+  try {
+    const result = await requestTranslation(text, (soFar) => setLine(row, ".translation", soFar));
+    setTiming(row, "llm", result.seconds);
+    if (result.firstSeconds !== null) {
+      setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
+    }
+    addRawButton(row, "llm", "llama request and streamed response", result.raw);
+    if (result.translation) setLine(row, ".translation", result.translation);
+    return result;
+  } catch (err) {
+    setTiming(row, "llm", "failed");
+    if (err.raw) addRawButton(row, "llm", "llama request and streamed response", err.raw);
+    setLine(row, ".translation", `Error: ${err.message}`, "error");
+    throw err;
+  }
+}
+
+// The transcript seems to be in neither of the two languages (e.g. Russian for
+// quiet Chinese); reason says who thought so. Show it, marked, while the server
+// transcribes it again forced to each of the two, then swap in the more
+// confident result. Returns the result to use (the original if this fails).
+async function recheck(row, stt, reason) {
+  setLine(row, ".original", `${stt.text} (${reason}; rechecking…)`, "pending");
+  setTiming(row, "recheck", null);
+  try {
+    const res = await fetch("/api/recordings/recheck", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: stt.file.split(/[\\/]/).pop() }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    setTiming(row, "recheck", result.stt_seconds);
+    addRawButton(row, "recheck", "whisper recheck: both languages", result.stt_raw);
+    setLanguage(row, result.language);
+    setLine(row, ".original", result.text);
+    addDetail(row, `re-transcribed as ${result.language} (${reason})`);
+    return { ...stt, ...result };
+  } catch (err) {
+    console.error(err);
+    setTiming(row, "recheck", "failed");
+    setLine(row, ".original", stt.text);
+    addDetail(row, `Recheck failed: ${err.message}`, true);
+    return stt;
+  }
 }
 
 // Transcribe, then translate, in the background so the next recording can start.
@@ -906,28 +991,25 @@ async function processRecording(wav, note = "") {
       return;
     }
     setLine(row, ".original", stt.text);
+    const rechecked = stt.recheck;
+    if (rechecked) stt = await recheck(row, stt, `whisper heard ${stt.language}`);
 
-    setLine(row, ".translation", "Translating...", "pending");
-    setTiming(row, "llm", null);
-    try {
-      const result = await requestTranslation(stt.text, (soFar) => setLine(row, ".translation", soFar));
-      setTiming(row, "llm", result.seconds);
-      if (result.firstSeconds !== null) {
-        setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
-      }
-      addRawButton(row, "llm", "llama request and streamed response", result.raw);
-      if (result.translation) {
-        setLine(row, ".translation", result.translation);
-        const speakBtn = addSpeakButton(row, result.translation);
-        if (autoPlayToggle.checked) queueSpeech(row, speakBtn, result.translation);
-      } else {
-        setLine(row, ".translation", "(empty translation)", "pending");
-      }
-    } catch (err) {
-      setTiming(row, "llm", "failed");
-      if (err.raw) addRawButton(row, "llm", "llama request and streamed response", err.raw);
-      setLine(row, ".translation", `Error: ${err.message}`, "error");
-      throw err;
+    let result = await translateRow(row, stt.text);
+    // Second opinion: llama's language tag. If it names another language and
+    // whisper's own check didn't already recheck, recheck now and translate
+    // the corrected text.
+    const others = unexpectedLanguages(result.languages);
+    if (others.length && !rechecked) {
+      const before = stt.text;
+      stt = await recheck(row, stt, `llama read it as ${others.join(", ")}`);
+      if (stt.text !== before) result = await translateRow(row, stt.text);
+    }
+
+    if (result.translation) {
+      const speakBtn = addSpeakButton(row, result.translation);
+      if (autoPlayToggle.checked) queueSpeech(row, speakBtn, result.translation);
+    } else {
+      setLine(row, ".translation", "(empty translation)", "pending");
     }
   } catch (err) {
     console.error(err);

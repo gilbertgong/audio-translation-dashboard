@@ -150,12 +150,18 @@ def sse_event(name, data):
     return f"event: {name}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
 
 
-def transcribe(whisper_url, wav, filename):
-    """Send a WAV to whisper-server; return {"text", "language", "stt_raw"}.
+def transcribe(whisper_url, wav, filename, language=None):
+    """Send a WAV to whisper-server; return {"text", "language", "confidence",
+    "stt_raw"}. language: force it (whisper's code or lowercase English name,
+    e.g. "chinese") instead of letting whisper detect it.
 
-    stt_raw is the request settings and whisper's full reply, for debugging.
+    confidence is the segments' average log-probability, weighted by their
+    length (closer to 0 = more confident). stt_raw is the request settings and
+    whisper's full reply, for debugging.
     """
     fields = {"response_format": "verbose_json", "temperature": "0.0"}
+    if language:
+        fields["language"] = language
     body, content_type = multipart(fields, {"file": (filename, "audio/wav", wav)})
     url = f"{whisper_url}/inference"
     result = call_server(url, body, content_type, STT_TIMEOUT)
@@ -163,8 +169,18 @@ def transcribe(whisper_url, wav, filename):
         raise RuntimeError(result["error"])
     raw = {"request": {"url": url, "fields": fields, "file": f"{filename} ({len(wav)} bytes)"},
            "response": result}
-    return {"text": result["text"].strip(), "language": result.get("detected_language"),
-            "stt_raw": raw}
+    segments = result.get("segments") or []
+    weights = [max(s.get("end", 0) - s.get("start", 0), 0.01) for s in segments]
+    confidence = (sum(s.get("avg_logprob", 0) * w for s, w in zip(segments, weights)) / sum(weights)
+                  if segments else None)
+    return {"text": result["text"].strip(), "language": result.get("language") if language
+            else result.get("detected_language"), "confidence": confidence, "stt_raw": raw}
+
+
+def expected_language(language):
+    """Whether whisper's language name is one of the two in [languages]."""
+    pair = {config["languages"][key].lower() for key in ("language1", "language2")}
+    return (language or "").lower() in pair
 
 
 def translation_request(config, text):
@@ -379,8 +395,10 @@ def post_speak(req):
 
 @app.post("/api/recordings")
 def post_recording(req):
-    """Body: a WAV file. Saves and transcribes it; returns
-    {"file", "bytes", "text", "language", "stt_seconds", "stt_raw"} with status 201."""
+    """Body: a WAV file. Saves and transcribes it; returns {"file", "bytes",
+    "text", "language", "confidence", "recheck", "stt_seconds", "stt_raw"} with
+    status 201. recheck is true when whisper heard neither of the two
+    [languages]: the page then asks /api/recordings/recheck to try again."""
     data = req.body(max_bytes=config["audio"]["max_upload_mb"] * 1024 * 1024)
     if not data:
         raise HTTPError(400, "empty upload")
@@ -411,7 +429,40 @@ def post_recording(req):
         raise HTTPError(502, error, file=str(path), bytes=len(data)) from err
     seconds = round(time.monotonic() - start, 2)
     log.info("transcribed %s in %ss (%s): %r", path.name, seconds, result["language"], result["text"])
-    return {"file": str(path), "bytes": len(data), **result, "stt_seconds": seconds}, 201
+    recheck = bool(result["text"]) and not expected_language(result["language"])
+    return {"file": str(path), "bytes": len(data), **result, "recheck": recheck, "stt_seconds": seconds}, 201
+
+
+@app.post("/api/recordings/recheck")
+def post_recheck(req):
+    """Body: {"file": "<recording file name>"}, a recording in which whisper
+    heard neither of the two [languages] (e.g. Russian for quiet Chinese).
+    Transcribes it again forced to each of the two and returns the one whisper
+    is more confident in: {"text", "language", "confidence", "stt_seconds",
+    "stt_raw"}, where stt_raw has both attempts."""
+    data = req.json()
+    name = Path(data.get("file", "")).name if isinstance(data, dict) else ""
+    path = config["audio"]["temp_dir"] / name
+    if not re.fullmatch(r"recording_[\d_]+\.wav", name) or not path.is_file():
+        raise HTTPError(400, 'expected JSON {"file": "<a saved recording\'s name>"}')
+    wav = path.read_bytes()
+
+    start = time.monotonic()
+    attempts = []
+    for key in ("language1", "language2"):
+        language = config["languages"][key].lower()
+        try:
+            attempts.append(transcribe(config["whisper_url"], wav, name, language=language))
+        except (OSError, RuntimeError, ValueError) as err:
+            log.warning("recheck of %s as %s failed: %s", name, language, err)
+    if not attempts:
+        raise HTTPError(502, f"recheck failed (is whisper-server running at {config['whisper_url']}?)")
+    best = max(attempts, key=lambda a: a["confidence"] if a["confidence"] is not None else float("-inf"))
+    seconds = round(time.monotonic() - start, 2)
+    log.info("rechecked %s in %ss as %s: %r (confidence %s)", name, seconds, best["language"], best["text"],
+             ", ".join(f"{a['language']} {a['confidence']:.3f}" for a in attempts if a["confidence"] is not None))
+    return {**best, "stt_seconds": seconds,
+            "stt_raw": {"attempts": [a["stt_raw"] for a in attempts], "chosen": best["language"]}}
 
 
 def main():

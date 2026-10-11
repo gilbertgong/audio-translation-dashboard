@@ -206,6 +206,9 @@ Generated, git-ignored directories: `api_servers/`, `models/`, `logs/`, `tmp/`.
 - **Streaming:**
   - Live provisional text while speaking: re-send the current phrase's audio about once a second, show whisper's result as provisional, and translate only finished phrases. The browser keeps the audio, so the server stays stateless.
 - **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`; passing the previous phrase to whisper as a prompt for continuity.
+- **Language checks:**
+  - Map the `[languages]` names to whisper's language names or codes at startup (warning if one isn't recognized). Today the recheck compares whisper's detected language with the configured names lowercased, and forces whisper to those names; that's right for English and Chinese, but "Mandarin" or "Español" would recheck every phrase and then fail.
+  - A second, after-the-fact check with llama: once a row is translated, ask llama (yes/no) whether the transcript contains a language other than the two expected ones, and if so recheck and fix the row. It catches wrong text even when whisper's language label is right, without delaying the translation.
 - **External servers:** use whisper or llama instances that are already running (set `start = false` and point `host`/`port` at them); the setting exists, the rest isn't built yet.
 - **Housekeeping:** a retention limit for `tmp/audio/` (it grows by about 115 MB per hour of recorded speech).
 - **Speech:**

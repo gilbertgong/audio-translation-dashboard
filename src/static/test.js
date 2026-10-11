@@ -195,13 +195,15 @@ $("llm-go").addEventListener("click", async () => {
         if (piece) {
           first ??= performance.now() - start;
           translation += piece;
-          $("llm-text").textContent = translation;
+          $("llm-text").textContent = withoutTag(translation).text;
         }
       }
       if (done) break;
     }
-    $("llm-text").textContent = translation.trim() || "(empty translation)";
-    $("llm-meta").textContent = `first token ${first === null ? "-" : secs(first)} · total ${secs(performance.now() - start)}`;
+    const { text: translated, tag } = withoutTag(translation);
+    $("llm-text").textContent = translated || "(empty translation)";
+    $("llm-meta").textContent = `language tag ${tag ? `[${tag}]` : "(none)"} · ` +
+      `first token ${first === null ? "-" : secs(first)} · total ${secs(performance.now() - start)}`;
     setStatus("llm-status", "");
   } catch (err) {
     setStatus("llm-status", `Translation failed: ${err.message}`, true);
@@ -210,6 +212,15 @@ $("llm-go").addEventListener("click", async () => {
     $("llm-go").disabled = false;
   }
 });
+
+// llama ends each translation with a language tag, e.g. "Okay. [chinese]"
+// (see [llama_prompt]); split it off, as the dashboard does. A tag that's only
+// partly streamed in is hidden too.
+function withoutTag(translation) {
+  const match = /\s*\[([^\]\n]*)\]?\s*$/.exec(translation);
+  return match ? { text: translation.slice(0, match.index).trim(), tag: match[1].trim() }
+    : { text: translation.trim(), tag: "" };
+}
 
 $("llm-to-tts").addEventListener("click", () => {
   $("tts-input").value = $("llm-text").textContent;
