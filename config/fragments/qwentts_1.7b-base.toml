@@ -1,0 +1,18 @@
+# Text-to-speech: qwentts.cpp's tts-server (Zyeine fork, Vulkan build) with the
+# Qwen3-TTS 1.7b "base" talker (2.08 GB) and its codec (0.29 GB); clones voices.
+
+[api_servers.qwentts]
+start = true
+repo = "Zyeine/qwentts.cpp"
+release = "mellon-v0.1.0"
+ensure_version = false
+assets = ["mellon-voice-engine-windows-vulkan.zip"]
+executable = "tts-server"
+host = "127.0.0.1"
+port = 8085
+# Language detected per text.
+args = ["--lang", "auto"]
+
+[models.qwentts]
+model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf"
+codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"

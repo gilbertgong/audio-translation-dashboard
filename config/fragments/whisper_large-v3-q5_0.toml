@@ -1,0 +1,18 @@
+# Speech-to-text: whisper.cpp's whisper-server with whisper large-v3-q5_0 (1.08 GB).
+# large-v3, 5-bit quantized.
+
+[api_servers.whisper]
+start = true
+repo = "ggml-org/whisper.cpp"
+# "latest" = newest release with files matching assets; or pin a tag, e.g. "b5454".
+release = "latest"
+# false: keep the installed build without checking GitHub; true: ensure the release above.
+ensure_version = false
+assets = ["whisper-bin-{binary_type}.zip"]
+executable = "whisper-server"
+host = "127.0.0.1"
+port = 8081
+args = ["--language", "auto"]
+
+[models.whisper]
+model = "large-v3-q5_0"
