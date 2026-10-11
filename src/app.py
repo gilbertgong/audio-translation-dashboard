@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -327,6 +328,36 @@ def post_translate(req):
         log.warning("%s; text: %r", error, text)
         raise HTTPError(502, error) from err
     return Stream(relay_translation(text, url, body, resp, start), "text/event-stream")
+
+
+HEALTH_TIMEOUT = 2  # seconds per server for /api/health
+
+
+def server_health(url):
+    """(state, detail) for a server's /health: "ok", "loading" (llama-server
+    answers 503 while it loads its model), or "down"."""
+    try:
+        with urllib.request.urlopen(f"{url}/health", timeout=HEALTH_TIMEOUT) as resp:
+            return "ok", f"HTTP {resp.status}"
+    except urllib.error.HTTPError as err:
+        return ("loading" if err.code == 503 else "down"), f"HTTP {err.code}"
+    except OSError as err:
+        return "down", str(getattr(err, "reason", err))
+
+
+@app.get("/api/health")
+def get_health(req):
+    """The three servers' status, checked in parallel, for the page's indicators:
+    {"services": [{"role", "name", "url", "state", "detail"}, ...]}."""
+    services = [("stt", "whisper", config["whisper_url"]), ("llm", "llama", config["llama_url"]),
+                ("tts", config["tts"]["server"], config["tts_url"])]
+    if mock:
+        return {"services": [{"role": r, "name": n, "url": u, "state": "ok", "detail": "mock mode"}
+                             for r, n, u in services]}
+    with ThreadPoolExecutor(len(services)) as pool:
+        results = list(pool.map(lambda service: server_health(service[2]), services))
+    return {"services": [{"role": r, "name": n, "url": u, "state": state, "detail": detail}
+                         for (r, n, u), (state, detail) in zip(services, results)]}
 
 
 @app.get("/api/voices")

@@ -624,6 +624,35 @@ try {
   setActivityHidden(localStorage.getItem("activityHidden") === "1");
 } catch {}
 
+// Server status in the header: /api/health checks whisper, llama and the TTS
+// server; shown as a dot per server, refreshed every few seconds. The tooltip
+// has the address and what the check found.
+const servicesEl = document.getElementById("services");
+const SERVICE_LABELS = { stt: "Transcribe", llm: "Translate", tts: "Speak" };
+const HEALTH_INTERVAL_MS = 10000;
+
+async function checkServices() {
+  try {
+    const res = await fetch("/api/health");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { services } = await res.json();
+    servicesEl.replaceChildren(...services.map((s) => {
+      const item = el("span", `service ${s.state}`, SERVICE_LABELS[s.role] || s.role);
+      item.title = `${s.name} at ${s.url}: ${s.state} (${s.detail})`;
+      return item;
+    }));
+  } catch (err) {
+    // The dashboard itself didn't answer (e.g. stopped): mark everything unknown.
+    for (const item of servicesEl.children) {
+      item.className = "service";
+      item.title = `Dashboard not reachable: ${err.message}`;
+    }
+  }
+}
+
+checkServices();
+setInterval(checkServices, HEALTH_INTERVAL_MS);
+
 async function loadConfig() {
   try {
     const res = await fetch("/api/config");

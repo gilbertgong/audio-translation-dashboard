@@ -16,6 +16,10 @@ together, and start = false for the servers it turns off) and saves it to
 config_generated.toml, which the next Launch uses: on top of the defaults,
 under config_local.toml.
 
+Kill servers: lists this project's running processes (servers from
+api_servers/, Python running src/ scripts), e.g. strays left by an earlier
+run, and kills them after you confirm.
+
 Double-click to run (.pyw: no console window), or: python launcher.pyw
 
 Standard library only (Python 3.11+, with tkinter).
@@ -34,7 +38,7 @@ import tkinter as tk
 import tomllib
 import webbrowser
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 ROOT = Path(__file__).resolve().parent
@@ -75,6 +79,81 @@ def setting(section, key, default=None):
         return configuration.load().get(section, {}).get(key, default)
     except SystemExit:
         return default
+
+
+# Buttons are classic Tk buttons, all styled alike: themed (ttk) buttons on
+# Windows ignore colors. Each color has a faded version for when the button
+# doesn't apply; the gray ones are for tools.
+GREEN, GREEN_FADED = "#16a34a", "#b7dfc4"
+RED, RED_FADED = "#dc2626", "#f2c0c0"
+BLUE, BLUE_FADED = "#2563eb", "#bfd0f6"
+GRAY, GRAY_FADED = "#e2e5ea", "#f1f2f4"
+
+
+def color_button(parent, text, color, faded, command, font_size=10, text_color="white", bold=True):
+    button = tk.Button(parent, text=text, command=command, fg=text_color, bg=color, activebackground=color,
+                       activeforeground=text_color, disabledforeground="#9aa1ab" if color == GRAY else text_color,
+                       relief="flat", bd=0, padx=14, pady=4, cursor="hand2",
+                       font=("Segoe UI", font_size, "bold" if bold else "normal"))
+    button.colors = (color, faded)
+    return button
+
+
+def tool_button(parent, text, command):
+    """A gray button, for the tools (Kill servers, Generate config, Mock)."""
+    return color_button(parent, text, GRAY, GRAY_FADED, command, text_color="#1d2125", bold=False)
+
+
+def set_enabled(button, enabled):
+    """Enable or disable a color_button, fading its color when disabled."""
+    color, faded = button.colors
+    button.configure(state="normal" if enabled else "disabled", bg=color if enabled else faded,
+                     activebackground=color if enabled else faded, cursor="hand2" if enabled else "arrow")
+
+
+# --- Kill servers: this project's processes, wherever they came from (e.g. a
+# launch whose window was closed oddly): anything run from api_servers/, and
+# Python running the project's scripts in src/.
+
+SCRIPTS = ("app.py", "run_servers.py", "sherpa_server_win.py", "install_api_servers.py", "download_models.py")
+
+
+def project_processes():
+    """[(pid, name, command line)] of this project's running processes."""
+    norm = lambda path: path.replace("\\", "/").lower()
+    folders = [norm(str(ROOT / "api_servers")) + "/", norm(str(ROOT / "src")) + "/"]
+    # The launcher runs scripts by relative path (from the project folder).
+    relative = [f"src/{script}" for script in SCRIPTS]
+    if os.name == "nt":
+        query = ("Get-CimInstance Win32_Process | Select-Object ProcessId,Name,ExecutablePath,CommandLine"
+                 " | ConvertTo-Json -Compress")
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", query], capture_output=True,
+                                text=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        rows = [(p["ProcessId"], p["Name"], p.get("ExecutablePath") or "", p.get("CommandLine") or "")
+                for p in json.loads(result.stdout or "[]")]
+    else:
+        result = subprocess.run(["ps", "-eo", "pid=,comm=,args="], capture_output=True, text=True, timeout=60)
+        rows = []
+        for line in result.stdout.splitlines():
+            pid, name, args = (line.split(None, 2) + ["", ""])[:3]
+            rows.append((int(pid), name, "", args))
+    found = []
+    for pid, name, exe, command in rows:
+        text = norm(exe) + " " + norm(command)
+        if pid != os.getpid() and (any(f in text for f in folders) or any(r in text for r in relative)):
+            found.append((pid, name, command))
+    return found
+
+
+def kill(pid):
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def stop_tree(proc):
@@ -189,8 +268,6 @@ class GenerateConfigWindow:
                                   values=list(self.recipes))
         self.combo.pack(side="left", padx=(6, 0))
         self.combo.bind("<<ComboboxSelected>>", lambda e: self.show())
-        self.save_button = ttk.Button(row, text="Save", command=self.save, state="disabled")
-        self.save_button.pack(side="left", padx=(6, 0))
         self.details = ttk.Label(top, text="")  # the selected recipe's VRAM and description
         self.details.pack(anchor="w", pady=(6, 0))
 
@@ -205,6 +282,15 @@ class GenerateConfigWindow:
 
         self.status = ttk.Label(top, text="")
         self.status.pack(anchor="w", pady=(6, 0))
+
+        # Save at the bottom, centered (packed before the preview, so the
+        # preview takes the space that's left and Save stays visible).
+        bottom = ttk.Frame(self.window, padding=(8, 0, 8, 10))
+        bottom.pack(side="bottom", fill="x")
+        self.save_button = color_button(bottom, "✔  Save", GREEN, GREEN_FADED, self.save, font_size=12)
+        self.save_button.configure(padx=32, pady=5)
+        self.save_button.pack()
+        set_enabled(self.save_button, False)
 
         self.preview = ScrolledText(self.window, font=("Consolas", 10), width=100, height=32, state="disabled")
         self.preview.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -252,11 +338,11 @@ class GenerateConfigWindow:
                 raise ValueError("enter both languages")
             self.text = assemble(name, self.recipes[name], languages)
             self.status.configure(text=f"Save writes {GENERATED_FILE.name}.")
-            self.save_button.configure(state="normal")
+            set_enabled(self.save_button, True)
         except (ValueError, tomllib.TOMLDecodeError) as err:
             self.text = ""
             self.status.configure(text=f"Can't save: {err}")
-            self.save_button.configure(state="disabled")
+            set_enabled(self.save_button, False)
         self.preview.configure(state="normal")
         self.preview.delete("1.0", "end")
         self.preview.insert("1.0", self.text)
@@ -281,20 +367,30 @@ class Launcher:
         self.carriage_return = False  # a "\r" was written: the next text replaces the line
 
         root.title("Audio Translation Dashboard - Launcher")
-        bar = ttk.Frame(root, padding=8)
+        # Row 1: the dashboard itself, the thing to open once it's running.
+        row = ttk.Frame(root, padding=(8, 10, 8, 4))
+        row.pack(fill="x")
+        self.open_button = color_button(row, "Open dashboard", BLUE, BLUE_FADED, self.open_dashboard, font_size=13)
+        self.open_button.configure(padx=28, pady=6)
+        self.open_button.pack()
+
+        # Row 2: run controls and status; tools on the right.
+        bar = ttk.Frame(root, padding=(8, 4, 8, 8))
         bar.pack(fill="x")
-        self.launch_button = ttk.Button(bar, text="Launch", command=lambda: self.start("launch"))
+        self.launch_button = color_button(bar, "▶  Launch", GREEN, GREEN_FADED, lambda: self.start("launch"))
         self.launch_button.pack(side="left")
-        self.stop_button = ttk.Button(bar, text="Stop", command=self.stop, state="disabled")
+        self.stop_button = color_button(bar, "■  Stop", RED, RED_FADED, self.stop)
         self.stop_button.pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Open dashboard", command=self.open_dashboard).pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Generate config", command=self.generate_config).pack(side="left", padx=(6, 0))
-        self.generate_window = None
         self.status = ttk.Label(bar, text="Ready")
         self.status.pack(side="left", padx=(12, 0))
-        self.mock_button = ttk.Button(bar, text="Mock", command=lambda: self.start("mock"))
+        self.mock_button = tool_button(bar, "Mock", lambda: self.start("mock"))
         if setting("launcher", "show_mock_button", False):
             self.mock_button.pack(side="right")
+        tool_button(bar, "Generate config", self.generate_config).pack(side="right", padx=(0, 6))
+        self.kill_button = tool_button(bar, "Kill servers", self.kill_servers)
+        self.kill_button.pack(side="right", padx=(0, 6))
+        self.generate_window = None
+        self.update_buttons()
 
         # Sized in characters, like a terminal; the window fits around it.
         self.log = ScrolledText(root, font=("Consolas", 10), width=120, height=30, wrap="word",
@@ -328,9 +424,9 @@ class Launcher:
         """Launch and Mock are available unless that mode is already running
         (or a switch is under way); Stop while anything runs."""
         busy = self.stopping and self.mode is not None
-        self.launch_button.configure(state="disabled" if busy or self.mode == "launch" else "normal")
-        self.mock_button.configure(state="disabled" if busy or self.mode == "mock" else "normal")
-        self.stop_button.configure(state="normal" if self.mode and not busy else "disabled")
+        set_enabled(self.launch_button, not busy and self.mode != "launch")
+        set_enabled(self.mock_button, not busy and self.mode != "mock")
+        set_enabled(self.stop_button, bool(self.mode) and not busy)
 
     def generate_config(self):
         """Open the Generate config window (or bring it to the front)."""
@@ -338,6 +434,46 @@ class Launcher:
             self.generate_window.window.lift()
         else:
             self.generate_window = GenerateConfigWindow(self.root)
+
+    def kill_servers(self):
+        """Find this project's processes (in a worker thread: it takes a moment),
+        then ask before killing them."""
+        set_enabled(self.kill_button, False)
+        self.status.configure(text="Looking for servers...")
+
+        def find():
+            try:
+                found = project_processes()
+            except (OSError, subprocess.SubprocessError, ValueError) as err:
+                found = err
+            self.root.after(0, self.confirm_kill, found)
+
+        threading.Thread(target=find, daemon=True).start()
+
+    def confirm_kill(self, found):
+        set_enabled(self.kill_button, True)
+        if isinstance(found, Exception):
+            self.status.configure(text="Ready" if not self.mode else self.status.cget("text"))
+            messagebox.showerror("Kill servers", f"Could not list processes: {found}", parent=self.root)
+            return
+        if not found:
+            self.status.configure(text="No servers running" if not self.mode else self.status.cget("text"))
+            return
+        listing = "\n".join(f"{name} (PID {pid})" for pid, name, _ in found[:15])
+        more = f"\n...and {len(found) - 15} more" if len(found) > 15 else ""
+        if not messagebox.askyesno("Kill servers", f"Kill these {len(found)} processes of this project?\n\n"
+                                   f"{listing}{more}", parent=self.root):
+            self.status.configure(text="Ready" if not self.mode else self.status.cget("text"))
+            return
+        if self.mode:  # our own run is among them: report it as stopped, not failed
+            self.next_mode = None
+            self.stopping = True
+            self.update_buttons()
+        for pid, name, command in found:
+            kill(pid)
+            self.write(f"== killed {name} (PID {pid}): {command[:150]}\n")
+        self.write("\n")
+        self.status.configure(text=f"Killed {len(found)} process{'es' if len(found) != 1 else ''}")
 
     def open_dashboard(self):
         webbrowser.open(f"http://localhost:{setting('server', 'port', 8080)}/")

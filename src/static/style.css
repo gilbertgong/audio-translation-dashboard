@@ -65,6 +65,33 @@ h1 { font-size: 1.1rem; margin: 0; }
 
 .header-link:hover { background: var(--header-btn-hover); }
 
+/* Server status, at the right of the header before the link: a colored dot
+   per server (green ok, amber loading, red down, gray not checked yet). */
+.services {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.services + .header-link { margin-left: 4px; }
+
+.service { display: flex; align-items: center; gap: 5px; cursor: default; }
+
+.service::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.service.ok::before { background: #16a34a; }
+.service.loading::before { background: #d97706; }
+.service.down::before { background: var(--recording); }
+.service.down { color: var(--recording); }
+
 .mock-badge {
   font-size: 0.7rem;
   font-weight: 600;
