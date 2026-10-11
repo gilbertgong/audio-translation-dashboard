@@ -22,9 +22,11 @@ host = "127.0.0.1"
 port = 8080
 
 [launcher]
-# launcher.pyw: show a "Mock" button, which runs the dashboard alone with
-# sample data (app.py --mock) for working on the page without the servers.
-show_mock_button = false
+# launcher.pyw: show the developer controls: "Mock", which runs the dashboard
+# alone with sample data (app.py --mock) for working on the page without the
+# servers; and "Restart app", which restarts just the dashboard to pick up
+# changes to it, keeping the servers running.
+show_dev_controls = false
 
 [audio]
 # Where recorded WAV files are written.
@@ -52,8 +54,10 @@ echo_cancellation = true
 # louder than the background noise, which is measured continuously.
 # Whether the switch starts out on when the page loads.
 enabled = true
-# Silence (ms) that ends a phrase.
-pause_ms = 600
+# Silence (ms) that ends a phrase and sends it to be transcribed: short, so
+# text appears when the speaker takes a breath. (Speaking translations waits
+# for a longer pause: [tts] turn_pause_ms.)
+split_pause_ms = 250
 # How far (dB) above the background noise counts as speech. Raise it if noise
 # triggers phrases; lower it if quiet speech is missed.
 threshold_db = 12
@@ -121,8 +125,18 @@ server = "kokoro"
 # voice_language1 = ""
 # voice_language2 = ""
 # Whether the page's "Automatic Translation Playback" switch starts out on:
-# each translation is spoken as soon as it's done.
+# each translation is spoken, in order, once the speaker has finished.
 auto_play = false
+# Automatic playback waits until every running source (microphone, capture)
+# has been quiet this long (ms): the end of the speaker's turn, longer than a
+# phrase's split_pause_ms. If someone starts speaking during playback, it stops
+# and that translation is spoken again at the next turn's end. (The ▶ buttons
+# play at once.)
+turn_pause_ms = 2000
+# At most this many translations wait to be spoken; beyond that the oldest is
+# dropped (its row says so; its ▶ still works). A speaker who never pauses for
+# turn_pause_ms is never talked over, so nothing is spoken until they do.
+max_backlog = 3
 
 [models]
 # Used by src/download_models.py. Each server's models are in its own

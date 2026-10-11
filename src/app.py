@@ -302,6 +302,9 @@ def get_config(req):
         "language_checks": not config["unknown_languages"],
         "auto_split": config.get("auto_split", {}),
         "auto_play": config["tts"].get("auto_play", False),
+        # Automatic playback: wait for the end of the speaker's turn; how many may wait.
+        "turn_pause_ms": config["tts"].get("turn_pause_ms", 2000),
+        "max_backlog": config["tts"].get("max_backlog", 3),
         # Browser microphone processing, passed to getUserMedia.
         "audio_processing": {
             key: config["audio"].get(key, default) for key, default in
@@ -568,7 +571,7 @@ def main():
         *([f"            WARNING: not a whisper language: {', '.join(config['unknown_languages'])}; "
            "language checks are off (see config/whisper_languages.json)"] if config["unknown_languages"] else []),
         f"Dashboard:  http://{shown_host}:{port}/",
-        f"All services started, and ready for translation.",
+        "Ready: the servers' status is shown in the dashboard's header.",
     ]
 
     def ready():

@@ -14,6 +14,24 @@
     <a class="header-link" href="test.html">Component tests</a>
   </header>
 
+  <!-- The page: the capture sidebar to the left of the main area, in what was
+       empty space (the main area keeps its size, centered, when there's room). -->
+  <div class="layout">
+  <aside id="capture" class="capture-panel" aria-label="Capture audio">
+    <div class="capture-head">
+      <h2>Capture audio</h2>
+      <button id="capture-help-btn" class="help-btn" type="button" aria-label="How capturing works"
+              title="How capturing works">?</button>
+    </div>
+    <button id="capture-btn" type="button" title="Capture the sound of a tab, a window or the whole system">Capture audio</button>
+    <div id="capture-status" class="capture-status">Not capturing</div>
+    <!-- One meter per channel of the captured sound; click one to choose
+         which is translated (filled in by app.js). -->
+    <div id="capture-channels" class="capture-channels"></div>
+    <button id="capture-mute" class="capture-mute" type="button" disabled
+            title="Mute the captured tab here while still capturing it (browser tabs only)">Mute tab</button>
+  </aside>
+
   <main>
     <!-- One grid: each recording is a row with its text on the left and its
          activity (timings, details) on the right, so the two always align. -->
@@ -94,6 +112,34 @@
       </div>
     </div>
   </main>
+  </div>
+
+  <!-- How capturing works (the ? in the capture sidebar). -->
+  <dialog id="capture-help" class="help-dialog" aria-labelledby="capture-help-title">
+    <div class="raw-head">
+      <h2 id="capture-help-title">Capture audio</h2>
+      <button id="capture-help-close" type="button" aria-label="Close" title="Close (Esc)">&#x2715;</button>
+    </div>
+    <div class="help-body">
+      <p>Capture translates sound from your computer instead of the microphone: a video, a
+        meeting, anything that's playing.</p>
+      <p>It uses the browser's screen sharing, the same one meeting apps use to share a tab or
+        your screen, in reverse: you share with this page, and it listens to the sound. In the
+        browser's picker, choose:</p>
+      <ul>
+        <li><b>A browser tab</b> (best), with <i>Also share tab audio</i> on: just that tab's
+          sound, e.g. a YouTube video or a meeting in the browser. <b>Mute tab</b> then silences
+          it for you while it's still captured, so you hear only the translations.</li>
+        <li><b>Entire screen</b>, with <i>Also share system audio</i> on: everything your
+          computer plays (Windows), e.g. a meeting app. This includes the spoken translations.</li>
+        <li>A <b>window</b> shares no sound in most browsers.</li>
+      </ul>
+      <p>The picture isn't used (it's kept tiny). Phrases are split at pauses, as in Continuous
+        Audio Mode. If the sound is stereo, translation starts with the first channel that has
+        sound; click a channel's meter to choose the other. Stop with the button, or with the
+        browser's own "Stop sharing".</p>
+    </div>
+  </dialog>
 
   <!-- Viewer for a row's raw whisper/llama exchange (request + response JSON). -->
   <dialog id="raw-dialog" aria-labelledby="raw-title">

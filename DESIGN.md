@@ -48,6 +48,7 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 
 - **Capture:** microphone → software gain → AudioWorklet. The page builds 16 kHz mono WAV itself, so whisper gets lossless audio in its native format with no ffmpeg.
 - **Translation window:** one row per recording. The left column (Conversation) shows the original and its translation, aligned left or right by language; the translation fills in as llama generates it, and gets a ▶ button to speak it once complete. The right column (Activity) shows timings — audio length, transcribe time, recheck time (when one ran), translate time (with time to first token, TTFT, under it), and time until speech starts — plus notes and errors. The Activity column is collapsible.
+- **Capture audio** (a sidebar in the left margin; the main area keeps its size when there's room, and the sidebar moves above it on narrow screens): translates the sound of a browser tab, a window or the whole system instead of the microphone. It uses the browser's screen sharing (`getDisplayMedia`) in reverse: you share with the page, and it listens; the video is requested tiny and unused, and the audio comes unprocessed (no echo cancellation, noise suppression or gain control). A meter per channel; until one is chosen, the first channel with sound is (left if both start together), and clicking a meter switches. The chosen channel goes, mono, through the same pipeline as Continuous Audio Mode; its rows are noted "captured audio". **Mute tab** stops a captured tab playing here while it's still captured (`suppressLocalAudioPlayback`), so only the translations are heard. The microphone and a capture can run at the same time (each has its own recording session, phrase splitting and meters: the one by Start Recording is the microphone's, the sidebar's are the capture's; the status line notes "capturing too"); an experiment, to see how the pipeline copes. The code that made them exclusive is kept, commented out. A `?` explains which share choice gives sound (a tab with tab audio, or the entire screen with system audio; a window gives none).
 - **Controls:** Start/Stop (or Space), the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status line and level meter aligned under the Activity column.
 - **Server status:** in the header, a dot per server — Transcribe, Translate, Speak — green (ok), amber (loading: llama-server while it loads its model), red (down), from `/api/health` every 10 s; the tooltip names the server, its address and what the check found.
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
@@ -110,7 +111,7 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
   2. *llama's language tag:* the system prompt asks llama to end each translation with the language(s) of the text it was given, e.g. `[chinese]`; the page hides the tag (the raw viewer keeps it), and a language other than the two triggers the recheck after translating.
 
   The **recheck** transcribes the saved recording again forced to each of the two languages and keeps the result whisper is more confident in (segment `avg_logprob`, weighted by length; on the Russian clip, forced Chinese scored −0.40 against English −0.60, and whisper's own language scores agreed). Meanwhile the row shows the first text, marked "(whisper heard russian; rechecking…)"; then it swaps in the corrected text and language, notes "re-transcribed as chinese (…)", and translates again if needed. Speech, including automatic playback, waits for the final translation.
-- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: `english = "af_maple"`, `chinese = "zf_001"`, so each language gets a native voice), else `[tts] voice` if set, else the server's `default_voice` (Kokoro `zf_001`, Qwen `beth_thomas`). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is spoken by itself, in order: one that finishes while something is playing waits its turn, and stopping playback (or starting a recording) drops the waiting ones.
+- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: `english = "af_maple"`, `chinese = "zf_001"`, so each language gets a native voice), else `[tts] voice` if set, else the server's `default_voice` (Kokoro `zf_001`, Qwen `beth_thomas`). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits phrases (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. At most `max_backlog` (3) wait; beyond that the oldest is dropped, with a note on its row (its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
 
 ## Configuration
 
@@ -127,12 +128,12 @@ Sections:
 | Section                 | Covers                                                                   |
 |-------------------------|--------------------------------------------------------------------------|
 | `[server]`              | Dashboard host and port.                                                 |
-| `[launcher]`            | `show_mock_button`.                                                      |
+| `[launcher]`            | `show_dev_controls` (Mock and Restart app).                               |
 | `[audio]`               | Recording storage, sample rate, and the browser's microphone processing. |
 | `[auto_split]`          | Continuous Audio Mode: initial state and pause-detection tuning.         |
 | `[languages]`           | The two languages to translate between (`language1`, `language2`): whisper's language names (see below). |
 | `[llama_prompt]`        | The translation prompt (with `{language1}`/`{language2}` and the language-tag instruction), temperature, thinking on/off. |
-| `[tts]`                 | Which TTS server the dashboard speaks through (`server`); optional voice overrides (`voice`, and per language `voice_language1`, `voice_language2`); Automatic Translation Playback's initial state. |
+| `[tts]`                 | Which TTS server the dashboard speaks through (`server`); optional voice overrides (`voice`, and per language `voice_language1`, `voice_language2`); Automatic Translation Playback: its initial state, the turn pause it waits for (`turn_pause_ms`) and its backlog limit (`max_backlog`). |
 | `[models.<name>]`       | Each server's model files, keyed by the server's flag (`model` → `--model`, `kokoro` → `--kokoro`); a URL can point into an archive (`url#path`). Saved to `models/<name>/`. |
 | `[api_servers.<name>]`  | Per server: `start`, where to download it (`repo`, `release`, `assets`, `ensure_version`), and how to run it (`executable`, or `script` for one of ours; `host`, `port`, `args`); for TTS servers, their voices: `default_voice`, `language_voices` (a voice per language name) and `voices` to register (Qwen). |
 
@@ -161,10 +162,10 @@ Sections:
 On Windows, double-click **`launcher.pyw`**, the only Python file in the project folder. Its window:
 
 - **Open dashboard** (top): the dashboard in the browser.
-- **▶ Launch / ■ Stop:** runs the three steps below, showing their output; Stop (or closing the window) stops the servers and the dashboard. Each button is faded when it doesn't apply.
+- **▶ Launch / ■ Stop:** runs the three steps below, showing their output (the dashboard starts before the servers, so its header shows them coming up); Stop (or closing the window) stops the servers and the dashboard. Each button is faded when it doesn't apply.
 - **Generate config:** see [Configuration](#fragments-and-recipes).
 - **Kill servers:** lists this project's processes still running (anything run from `api_servers/`, and Python running `src/` scripts), e.g. strays from an earlier run, and kills them after you confirm.
-- **Mock** (only with `[launcher] show_mock_button = true`): the dashboard alone with sample data. Launch and Mock each stop the other first, since both use the dashboard's port.
+- **Developer controls** (only with `[launcher] show_dev_controls = true`): **Mock**, the dashboard alone with sample data (Launch and Mock each stop the other first, since both use the dashboard's port); **Restart app**, the dashboard alone restarted to pick up changes to it, with the servers left running (for Mock, the mock restarted).
 
 Elsewhere, or from a terminal:
 
@@ -177,7 +178,7 @@ A development convenience that runs the three steps below in order; each can als
 ```bash
 python src/install_api_servers.py               # the servers, if needed
 python src/download_models.py                   # their models, if needed
-python src/run_servers.py python src/app.py     # start the servers, then the dashboard
+python src/run_servers.py python src/app.py     # start the dashboard, then the servers
 ```
 
 The dashboard is at <http://localhost:8080/>; Ctrl+C stops everything.
@@ -212,7 +213,7 @@ In `src/`, run from the project root; each script supports `--help`.
 
 - **`install_api_servers.py`** — downloads the whisper.cpp, llama.cpp and sherpa-onnx (or qwentts.cpp) builds into `api_servers/<name>/`, unpacking `.zip` or `.tar.*`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. A pinned release that differs from the installed one is always installed. Servers with `start = false` are skipped.
 - **`download_models.py`** — downloads each started server's models into `models/<name>/`; interrupted downloads resume. Archives (`url#path`) are unpacked and deleted.
-- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`; `{server_dir}` in its `args` is its install folder). Waits until each answers on `/health`, registers its voices (Qwen's tts-server), runs the given command (e.g. `python src/app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
+- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`; `{server_dir}` in its `args` is its install folder). Starts the given command first (e.g. `python src/app.py`, so the dashboard is up while the servers start), waits until each server answers on `/health`, registers its voices (Qwen's tts-server), and stops the servers when the command exits; a `restart` line on its input (typed, or the launcher's Restart app) restarts just the command; with no command, runs them until Ctrl+C.
 - **`generate_whisper_languages.py`** — regenerates `config/whisper_languages.json` from the installed whisper library, reporting languages added or removed (`--dry-run` to only check). Rarely needed: whisper's languages are fixed by the model's vocabulary.
 - **`configuration.py`** — reads the three settings layers.
 - **`common.py`** — helpers shared by the scripts.
@@ -241,7 +242,7 @@ In `src/`, run from the project root; each script supports `--help`.
 
 ### Milestone 4 — Automatic splitting on pauses ✅ (tuning)
 
-- Continuous Audio Mode (see [Flow](#flow)). The detector measures background noise for the first 400 ms, then tracks it continuously (falls fast, rises slowly — more slowly mid-phrase); speech is anything `threshold_db` above it, never below `min_threshold_db`. A phrase starts at the first loud block (with `pre_roll_ms` of earlier audio) and ends after `pause_ms` of quiet (keeping `tail_ms`) or at `max_phrase_s`; phrases with less than `min_speech_ms` of speech are dropped.
+- Continuous Audio Mode (see [Flow](#flow)). The detector measures background noise for the first 400 ms, then tracks it continuously (falls fast, rises slowly — more slowly mid-phrase); speech is anything `threshold_db` above it, never below `min_threshold_db`. A phrase starts at the first loud block (with `pre_roll_ms` of earlier audio) and ends after `split_pause_ms` of quiet (250 ms; first 600 ms, shortened so text appears on a breath) (keeping `tail_ms`) or at `max_phrase_s`; phrases with less than `min_speech_ms` of speech are dropped.
 - **Known limitation:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the phrase (deliberate, so constant noise can't hold it open).
 
 ### Milestone 5 — Dashboard layout and debugging aids ✅
@@ -321,5 +322,5 @@ In `src/`, run from the project root; each script supports `--help`.
   - `sherpa_server_win.py` on Linux/macOS: load the `.so`/`.dylib` and install those builds.
 - **Small devices:** SenseVoice STT (built into `sherpa_server_win.py`) plus Kokoro on the CPU and a small llama model, for a setup without a large GPU.
 - Add stages to the pipeline (summarization, glossary/terminology pass).
-- Add more input sources (file upload, system audio — browser screen-share capture of a meeting tab or the whole system's audio, which the `testing/` experiment explores) feeding the same pipeline, e.g. for two-sided meeting transcripts.
+- **Capture:** both sources now run at once, but their rows look alike: marking each row with its source (you vs. the other side of a meeting) and aligning by source would make two-sided transcripts; file upload as another source.
 - Add other backends behind the same STT and translation interfaces (e.g. cloud APIs).

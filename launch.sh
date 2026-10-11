@@ -20,5 +20,6 @@ fi
 # 2. Download their models, if needed.
 "$PYTHON" src/download_models.py
 
-# 3. Start the servers, then the dashboard; Ctrl+C stops everything.
+# 3. Start the dashboard, then the servers (its header shows them coming up);
+#    type "restart" + Enter to restart just the dashboard; Ctrl+C stops everything.
 "$PYTHON" src/run_servers.py "$PYTHON" src/app.py

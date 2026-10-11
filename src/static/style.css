@@ -107,6 +107,18 @@ button { font: inherit; color: inherit; }
 
 /* Main area */
 
+/* The page: the capture sidebar in the left margin, the main area as before.
+   The sidebar's column is at least its own width; the main area is up to
+   1100px; the outer columns share what's left equally, so the main area stays
+   centered (and its size unchanged) while there's room. */
+.layout {
+  --capture-width: 240px;
+  display: grid;
+  grid-template-columns: minmax(calc(var(--capture-width) + 16px), 1fr) minmax(0, 1100px) minmax(0, 1fr);
+}
+
+.layout > main { grid-column: 2; width: 100%; }
+
 main {
   max-width: 1100px;
   height: calc(100vh - var(--header-height));
@@ -616,6 +628,129 @@ kbd {
 }
 
 .meter-db.clip { color: var(--recording); font-weight: 600; }
+
+/* Capture sidebar: styled like the main panels, its top aligned with the
+   translation window (main's 16px padding), main's padding as the gap. */
+
+.capture-panel {
+  grid-column: 1;
+  justify-self: end;
+  align-self: start;
+  width: var(--capture-width);
+  margin: 16px 0 0 16px;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.capture-head { display: flex; align-items: center; justify-content: space-between; }
+.capture-head h2 { margin: 0; font-size: 0.95rem; }
+
+.help-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.help-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+#capture-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+#capture-btn.capturing { background: var(--recording); }
+#capture-btn:disabled { opacity: 0.6; cursor: default; }
+
+.capture-status { font-size: 0.8rem; color: var(--muted); }
+.capture-status.error { color: var(--recording); }
+
+/* A channel's meter is a button: click it to translate that channel. */
+.capture-channels { display: flex; flex-direction: column; gap: 6px; }
+.capture-channels:empty { display: none; }
+
+.channel {
+  display: grid;
+  grid-template-columns: 3em 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.channel:hover { border-color: var(--accent); }
+.channel.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.channel .ch-name { color: var(--muted); }
+.channel.selected .ch-name { color: var(--accent); font-weight: 600; }
+
+.ch-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.ch-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: #16a34a; }
+.ch-fill.hot { background: #f59e0b; }
+.ch-fill.clip { background: var(--recording); }
+.ch-peak { position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: var(--text); opacity: 0.5; }
+.ch-db { grid-column: 2; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.capture-mute {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.capture-mute:hover:not(:disabled) { border-color: var(--accent); }
+.capture-mute.muted { border-color: var(--recording); color: var(--recording); }
+.capture-mute:disabled { opacity: 0.5; cursor: default; }
+
+/* The capture help (styled like the raw viewer, smaller). */
+.help-dialog {
+  width: min(560px, 92vw);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.help-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.help-body { padding: 4px 18px 12px; font-size: 0.9rem; line-height: 1.5; }
+.help-body li { margin-bottom: 4px; }
+
+/* Narrower screens: the sidebar moves above the main area. */
+@media (max-width: 900px) {
+  .layout { display: block; }
+  .capture-panel { width: auto; margin: 16px 16px 0; }
+}
 
 /* Narrow screens: the activity column becomes narrower. */
 @media (max-width: 700px) {

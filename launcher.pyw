@@ -2,12 +2,16 @@
 """Audio Translation Dashboard - launcher.
 
 A window that does what launch.sh does: installs the servers and downloads
-their models if needed, then starts the servers and the dashboard, showing
-their output. Stop, or closing the window, stops everything.
+their models if needed, then starts the dashboard and the servers (the
+dashboard first, so its header shows them coming up), showing their output.
+Stop, or closing the window, stops everything.
 
-With [launcher] show_mock_button = true in config_local.toml, a Mock button
-runs the dashboard alone with sample data instead (what mock.sh does).
-Launch and Mock each stop the other first, since both use the dashboard's port.
+With [launcher] show_dev_controls = true in config_local.toml, two more
+buttons: Mock runs the dashboard alone with sample data instead (what mock.sh
+does); Launch and Mock each stop the other first, since both use the
+dashboard's port. Restart app restarts just the dashboard, to pick up changes
+to it, keeping the servers running (run_servers.py restarts it when told
+"restart" on its input); for Mock, it restarts the mock.
 
 Generate config: detects the GPU's memory (nvidia-smi), suggests a recipe from
 config/recipes/, takes the two languages to translate between (from whisper's
@@ -368,6 +372,7 @@ class Launcher:
     def __init__(self, root):
         self.root = root
         self.proc = None  # the step running now
+        self.step = None  # its title, e.g. "Running"
         self.mode = None  # what's running: "launch", "mock" or None
         self.next_mode = None  # to start once the current run has stopped
         self.stopping = False
@@ -391,9 +396,12 @@ class Launcher:
         self.stop_button.pack(side="left", padx=(6, 0))
         self.status = ttk.Label(bar, text="Ready")
         self.status.pack(side="left", padx=(12, 0))
+        # Developer controls (only with [launcher] show_dev_controls = true).
         self.mock_button = tool_button(bar, "Mock", lambda: self.start("mock"))
-        if setting("launcher", "show_mock_button", False):
+        self.restart_button = tool_button(bar, "Restart app", self.restart_app)
+        if setting("launcher", "show_dev_controls", False):
             self.mock_button.pack(side="right")
+            self.restart_button.pack(side="right", padx=(0, 6))
         tool_button(bar, "Generate config", self.generate_config).pack(side="right", padx=(0, 6))
         self.kill_button = tool_button(bar, "Kill servers", self.kill_servers)
         self.kill_button.pack(side="right", padx=(0, 6))
@@ -430,11 +438,27 @@ class Launcher:
 
     def update_buttons(self):
         """Launch and Mock are available unless that mode is already running
-        (or a switch is under way); Stop while anything runs."""
+        (or a switch is under way); Stop while anything runs; Restart app once
+        the dashboard is running."""
         busy = self.stopping and self.mode is not None
         set_enabled(self.launch_button, not busy and self.mode != "launch")
         set_enabled(self.mock_button, not busy and self.mode != "mock")
         set_enabled(self.stop_button, bool(self.mode) and not busy)
+        dashboard_up = self.mode == "mock" or (self.mode == "launch" and self.step == "Running")
+        set_enabled(self.restart_button, dashboard_up and not busy)
+
+    def restart_app(self):
+        """Restart just the dashboard: for a launch, run_servers.py restarts it
+        (keeping the servers running) when told "restart" on its input; for
+        Mock, stop the mock and start it again."""
+        if self.mode == "mock":
+            self.start("mock")  # stops it first, then starts it again
+        elif self.mode == "launch" and self.proc and self.proc.poll() is None:
+            try:
+                self.proc.stdin.write(b"restart\n")
+                self.proc.stdin.flush()
+            except OSError as err:
+                self.write(f"== could not restart the dashboard: {err}\n")
 
     def generate_config(self):
         """Open the Generate config window (or bring it to the front)."""
@@ -500,9 +524,11 @@ class Launcher:
         for title, argv in steps:
             if self.stopping:
                 break
+            self.step = title
             self.output.put(("status", title + "..."))
-            self.proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT, **CHILD_OPTIONS)
+            # stdin: for run_servers.py's "restart" (Restart app).
+            self.proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **CHILD_OPTIONS)
             decoder = codecs.getincrementaldecoder("utf-8")("replace")
             while chunk := self.proc.stdout.read1(65536):
                 self.output.put(("text", decoder.decode(chunk)))
@@ -514,6 +540,7 @@ class Launcher:
                 break
         if self.stopping:
             result = "Stopped"
+        self.step = None
         self.output.put(("done", result))
 
     # --- window side
@@ -527,6 +554,7 @@ class Launcher:
                     self.write(value)
                 elif kind == "status":
                     self.status.configure(text=value)
+                    self.update_buttons()  # e.g. Restart app, once the dashboard runs
                 elif kind == "done":
                     self.write(f"== {value}\n\n")
                     self.status.configure(text=value)

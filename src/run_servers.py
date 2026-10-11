@@ -4,11 +4,14 @@ them running while a command runs, e.g. the dashboard.
 Usage, from the project root:
     python src/run_servers.py [--config config_local.toml] [COMMAND ...]
 
-Starts each server with start = true in [api_servers], in config order, and
-waits until it answers on /health. Voices listed in [api_servers.<name>.voices]
-are registered as soon as their server is ready. Then runs COMMAND, and stops
-the servers when it exits. Without a COMMAND, keeps the servers running until
-Ctrl+C.
+Starts COMMAND first (so the dashboard is up, showing the servers' status as
+they start), then each server with start = true in [api_servers], in config
+order, waiting until it answers on /health. Voices listed in
+[api_servers.<name>.voices] are registered as soon as their server is ready.
+The servers are stopped when COMMAND exits. A line "restart" on standard input
+(typed in the terminal, or sent by the launcher's Restart app) restarts
+COMMAND alone, keeping the servers running: e.g. to pick up changes to the
+dashboard. Without a COMMAND, keeps the servers running until Ctrl+C.
 
     python src/run_servers.py python src/app.py
 
@@ -24,6 +27,7 @@ import base64
 import json
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -88,7 +92,8 @@ def start_server(cfg, name, server, log, log_dir):
     server_log = log_dir / f"{name}.log"
     print(f"== Starting {name} at {url} (log: {server_log})")
     with open(server_log, "wb") as out:
-        proc = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT)
+        # stdin: not ours (see Command.start).
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
     log.info("launched %s with command\n  %s", name, subprocess.list2cmdline(argv))
 
     start = time.monotonic()
@@ -147,16 +152,56 @@ def stop_servers(procs, log):
             proc.kill()
 
 
-def run_command(command, log):
-    """Run the command in the foreground; returns its exit code."""
-    print(f"== Starting: {subprocess.list2cmdline(command)}")
-    log.info("starting %s", subprocess.list2cmdline(command))
-    child = subprocess.Popen(command)
-    while True:
-        try:
-            return child.wait()
-        except KeyboardInterrupt:
-            continue  # Ctrl+C reaches the child too; let it shut down on its own
+class Command:
+    """The command run alongside the servers (the dashboard): started before
+    them, and restarted on a "restart" line on standard input."""
+
+    def __init__(self, argv, log):
+        self.argv, self.log = argv, log
+        self.restarting = threading.Event()
+        self.start()
+        print('== Type "restart" (and Enter) to restart it, keeping the servers running')
+        threading.Thread(target=self.watch_input, daemon=True).start()
+
+    def start(self):
+        print(f"== Starting: {subprocess.list2cmdline(self.argv)}")
+        self.log.info("starting %s", subprocess.list2cmdline(self.argv))
+        # Its own stdin, not ours: on Windows a child sharing a pipe that a thread
+        # here is reading (watch_input) can hang on it while starting.
+        self.child = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL)
+
+    def watch_input(self):
+        for line in sys.stdin:  # until standard input closes
+            if line.strip().lower() == "restart" and self.child.poll() is None:
+                print("== Restarting the dashboard (the servers keep running)")
+                self.log.info("restarting %s", subprocess.list2cmdline(self.argv))
+                self.restarting.set()
+                self.child.terminate()
+
+    def exited(self):
+        """Whether it has exited by itself (not for a restart)."""
+        return self.child.poll() is not None and not self.restarting.is_set()
+
+    def wait(self):
+        """Wait until it exits by itself, restarting it whenever asked; returns
+        its exit code."""
+        while True:
+            try:
+                code = self.child.wait()
+            except KeyboardInterrupt:
+                continue  # Ctrl+C reaches the child too; let it shut down on its own
+            if not self.restarting.is_set():
+                return code
+            self.restarting.clear()
+            self.start()
+
+    def stop(self):
+        if self.child.poll() is None:
+            self.child.terminate()
+            try:
+                self.child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.child.kill()
 
 
 def main():
@@ -181,17 +226,23 @@ def main():
 
     procs = []
     exit_code = 0
+    command = None
     try:
+        # The dashboard first, so it's up (showing the servers' status) while they start.
+        if args.command:
+            command = Command(args.command, log)
         # Config order: llama-server comes last, so it sizes itself to the GPU
         # memory the others leave over.
         for name, server in api_servers(cfg).items():
+            if command and command.exited():
+                break  # the dashboard stopped (e.g. its port was taken): no point going on
             if starts(cfg, name):
                 procs.append(start_server(cfg, name, server, log, log_dir))
                 register_voices(cfg, name, server, log)
             else:
                 print(f"== {name}: not started (start = false)")
-        if args.command:
-            exit_code = run_command(args.command, log)
+        if command:
+            exit_code = command.wait()
         else:
             print("== Servers running; Ctrl+C to stop")
             while all(proc.poll() is None for proc in procs):
@@ -201,6 +252,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if command:
+            command.stop()
         stop_servers(procs, log)
     sys.exit(exit_code)
 
