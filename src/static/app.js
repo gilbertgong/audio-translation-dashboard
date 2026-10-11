@@ -36,12 +36,12 @@ function sourceStatus(recording, key) {
   let tip;
   const sp = recording?.splitter;
   if (recording && !sp) [text, state] = ["recording", "active"];
-  else if (key === "capture" && capture?.selected === null) [text, state, tip] = ["no sound yet", "waiting", "waiting for sound to choose a channel"];
+  else if (key === "capture" && capture?.selected === null) [text, state, tip] = ["no audio", "waiting", "waiting for sound to choose a channel"];
   else if (sp?.calibrating) [text, state, tip] = ["calibrating", "waiting", "measuring the background noise"];
   else if (sp) [text, state] = sp.speaking ? ["speech", "active"] : ["listening", ""];
   tip ??= text;
   if (pending[key]) {
-    text += ` · ${pending[key]}…`;
+    text += `/${pending[key]}`;
     tip += ` · ${pending[key]} being translated`;
   }
   setIndicator(key, text, state, tip);
@@ -51,7 +51,8 @@ function updateStatus() {
   sourceStatus(capture?.session, "capture");
   sourceStatus(session, "mic");
   const waiting = speechQueue.length;
-  if (speech) setIndicator("playback", speech.item ? "speaking" : "speaking (▶)", "active");
+  if (speech) setIndicator("playback", ...(speech.item
+    ? ["speaking", "active"] : ["speaking ▶", "active", "speaking (played with ▶)"]));
   else if (playingBtn) setIndicator("playback", "playing", "active", "playing a recording");
   else if (waiting) setIndicator("playback", `${waiting} queued`, "waiting", `${waiting} waiting for a pause in the speech`);
   else setIndicator("playback", ...(autoPlayToggle.checked

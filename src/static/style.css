@@ -409,9 +409,9 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 .controls .shortcut-hint { grid-row: 1; grid-column: 1; justify-self: center; }
 .controls #status {
   grid-row: 1;
-  grid-column: 2 / 5; /* room to grow leftward when the text is long */
-  justify-self: end;
-  padding-right: 14px; /* ends where the level does */
+  grid-column: 4;
+  justify-self: stretch;
+  padding: 0 14px; /* lines up with the level below */
 }
 /* Rows 2-3: the two switches stacked (left-aligned, so their tracks line
    up); the other controls span both rows, centered vertically. */
@@ -446,11 +446,11 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 #record-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* The status row above the level: capture (left), mic (middle), playback
-   (right), unlabeled, with light dividers, each colored by what it's doing. */
-.statuses { display: flex; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
-.status-item { padding: 0 8px; }
-.status-item:first-child { padding-left: 0; }
-.status-item:last-child { padding-right: 0; }
+   (right), unlabeled, with light dividers, each colored by what it's doing:
+   equal thirds, each centered. The wording is kept short enough to fit; text
+   that's too long spills over visibly, a sign to shorten it. */
+.statuses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.status-item { text-align: center; }
 .status-item + .status-item { border-left: 1px solid var(--border); }
 .status-item[data-state="active"] { color: #16a34a; }
 .status-item[data-state="waiting"] { color: #d97706; }
