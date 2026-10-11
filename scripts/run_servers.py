@@ -58,7 +58,7 @@ def server_argv(cfg, name, server):
             exe = exe.with_suffix(".exe")
         program = [str(exe)]
         needed = [(exe, "install_api_servers.py")]
-    files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("-m", ..., model.gguf)
+    files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("--model", ..., model.gguf)
     needed += [(path, "download_models.py") for _, _, path in files]
     for path, hint in needed:
         if not path.is_file():

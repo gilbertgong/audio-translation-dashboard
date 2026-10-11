@@ -101,31 +101,40 @@ voice = "zf_001"
 auto_play = false
 
 [models]
-# Used by scripts/download_models.py. Each model is saved to dir/<name>/.
+# Used by scripts/download_models.py. Each server's models are in its own
+# table below, [models.<name>] for [api_servers.<name>], and saved to
+# dir/<name>/. Keys are the server's flag names (model -> --model, kokoro ->
+# --kokoro); only the started servers' models are downloaded.
+# The whisper and llama models below are sized for 24GB of VRAM.
 dir = "models"
+
+[models.whisper]
 # A whisper.cpp model name, e.g. "large-v3", "large-v3-turbo", "medium"
 # (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
-
-# these are sized for 24GB of VRAM
 # whisper models listed here: https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md#available-models
-whisper = "large-v3"
+model = "large-v3"
+
+[models.llama]
 # Full URL to a GGUF model file for llama.
 # Qwen is well suited to English-Chinese translation
-llama = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"
+model = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ3_XXS.gguf?download=true"
 
 # Suggestions for other VRAM amounts
 # both models run at once, so their sizes add up, and additional VRAM is needed for context/etc
 #
 # 8GB (about 6.4GB for models - 1.1GB and 5.05GB for whisper/llama):
-# whisper = "large-v3-q5_0"
-# llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q3_K_XL.gguf?download=true"
+# [models.whisper]
+# model = "large-v3-q5_0"
+# [models.llama]
+# model = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q3_K_XL.gguf?download=true"
 #
 # 6GB (about 4.8GB for models = .546GB/4.02GB for whisper/llama):
-# whisper = "large-v3-turbo-q5_0"
-# llama = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
+# [models.whisper]
+# model = "large-v3-turbo-q5_0"
+# [models.llama]
+# model = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-IQ3_XXS.gguf?download=true"
 
-# Text-to-speech, one entry per engine in [api_servers] (only the started
-# one's model is downloaded). Keys are the server's flag names (kokoro -> --kokoro).
+# Text-to-speech, one table per engine in [api_servers].
 #
 # Kokoro v1.1 (Chinese + English, 82M parameters): runs on the CPU with no GPU
 # memory, about 3x real time on one thread. The archive is unpacked into
@@ -166,8 +175,8 @@ release = "latest"
 ensure_version = false
 # Release file names to download and unzip (* and ? wildcards allowed).
 assets = ["whisper-bin-{binary_type}.zip"]
-# How scripts/run_servers.py runs it: the model (from [models]), --host and
-# --port are added automatically; args are any extra command-line options.
+# How scripts/run_servers.py runs it: the model (from [models.whisper]),
+# --host and --port are added automatically; args are any extra options.
 executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081

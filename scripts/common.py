@@ -113,7 +113,7 @@ def starts(cfg, name):
 
 
 def model_url(name, value):
-    """URL for a [models] entry: a full URL, or a whisper.cpp model name."""
+    """URL for a model in [models.<name>]: a full URL, or a whisper.cpp model name."""
     if "://" in value:
         return value
     if name == "whisper":
@@ -122,37 +122,33 @@ def model_url(name, value):
 
 
 def model_names(cfg):
-    """The names of the [models] entries (e.g. whisper, llama, tts)."""
-    return [k for k, v in cfg["models"].items() if k != "dir" and isinstance(v, (str, dict))]
+    """The names of the [models.<name>] tables (e.g. whisper, llama, kokoro)."""
+    return [k for k, v in cfg["models"].items() if isinstance(v, dict)]
 
 
 def model_dir(cfg, name):
-    """Where a [models] entry's files go: <models.dir>/<name>/."""
+    """Where [models.<name>]'s files go: <models.dir>/<name>/."""
     return config_path(cfg, cfg["models"].get("dir", "models")) / name
 
 
 def model_files(cfg, name):
-    """The files of a [models] entry, as [(flag, url, local path)].
+    """The files of a [models.<name>] table, as [(flag, url, local path)].
 
-    An entry is either one model (a whisper.cpp model name or a URL), passed to
-    its server as -m; or a table of URLs keyed by the server's flag for each
-    file, e.g. {model = ..., codec = ...} -> --model and --codec. Files are
-    saved to <models.dir>/<name>/<file name from URL>.
+    The table's keys are the server's flags and its values URLs (or, for
+    whisper, a whisper.cpp model name), e.g. {model = ..., codec = ...} ->
+    --model and --codec. Files are saved to <models.dir>/<name>/<file name
+    from URL>.
 
     A URL to an archive (.zip, .tar.bz2, ...) names the file to use inside it
     after a #, e.g. ".../kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx":
     the archive is unpacked into <models.dir>/<name>/ and that file is passed.
     """
-    entry = cfg["models"][name]
     folder = model_dir(cfg, name)
-    if isinstance(entry, str):
-        pairs = [("-m", model_url(name, entry))]
-    else:
-        pairs = [(f"--{key}", model_url(name, url)) for key, url in entry.items()]
     files = []
-    for flag, url in pairs:
+    for key, value in cfg["models"][name].items():
+        url = model_url(name, value)
         parts = urllib.parse.urlsplit(url)
-        files.append((flag, url, folder / (parts.fragment or Path(parts.path).name)))
+        files.append((f"--{key}", url, folder / (parts.fragment or Path(parts.path).name)))
     return files
 
 
