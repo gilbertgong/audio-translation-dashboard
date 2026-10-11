@@ -2,7 +2,7 @@
 GitHub releases, as configured in the [api_servers] section of the config.
 
 Usage, from the project root:
-    python scripts/install_api_servers.py [--dry-run] [--force] [config_local.toml]
+    python src/install_api_servers.py [--dry-run] [--force] [config_local.toml]
 
 Per server, in config_local.toml:
     start = false            skip the server entirely
@@ -112,7 +112,8 @@ def install(name, dest, tag, urls):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("config", nargs="?", default=CONFIG_LOCAL_FILE, type=Path,
-                        help="settings over config/defaults.toml (default: the project's config_local.toml)")
+                        help="settings on top of the defaults and config_generated.toml "
+                             "(default: the project's config_local.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="reinstall the configured release")
     args = parser.parse_args()

@@ -2,7 +2,7 @@
 llama, TTS).
 
 Usage, from the project root:
-    python scripts/download_models.py [--dry-run] [--force] [config_local.toml]
+    python src/download_models.py [--dry-run] [--force] [config_local.toml]
 
 Settings come from config/defaults.toml, with config_local.toml (or the given file)
 on top. Each model is saved to <models.dir>/<name>/ (e.g.
@@ -26,7 +26,8 @@ NAME = "download_models"
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("config", nargs="?", default=CONFIG_LOCAL_FILE, type=Path,
-                        help="settings over config/defaults.toml (default: the project's config_local.toml)")
+                        help="settings on top of the defaults and config_generated.toml "
+                             "(default: the project's config_local.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="download again even if the file exists")
     args = parser.parse_args()

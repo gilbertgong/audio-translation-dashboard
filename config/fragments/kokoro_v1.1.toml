@@ -9,7 +9,7 @@ repo = "k2-fsa/sherpa-onnx"
 release = "v1.13.8"
 ensure_version = false
 assets = ["sherpa-onnx-v*-win-x64-shared-MT-Release.tar.bz2"]
-script = "sherpa_server_win.py"
+script = "src/sherpa_server_win.py"
 host = "127.0.0.1"
 port = 8083
 # {server_dir}: the install folder. --threads: about 3x real time on 1, 8x on 8.

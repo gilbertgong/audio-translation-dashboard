@@ -1,6 +1,9 @@
 """Audio Translation Dashboard - backend server.
 
-Usage: python app.py [--mock] [path/to/config_local.toml]
+Usage, from the project folder: python src/app.py [--mock] [path/to/config_local.toml]
+
+Settings: config/defaults.toml, then config_generated.toml, then
+config_local.toml (or the given file); see configuration.py.
 
 --mock runs without whisper-server or llama-server, for working on the page
 itself: the dashboard opens with the first lines of a sample conversation, and
@@ -16,19 +19,17 @@ import json
 import logging
 import re
 import time
-import tomllib
 import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+import configuration
 from microweb import App, HTTPError, Stream
 
-ROOT = Path(__file__).resolve().parent
-STATIC_DIR = ROOT / "static"
-DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
-CONFIG_LOCAL_FILE = ROOT / "config_local.toml"  # your settings, on top of the defaults (optional)
+ROOT = configuration.ROOT  # the project folder
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 STT_TIMEOUT = 300  # seconds to wait for whisper-server
 LLM_TIMEOUT = 300  # seconds to wait for llama-server
 TTS_TIMEOUT = 120  # seconds to wait for the TTS server
@@ -36,7 +37,7 @@ TTS_TIMEOUT = 120  # seconds to wait for the TTS server
 # samples, mono, at this rate.
 TTS_PCM_TYPE = "audio/pcm; rate=24000; channels=1"
 
-# Shared log file and line format (same as scripts/common.py).
+# Shared log file and line format (same as common.py).
 LOG_FILE = "logs/app.log"
 LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -80,34 +81,11 @@ def setup_logging(config_dir):
     return path
 
 
-def merge(base, override):
-    """Settings from override on top of base: tables merge key by key; any
-    other value (including lists) is replaced."""
-    result = dict(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
 def load_config(path):
-    """config/defaults.toml with the settings in path on top. The default
-    config_local.toml may be missing (all defaults); an explicitly given path may not.
-    (Same rules as scripts/common.py.)"""
-    with open(DEFAULTS_FILE, "rb") as f:
-        config = tomllib.load(f)
-    path = Path(path)
-    if path.is_file():
-        with open(path, "rb") as f:
-            try:
-                config = merge(config, tomllib.load(f))
-            except tomllib.TOMLDecodeError as err:
-                raise SystemExit(f"error: {path.resolve()}: {err}") from None
-    elif path.resolve() != CONFIG_LOCAL_FILE:
-        raise SystemExit(f"error: config file not found: {path.resolve()}")
-    config["_config_dir"] = ROOT  # relative paths are relative to the project folder
+    """The settings (see configuration.py), with path standing in for
+    config_local.toml, plus values derived from them: absolute temp_dir, the
+    servers' URLs and the rendered system prompt."""
+    config = configuration.load(path)
     temp_dir = Path(config["audio"]["temp_dir"])
     if not temp_dir.is_absolute():
         temp_dir = ROOT / temp_dir
@@ -274,7 +252,7 @@ def mock_speech_stream(text):
 # The web app. Handlers use the module-level settings below, set in main().
 
 app = App(static_dir=STATIC_DIR)  # request bodies up to 1 MB unless a handler allows more
-config = None  # the settings: config/defaults.toml with config_local.toml on top
+config = None  # the settings (see load_config)
 mock = False  # --mock: sample data instead of whisper/llama
 mock_counter = itertools.count(MOCK_PRELOAD)  # next sample line in mock mode
 
@@ -439,8 +417,9 @@ def post_recording(req):
 def main():
     global config, mock
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("config", nargs="?", default=CONFIG_LOCAL_FILE, type=Path,
-                        help="config file (default: config_local.toml next to app.py)")
+    parser.add_argument("config", nargs="?", default=configuration.CONFIG_LOCAL_FILE, type=Path,
+                        help="settings on top of the defaults and config_generated.toml "
+                             "(default: config_local.toml in the project folder)")
     parser.add_argument("--mock", action="store_true",
                         help="sample data instead of whisper/llama, for styling the page")
     args = parser.parse_args()
@@ -454,8 +433,7 @@ def main():
     shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0", "::") else host
     banner = [
         *(["Mode:       MOCK (sample data; whisper, llama and tts are not used)"] if mock else []),
-        f"Config:     {DEFAULTS_FILE}" + (f" + {args.config.resolve()}" if args.config.is_file()
-                                            else " (no config_local.toml: defaults only)"),
+        f"Config:     {' + '.join(p.name for p in config['_files'])}",
         f"Log:        {log_path}",
         f"Recordings: {config['audio']['temp_dir']}",
         f"Whisper:    {config['whisper_url']}",

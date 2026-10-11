@@ -8,6 +8,10 @@
 #   [llama_prompt]
 #   language2 = "Japanese"
 #
+# Layers, each on top of the one before (see configuration.py): this file, then
+# config_generated.toml (from the launcher's Generate config: a recipe's
+# servers and models), then config_local.toml, which always wins.
+#
 # Settings are read at startup; changes take effect on restart. Relative paths
 # are relative to the project folder.
 
@@ -101,7 +105,7 @@ voice = "zf_001"
 auto_play = false
 
 [models]
-# Used by scripts/download_models.py. Each server's models are in its own
+# Used by src/download_models.py. Each server's models are in its own
 # table below, [models.<name>] for [api_servers.<name>], and saved to
 # dir/<name>/. Keys are the server's flag names (model -> --model, kokoro ->
 # --kokoro); only the started servers' models are downloaded.
@@ -153,7 +157,7 @@ model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-ta
 codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
 
 [api_servers]
-# Used by scripts/install_api_servers.py and scripts/run_servers.py. Prebuilt
+# Used by src/install_api_servers.py and src/run_servers.py. Prebuilt
 # binaries are downloaded from GitHub releases into install_dir/<name>/.
 install_dir = "api_servers"
 # Which build to download. Substituted for {binary_type} in the asset patterns
@@ -175,7 +179,7 @@ release = "latest"
 ensure_version = false
 # Release file names to download and unzip (* and ? wildcards allowed).
 assets = ["whisper-bin-{binary_type}.zip"]
-# How scripts/run_servers.py runs it: the model (from [models.whisper]),
+# How src/run_servers.py runs it: the model (from [models.whisper]),
 # --host and --port are added automatically; args are any extra options.
 executable = "whisper-server"
 host = "127.0.0.1"
@@ -198,7 +202,7 @@ repo = "k2-fsa/sherpa-onnx"
 release = "v1.13.8"
 ensure_version = false
 assets = ["sherpa-onnx-v*-win-x64-shared-MT-Release.tar.bz2"]
-script = "sherpa_server_win.py"
+script = "src/sherpa_server_win.py"
 host = "127.0.0.1"
 port = 8083
 args = ["--lib", "{server_dir}/lib", "--threads", "4"]
@@ -220,7 +224,7 @@ port = 8085
 args = ["--lang", "auto"]
 
 [api_servers.qwentts.voices]
-# Cloned voices, registered by scripts/run_servers.py every time tts-server
+# Cloned voices, registered by src/run_servers.py every time tts-server
 # starts (it keeps them in memory only), then selected by name when speaking.
 # name = WAV file of one speaker, about 10-30 s (relative to the project
 # folder); no transcript needed. See voices/README.md.

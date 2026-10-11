@@ -7,3 +7,4 @@ models/*
 logs/*
 !logs/.gitkeep
 /config_local.toml
+/config_generated.toml

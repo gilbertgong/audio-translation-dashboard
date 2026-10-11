@@ -1,14 +1,14 @@
-"""Shared helpers for the scripts in this directory. Standard library only."""
+"""Shared helpers for the scripts (install_api_servers.py, download_models.py,
+run_servers.py). Standard library only."""
 
 import sys
 
-if sys.version_info < (3, 11):  # before importing tomllib, which needs 3.11
+if sys.version_info < (3, 11):  # before configuration.py imports tomllib, which needs 3.11
     raise SystemExit(f"error: Python 3.11+ is required (this is {sys.version.split()[0]})")
 
 import logging
 import shutil
 import tarfile
-import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,9 +17,8 @@ from pathlib import Path
 
 USER_AGENT = "audio-translation-dashboard-scripts"
 
-ROOT = Path(__file__).resolve().parent.parent  # the project folder
-DEFAULTS_FILE = ROOT / "config" / "defaults.toml"  # all settings, with comments
-CONFIG_LOCAL_FILE = ROOT / "config_local.toml"  # your settings, on top of the defaults (optional)
+# The settings loader, shared with app.py and the launcher (re-exported here).
+from configuration import CONFIG_LOCAL_FILE, ROOT, load as load_config  # noqa: E402
 
 # Whisper model names (e.g. "large-v3") expand to files in this repository.
 WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
@@ -63,37 +62,6 @@ def run_script(main, name, interrupted="interrupted"):
         if logging_ready():
             log.exception("failed")
         raise
-
-
-def merge(base, override):
-    """Settings from override on top of base: tables merge key by key; any
-    other value (including lists) is replaced."""
-    result = dict(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
-def load_config(path):
-    """config/defaults.toml with the settings in path on top. The default
-    config_local.toml may be missing (all defaults); an explicitly given path may not.
-    (Same rules as app.py.)"""
-    with open(DEFAULTS_FILE, "rb") as f:
-        cfg = tomllib.load(f)
-    path = Path(path)
-    if path.is_file():
-        with open(path, "rb") as f:
-            try:
-                cfg = merge(cfg, tomllib.load(f))
-            except tomllib.TOMLDecodeError as err:
-                raise SystemExit(f"error: {path.resolve()}: {err}") from None
-    elif path.resolve() != CONFIG_LOCAL_FILE:
-        raise SystemExit(f"error: config file not found: {path.resolve()}")
-    cfg["_config_dir"] = ROOT  # relative paths are relative to the project folder
-    return cfg
 
 
 def config_path(cfg, value):

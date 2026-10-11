@@ -15,10 +15,10 @@ if ! command -v "$PYTHON" >/dev/null; then
 fi
 
 # 1. Download the servers (whisper.cpp, llama.cpp, the TTS engine), if needed.
-"$PYTHON" scripts/install_api_servers.py
+"$PYTHON" src/install_api_servers.py
 
 # 2. Download their models, if needed.
-"$PYTHON" scripts/download_models.py
+"$PYTHON" src/download_models.py
 
 # 3. Start the servers, then the dashboard; Ctrl+C stops everything.
-"$PYTHON" scripts/run_servers.py "$PYTHON" app.py
+"$PYTHON" src/run_servers.py "$PYTHON" src/app.py

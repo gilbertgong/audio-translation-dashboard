@@ -2,7 +2,7 @@
 them running while a command runs, e.g. the dashboard.
 
 Usage, from the project root:
-    python scripts/run_servers.py [--config config_local.toml] [COMMAND ...]
+    python src/run_servers.py [--config config_local.toml] [COMMAND ...]
 
 Starts each server with start = true in [api_servers], in config order, and
 waits until it answers on /health. Voices listed in [api_servers.<name>.voices]
@@ -10,7 +10,7 @@ are registered as soon as their server is ready. Then runs COMMAND, and stops
 the servers when it exits. Without a COMMAND, keeps the servers running until
 Ctrl+C.
 
-    python scripts/run_servers.py python app.py
+    python src/run_servers.py python src/app.py
 
 Server output goes to logs/<name>.log; launches and errors are also logged to
 logs/app.log. The servers must already be installed, with their models
@@ -62,7 +62,7 @@ def server_argv(cfg, name, server):
     needed += [(path, "download_models.py") for _, _, path in files]
     for path, hint in needed:
         if not path.is_file():
-            raise SystemExit(f"error: {path} not found (run scripts/{hint})")
+            raise SystemExit(f"error: {path} not found (run src/{hint})")
     model_args = [arg for flag, _, path in files for arg in (flag, str(path))]
     args = [arg.replace("{server_dir}", str(server_dir)) for arg in server.get("args", [])]
     return [*program, *model_args, "--host", server["host"], "--port", str(server["port"]), *args]
@@ -162,9 +162,10 @@ def run_command(command, log):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--config", default=CONFIG_LOCAL_FILE, type=Path,
-                        help="settings over config/defaults.toml (default: the project's config_local.toml)")
+                        help="settings on top of the defaults and config_generated.toml "
+                             "(default: the project's config_local.toml)")
     parser.add_argument("command", nargs=argparse.REMAINDER,
-                        help="command to run while the servers are up (e.g. python app.py)")
+                        help="command to run while the servers are up (e.g. python src/app.py)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

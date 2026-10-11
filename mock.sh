@@ -3,4 +3,4 @@
 set -e
 cd "$(dirname "$0")"
 
-python app.py --mock
+python src/app.py --mock

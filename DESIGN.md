@@ -6,7 +6,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 
 ## Approach
 
-- The core application logic of voice translation is isolated from ancillary configuration and model handling, which are handled instead by a configuration file (`config.toml`) and supporting scripts (`scripts/`).
+- The core application logic of voice translation is isolated from ancillary configuration and model handling, which are handled instead by a configuration file (`config.toml`) and supporting scripts (in `src/`).
 - The configuration is read at startup and fixed while running, so there's no configuration UI and no wiring for settings to flow back into behavior. This keeps the core app far simpler and easier to change and extend.
 - It also lets the UI stay clean and focused on voice translation itself: the page only has controls you'd change while using it.
 
@@ -41,7 +41,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
                            +---------------------+  +---------------------+  +---------------------+
 ```
 
-### Dashboard (`static/`)
+### Dashboard (`src/static/`)
 
 - **Capture:** microphone → software gain → AudioWorklet. The page builds 16 kHz mono WAV itself, so whisper gets lossless audio in its native format with no ffmpeg.
 - **Translation window:** one row per recording. The left column (Conversation) shows the original and its translation, aligned left or right by language; the translation fills in as llama generates it, and gets a ▶ button to speak it once complete. The right column (Activity) shows timings — audio length, transcribe time, translate time (with time to first token, TTFT, under it), and time until speech starts — plus errors. The Activity column is collapsible.
@@ -49,7 +49,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
 - **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`), and show recording details (`ⓘ`: how a phrase was split, the saved file's path).
 
-### Backend (`app.py`)
+### Backend (`src/app.py`)
 
 Serves the page and runs the pipeline. The HTTP plumbing lives in `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py` is just the app: config, the engine calls, and its endpoints as decorated functions:
 
@@ -73,7 +73,7 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 #### Text-to-speech: Kokoro on sherpa-onnx (`sherpa_server_win.py`)
 
-[Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) v1.1 is an 82M-parameter model built on StyleTTS 2 (without its diffusion stage), with 103 voices: 3 English, 100 Chinese, each speaking both languages. It runs on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), a speech toolkit on ONNX Runtime that ships prebuilt libraries but no TTS server, so `sherpa_server_win.py` (ours, in the project root) is that server:
+[Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) v1.1 is an 82M-parameter model built on StyleTTS 2 (without its diffusion stage), with 103 voices: 3 English, 100 Chinese, each speaking both languages. It runs on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), a speech toolkit on ONNX Runtime that ships prebuilt libraries but no TTS server, so `sherpa_server_win.py` (ours, in `src/`) is that server:
 
 - **Binding:** it loads `sherpa-onnx-c-api.dll` with `ctypes` (standard library only) and mirrors the C structures field for field, so the sherpa-onnx release is pinned (v1.13.8); upgrading means checking `c-api.h` for changes. Windows only for now (other systems would load the `.so`/`.dylib`).
 - **API:** OpenAI-style `POST /v1/audio/speech` (`"voice"` by name, e.g. `zf_001`, or speaker id; `"speed"`; `pcm` streamed or `wav`), `GET /v1/audio/voices`, `GET /health`. The dashboard uses it as it would any OpenAI-style TTS server. Speech streams a sentence at a time: first audio after about 0.2–0.3 s, about 5.5× real time end to end.
@@ -105,6 +105,8 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 ## Running
 
+On Windows, double-click **`launcher.pyw`**, the only Python file in the project folder: its Launch button runs the steps below and shows their output (Stop stops everything). Elsewhere, or from a terminal:
+
 ```bash
 ./launch.sh
 ```
@@ -112,27 +114,28 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 A development convenience that runs the three steps below in order; each can also be run by hand from the project root. All the logic is in the Python scripts, so `launch.sh` stays bare scaffolding:
 
 ```bash
-python scripts/install_api_servers.py           # the servers, if needed
-python scripts/download_models.py               # their models, if needed
-python scripts/run_servers.py python app.py     # start the servers, then the dashboard
+python src/install_api_servers.py               # the servers, if needed
+python src/download_models.py                   # their models, if needed
+python src/run_servers.py python src/app.py     # start the servers, then the dashboard
 ```
 
 The dashboard is at <http://localhost:8080/>; Ctrl+C stops everything.
 
 ```bash
-python app.py --mock
+python src/app.py --mock
 ```
 
 The dashboard alone with sample data, for working on the page without the servers. Translations are streamed in pieces like llama's, and speech is silence of about the right length.
 
 ### Scripts
 
-In `scripts/`, run from the project root; each supports `--help`.
+All the Python is in `src/` (with the dashboard's web files in `src/static/`), run from the project root; each script supports `--help`.
 
 - **`install_api_servers.py`** — downloads the whisper.cpp, llama.cpp and sherpa-onnx (or qwentts.cpp) builds into `api_servers/`, unpacking `.zip` or `.tar.*`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. A pinned release that differs from the installed one is always installed. Servers with `start = false` are skipped.
 - **`download_models.py`** — downloads the models into `models/`; interrupted downloads resume. A model is one file, or several passed under their own flags (Qwen's talker and codec: `--model`, `--codec`); a URL can name a file inside an archive (`url#path`), which is unpacked. Skips models for servers with `start = false`.
-- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`). Waits until each answers on `/health`, registers its voices (Qwen's tts-server), runs the given command (e.g. `python app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
+- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`). Waits until each answers on `/health`, registers its voices (Qwen's tts-server), runs the given command (e.g. `python src/app.py`) and stops the servers when it exits; with no command, runs them until Ctrl+C.
 - **`common.py`** — helpers shared by the scripts.
+- **`configuration.py`** — reads the settings, for the scripts, `app.py` and the launcher alike.
 
 ### Logs
 
