@@ -76,3 +76,17 @@ main.tests {
 }
 
 #tts-download { font-size: 0.85rem; color: var(--accent); }
+
+/* Smoke test page (smoke.html): the checks, the rows found, and the
+   dashboard under test in a frame. */
+main.smoke { max-width: 1200px; }
+.smoke .about { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.checks { margin: 10px 0 0; padding: 0; list-style: none; font-size: 0.9rem; }
+.checks li { padding: 2px 0; }
+.checks .pass { color: #16a34a; }
+.checks .fail { color: var(--recording); }
+.checks .detail { color: var(--muted); }
+.smoke-rows { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 0.8rem; }
+.smoke-rows th, .smoke-rows td { padding: 3px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.smoke-rows tr.fail td { color: var(--recording); }
+.smoke-frame { width: 100%; height: 640px; border: 1px solid var(--border); border-radius: 8px; }

@@ -63,6 +63,10 @@ A second page, linked from the dashboard's header, that tests one stage at a tim
 - **Speak:** any text in any of the TTS server's voices (a picker from `/api/voices`); shows time to first audio, with Play again and a WAV download.
 - "Translate this ↓" and "Speak this ↓" pass a result to the next panel, and sample texts (English, Chinese, mixed) help test a language you don't speak.
 
+#### Smoke test (`smoke.html`)
+
+Linked from the component tests: checks that nothing broke, end to end, with the running servers (about a minute). It loads the real dashboard in a frame and replaces the frame's `getUserMedia` and `getDisplayMedia` with streams it plays known speech into (`voices/test_audio/`, served by `/api/test-audio`), so the dashboard runs exactly as it would with a person talking. The microphone gets Beth in English; the capture, on its right channel, the same in Chinese, then in Japanese (outside the language pair). Then silence, with Automatic Translation Playback on. It checks: the capture chose the channel with sound; each clip split into several phrases, each transcribed and translated without errors, in the expected language (the Japanese ones rechecked), with the language tag stripped; nothing spoken automatically while anyone was talking, then playback starting after the turn pause; and all three statuses back to off. It's a smoke test, not an accuracy test: the text itself isn't compared.
+
 ### Backend (`src/app.py`)
 
 Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py` is just the app: config, the engine calls, and its endpoints as decorated functions:
@@ -128,7 +132,7 @@ Sections:
 | Section                 | Covers                                                                   |
 |-------------------------|--------------------------------------------------------------------------|
 | `[server]`              | Dashboard host and port.                                                 |
-| `[launcher]`            | `show_dev_controls` (Mock and Restart app).                               |
+| `[launcher]`            | `show_dev_controls` (Mock, Restart app, the server buttons).             |
 | `[audio]`               | Recording storage, sample rate, and the browser's microphone processing. |
 | `[auto_split]`          | Continuous Audio Mode: initial state and pause-detection tuning.         |
 | `[languages]`           | The two languages to translate between (`language1`, `language2`): whisper's language names (see below). |
@@ -165,7 +169,7 @@ On Windows, double-click **`launcher.pyw`**, the only Python file in the project
 - **▶ Launch / ■ Stop:** runs the three steps below, showing their output (the dashboard starts before the servers, so its header shows them coming up); Stop (or closing the window) stops the servers and the dashboard. Each button is faded when it doesn't apply.
 - **Generate config:** see [Configuration](#fragments-and-recipes).
 - **Kill servers:** lists this project's processes still running (anything run from `api_servers/`, and Python running `src/` scripts), e.g. strays from an earlier run, and kills them after you confirm.
-- **Developer controls** (only with `[launcher] show_dev_controls = true`): **Mock**, the dashboard alone with sample data (Launch and Mock each stop the other first, since both use the dashboard's port); **Restart app**, the dashboard alone restarted to pick up changes to it, with the servers left running (for Mock, the mock restarted).
+- **Developer controls** (only with `[launcher] show_dev_controls = true`): **Mock**, the dashboard alone with sample data (Launch and Mock each stop the other first, since both use the dashboard's port); **Restart app**, the dashboard alone restarted to pick up changes to it, with the servers left running (for Mock, the mock restarted); and a row of **server buttons**, one per server Launch starts (`start = true` in the merged settings), each starting or stopping its server (■ running, ▶ stopped, red if it failed or exited by itself). Before a launch, a server starts on its own (`run_servers.py --only NAME`), and a later Launch uses it as it is and leaves it running; during a launch, the launch's servers are stopped and started through its `run_servers.py`.
 
 Elsewhere, or from a terminal:
 
@@ -213,7 +217,7 @@ In `src/`, run from the project root; each script supports `--help`.
 
 - **`install_api_servers.py`** — downloads the whisper.cpp, llama.cpp and sherpa-onnx (or qwentts.cpp) builds into `api_servers/<name>/`, unpacking `.zip` or `.tar.*`. With `ensure_version = false` (default) an installed build is kept without contacting GitHub; with `true`, every run makes sure the configured release is installed. A pinned release that differs from the installed one is always installed. Servers with `start = false` are skipped.
 - **`download_models.py`** — downloads each started server's models into `models/<name>/`; interrupted downloads resume. Archives (`url#path`) are unpacked and deleted.
-- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`; `{server_dir}` in its `args` is its install folder). Starts the given command first (e.g. `python src/app.py`, so the dashboard is up while the servers start), waits until each server answers on `/health`, registers its voices (Qwen's tts-server), and stops the servers when the command exits; a `restart` line on its input (typed, or the launcher's Restart app) restarts just the command; with no command, runs them until Ctrl+C.
+- **`run_servers.py`** — starts the servers with `start = true` (in config order): an installed executable, or a project script run with the same Python (`sherpa_server_win.py`; `{server_dir}` in its `args` is its install folder). Starts the given command first (e.g. `python src/app.py`, so the dashboard is up while the servers start), waits until each server answers on `/health`, registers its voices (Qwen's tts-server), and stops the servers when the command exits; a `restart` line on its input (typed, or the launcher's Restart app) restarts just the command, and `stop NAME` / `start NAME` stop or start one server (the launcher's server buttons), each server's state reported as `== server NAME: <state>`; `--only NAME` starts just that one; a server already running at its address is used as it is (and left running); with no command, runs them until Ctrl+C.
 - **`configuration.py`** — reads the three settings layers.
 - **`common.py`** — helpers shared by the scripts.
 

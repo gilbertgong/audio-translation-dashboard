@@ -64,6 +64,7 @@ h1 { font-size: 1.1rem; margin: 0; }
 }
 
 .header-link:hover { background: var(--header-btn-hover); }
+.header-link + .header-link { margin-left: 0; } /* several: side by side */
 
 /* Server status, at the right of the header before the link: a colored dot
    per server (green ok, amber loading, red down, gray not checked yet). */
@@ -234,17 +235,30 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 
 .utterance .meta:empty { display: none; }
 
+/* The transcription is the smaller and narrower of the two (75% of the row),
+   the translation the main text (95%); both on the row's side (lang2 rows:
+   the right). Both flow as one paragraph, filling their width: line breaks in
+   the text (whisper's segment boundaries, which llama copies) become spaces. */
 .utterance .original,
 .utterance .translation {
-  font-size: 1.05rem;
   line-height: 1.5;
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.utterance .original {
+  max-width: 75%;
+  font-size: 0.95rem;
 }
 
 .utterance .translation {
+  max-width: 95%;
+  font-size: 1.1rem;
   color: var(--accent);
   margin-top: 4px;
 }
+
+.utterance.lang2 .original,
+.utterance.lang2 .translation { margin-left: auto; }
 
 .utterance .translation:empty { display: none; }
 .utterance .pending { color: var(--muted); font-style: italic; }

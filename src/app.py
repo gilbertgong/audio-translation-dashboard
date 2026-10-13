@@ -399,6 +399,17 @@ def get_voices(req):
     return {"voices": [str(n) for n in names if n], "default": default}
 
 
+@app.get("/api/test-audio")
+def get_test_audio(req):
+    """?file=<a WAV under voices/>, e.g. test_audio/beth_chinese.wav: known
+    speech for the smoke test page (smoke.html)."""
+    voices = (ROOT / "voices").resolve()
+    file = (voices / req.query.get("file", "")).resolve()
+    if not file.is_relative_to(voices) or file.suffix.lower() != ".wav" or not file.is_file():
+        raise HTTPError(404, "no such WAV under voices/ (see src/tools/generate_test_audio.py)")
+    return file.read_bytes()
+
+
 def choose_voice(voice=None, target=None):
     """The voice to speak in, for text in target ("language1", "language2" or
     None). First match: the voice given; [tts] voice_language1/voice_language2

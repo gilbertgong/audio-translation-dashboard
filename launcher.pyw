@@ -6,12 +6,18 @@ their models if needed, then starts the dashboard and the servers (the
 dashboard first, so its header shows them coming up), showing their output.
 Stop, or closing the window, stops everything.
 
-With [launcher] show_dev_controls = true in config_local.toml, two more
-buttons: Mock runs the dashboard alone with sample data instead (what mock.sh
+With [launcher] show_dev_controls = true in config_local.toml, more
+controls: Mock runs the dashboard alone with sample data instead (what mock.sh
 does); Launch and Mock each stop the other first, since both use the
 dashboard's port. Restart app restarts just the dashboard, to pick up changes
 to it, keeping the servers running (run_servers.py restarts it when told
-"restart" on its input); for Mock, it restarts the mock.
+"restart" on its input); for Mock, it restarts the mock. And a row of server
+buttons, one per server Launch starts (start = true in the merged settings),
+each starting or stopping its server and showing its state as reported back.
+Before a launch (or after), a server is started on its own (run_servers.py
+--only NAME); a later Launch uses it as it is and leaves it running. During a
+launch, the launch's servers are stopped and started through its
+run_servers.py ("stop NAME" / "start NAME").
 
 Generate config: detects the GPU's memory (nvidia-smi), suggests a recipe from
 config/recipes/, takes the two languages to translate between (from whisper's
@@ -74,6 +80,20 @@ if os.name == "nt":
 else:
     # Own process group, so Stop can signal the whole tree.
     CHILD_OPTIONS = {"start_new_session": True}
+
+
+def launched_servers():
+    """The servers Launch starts: [api_servers] sections with start = true
+    (the default), in config order, from all the layers; [] if unreadable."""
+    try:
+        servers = configuration.load().get("api_servers", {})
+    except SystemExit:
+        return []
+    return [name for name, server in servers.items() if isinstance(server, dict) and server.get("start", True)]
+
+
+# run_servers.py's report of a server's state, on a line of its own.
+SERVER_STATE = re.compile(r"^== server (\S+): (\w+)\s*$")
 
 
 def setting(section, key, default=None):
@@ -378,6 +398,9 @@ class Launcher:
         self.stopping = False
         self.output = queue.Queue()  # (kind, value) from the worker thread to the window
         self.carriage_return = False  # a "\r" was written: the next text replaces the line
+        self.server_states = {}  # name: state reported by run_servers.py
+        self.server_buttons = {}  # name: button (developer controls)
+        self.solo = {}  # name: run_servers.py --only NAME, for a server started on its own
 
         root.title("Audio Translation Dashboard - Launcher")
         # Row 1: the dashboard itself, the thing to open once it's running.
@@ -406,6 +429,13 @@ class Launcher:
         self.kill_button = tool_button(bar, "Kill servers", self.kill_servers)
         self.kill_button.pack(side="right", padx=(0, 6))
         self.generate_window = None
+
+        # Row 3 (developer controls): a button per server, to stop or start it
+        # on its own while a launch runs.
+        self.servers_row = ttk.Frame(root, padding=(8, 0, 8, 8))
+        if setting("launcher", "show_dev_controls", False):
+            self.servers_row.pack(fill="x")
+            self.make_server_buttons()
         self.update_buttons()
 
         # Sized in characters, like a terminal; the window fits around it.
@@ -426,6 +456,8 @@ class Launcher:
             return
         self.mode = mode
         self.stopping = False
+        if mode == "launch" and self.server_buttons:
+            self.make_server_buttons()  # the settings may have changed (e.g. Generate config)
         self.update_buttons()
         threading.Thread(target=self.run_steps, args=(MODES[mode],), daemon=True).start()
 
@@ -446,6 +478,90 @@ class Launcher:
         set_enabled(self.stop_button, bool(self.mode) and not busy)
         dashboard_up = self.mode == "mock" or (self.mode == "launch" and self.step == "Running")
         set_enabled(self.restart_button, dashboard_up and not busy)
+        for name, button in self.server_buttons.items():
+            self.show_server(name, button, busy)
+
+    # --- server buttons (developer controls)
+
+    def make_server_buttons(self):
+        for child in self.servers_row.winfo_children():
+            child.destroy()
+        self.server_buttons = {}
+        names = launched_servers()
+        ttk.Label(self.servers_row, text="Servers:" if names else "Servers: none to start").pack(side="left")
+        for name in names:
+            button = tool_button(self.servers_row, name, lambda name=name: self.toggle_server(name))
+            button.pack(side="left", padx=(6, 0))
+            self.server_buttons[name] = button
+
+    # A server's state -> (its button's label glyph, its text color, whether it
+    # can be clicked): ■ stops a running server, ▶ starts a stopped one, … while
+    # it changes.
+    SERVER_LOOKS = {
+        "ready": ("■", GREEN, True),
+        "stopped": ("▶", "#1d2125", True),
+        "failed": ("▶", RED, True),
+        "exited": ("▶", RED, True),
+        "starting": ("…", "#1d2125", False),
+        "stopping": ("…", "#1d2125", False),
+    }
+
+    def show_server(self, name, button, busy):
+        """A server button as its state says (▶ when it's not running). Plain
+        and disabled while a launch is about to start it, or while a launch
+        is stopping (except a server started on its own)."""
+        state = self.server_states.get(name)
+        solo = name in self.solo
+        launch_will_start = self.mode == "launch" and state is None and not solo
+        if (busy and not solo) or launch_will_start:
+            button.configure(text=name, fg="#1d2125", disabledforeground="#9aa1ab")
+            set_enabled(button, False)
+            return
+        glyph, color, clickable = self.SERVER_LOOKS.get(state, self.SERVER_LOOKS["stopped"])
+        button.configure(text=f"{glyph} {name}", fg=color, activeforeground=color, disabledforeground=color)
+        set_enabled(button, clickable)
+
+    def launch_running(self):
+        return self.mode == "launch" and self.step == "Running" and self.proc and self.proc.poll() is None
+
+    def toggle_server(self, name):
+        """Stop a running server, or start a stopped one: one started on its own
+        through its own run_servers.py, a launch's through the launch's; with
+        no launch running, a server is started on its own."""
+        stop = self.server_states.get(name) == "ready"
+        if name in self.solo:
+            if stop:
+                self.server_states[name] = "stopping"
+                proc = self.solo[name]
+                threading.Thread(target=stop_tree, args=(proc,), daemon=True).start()
+        elif self.launch_running():
+            action = "stop" if stop else "start"
+            try:
+                self.proc.stdin.write(f"{action} {name}\n".encode())
+                self.proc.stdin.flush()
+            except OSError as err:
+                self.write(f"== could not {action} {name}: {err}\n")
+                return
+            self.server_states[name] = "stopping" if stop else "starting"  # until it reports
+        elif not stop:
+            self.start_solo(name)
+        self.update_buttons()
+
+    def start_solo(self, name):
+        """Start one server on its own: run_servers.py --only NAME, until stopped."""
+        self.server_states[name] = "starting"
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.Popen([PYTHON, "src/run_servers.py", "--only", name], cwd=ROOT, env=env,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                **CHILD_OPTIONS)
+        self.solo[name] = proc
+
+        def run():
+            self.pump(proc)
+            proc.wait()
+            self.output.put(("solo-done", name))
+
+        threading.Thread(target=run, daemon=True).start()
 
     def restart_app(self):
         """Restart just the dashboard: for a launch, run_servers.py restarts it
@@ -514,6 +630,8 @@ class Launcher:
         self.next_mode = None
         if self.mode:
             self.stop()
+        for proc in self.solo.values():  # servers started on their own
+            stop_tree(proc)
         self.root.destroy()
 
     # --- worker thread: runs the steps, passing their output to the window
@@ -529,9 +647,7 @@ class Launcher:
             # stdin: for run_servers.py's "restart" (Restart app).
             self.proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **CHILD_OPTIONS)
-            decoder = codecs.getincrementaldecoder("utf-8")("replace")
-            while chunk := self.proc.stdout.read1(65536):
-                self.output.put(("text", decoder.decode(chunk)))
+            self.pump(self.proc)
             code = self.proc.wait()
             if self.stopping:
                 break
@@ -543,6 +659,19 @@ class Launcher:
         self.step = None
         self.output.put(("done", result))
 
+    def pump(self, proc):
+        """Pass proc's output to the window as it comes, and the server states
+        run_servers.py reports in it."""
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        partial = ""  # the last, unfinished line, checked for a server state when complete
+        while chunk := proc.stdout.read1(65536):
+            text = decoder.decode(chunk)
+            self.output.put(("text", text))
+            *lines, partial = (partial + text).split("\n")
+            for line in lines:
+                if match := SERVER_STATE.match(line):
+                    self.output.put(("server", match.groups()))
+
     # --- window side
 
     def poll(self):
@@ -552,6 +681,15 @@ class Launcher:
                 kind, value = self.output.get_nowait()
                 if kind == "text":
                     self.write(value)
+                elif kind == "server":
+                    name, state = value
+                    self.server_states[name] = state
+                    self.update_buttons()
+                elif kind == "solo-done":  # a server started on its own has stopped
+                    self.solo.pop(value, None)
+                    if self.server_states.get(value) not in ("failed", "exited"):
+                        self.server_states[value] = "stopped"
+                    self.update_buttons()
                 elif kind == "status":
                     self.status.configure(text=value)
                     self.update_buttons()  # e.g. Restart app, once the dashboard runs
@@ -560,6 +698,10 @@ class Launcher:
                     self.status.configure(text=value)
                     self.mode = None
                     self.stopping = False
+                    # The launch's servers are gone (Stop ends them without a word);
+                    # those started on their own keep running.
+                    self.server_states = {name: state for name, state in self.server_states.items()
+                                          if name in self.solo}
                     self.update_buttons()
                     if self.next_mode:  # Launch or Mock was pressed while the other ran
                         mode, self.next_mode = self.next_mode, None
