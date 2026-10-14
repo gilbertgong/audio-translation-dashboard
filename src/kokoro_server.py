@@ -11,7 +11,7 @@ without kana) with its v1.1 G2P (any English words in it with the English
 one), anything else with its American English G2P and the espeak fallback for
 unknown words; chunked the same way,
 each chunk spoken with the voice's style vector for its phoneme count. Voices
-made by a search on that pipeline (voices/RC3) sound as they did there.
+made by a search on that pipeline (voices/beth_thomas/RC3) sound as they did there.
 
 Endpoints, shaped like the servers the dashboard already uses:
     POST /v1/audio/speech  OpenAI-style TTS: JSON {"input", "voice" (name such as

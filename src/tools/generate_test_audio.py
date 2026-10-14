@@ -1,10 +1,10 @@
-"""Generate voices/test_audio/: Beth's English sample in other languages, for
+"""Generate voices/beth_thomas/test_audio/: Beth's English sample in other languages, for
 testing the dashboard with known speech.
 
 Usage, from the project root, with the servers running (launch.sh):
     python src/tools/generate_test_audio.py [--voice NAME] [config_local.toml]
 
-voices/beth_thomas.wav is transcribed by whisper (forced to English),
+voices/beth_thomas/beth_thomas.wav is transcribed by whisper (forced to English),
 translated by llama into Simplified Chinese and Japanese (one sentence per
 line, with its own short prompt, not the dashboard's), and each sentence is
 spoken by the TTS server ([tts] server) in the voice beth_thomas (Qwen3-TTS's
@@ -31,8 +31,8 @@ from common import CONFIG_LOCAL_FILE, load_config, run_script, setup_logging
 from configuration import ROOT
 
 NAME = "generate_test_audio"
-SOURCE = ROOT / "voices" / "beth_thomas.wav"
-OUT_DIR = ROOT / "voices" / "test_audio"
+SOURCE = ROOT / "voices" / "beth_thomas" / "beth_thomas.wav"
+OUT_DIR = ROOT / "voices" / "beth_thomas" / "test_audio"
 LANGUAGES = {"chinese": "Simplified Chinese", "japanese": "Japanese"}  # file name: language for llama
 TTS_RATE = 24000  # the TTS server's raw PCM: 16-bit mono at this rate
 PAUSE = b"\0\0" * int(TTS_RATE * 0.6)  # between sentences

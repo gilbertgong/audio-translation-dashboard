@@ -433,12 +433,15 @@ function addPlayButton(row, wav) {
 
 // Speaking a translation: the text is sent to /api/speak, which streams
 // tts-server's audio back as raw PCM (16-bit little-endian mono; the rate is
-// in the Content-Type). Each piece is played as soon as it arrives, scheduled
-// right after the previous one, so speech starts before it is fully generated.
-// Only one thing plays at a time: starting speech stops other playback, and
-// vice versa. Active speech: { ctx, controller, btn }.
+// in the Content-Type). Playback starts once playback_buffer_ms ([tts]) of
+// audio has arrived, or all of it if less, so a slow start doesn't make it
+// stutter; then each piece is scheduled right after the previous one, so long
+// speech starts before it is fully generated. Only one thing plays at a time:
+// starting speech stops other playback, and vice versa. Active speech:
+// { ctx, controller, btn }.
 let speech = null;
 const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
+let playbackBufferS = 5;
 
 function setSpeakButton(btn, state) {
   const looks = {
@@ -515,6 +518,17 @@ async function speakTranslation(row, btn, text, item = null) {
     let leftover = new Uint8Array(0); // an odd byte, completed by the next piece
     let playAt = 0;
     let last = null;
+    let held = []; // pieces waiting until enough audio is buffered; null once playing
+    let heldSeconds = 0;
+    const play = (buffer) => {
+      const source = new AudioBufferSourceNode(ctx, { buffer });
+      source.connect(ctx.destination);
+      if (!last) setSpeakButton(btn, "playing");
+      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
+      source.start(playAt);
+      playAt += buffer.duration;
+      last = source;
+    };
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -531,18 +545,19 @@ async function speakTranslation(row, btn, text, item = null) {
       const samples = pcmToFloat(bytes.subarray(0, even));
       const buffer = ctx.createBuffer(1, samples.length, rate);
       buffer.copyToChannel(samples, 0);
-      const source = new AudioBufferSourceNode(ctx, { buffer });
-      source.connect(ctx.destination);
-      if (!last) {
-        setTiming(row, "tts", (performance.now() - start) / 1000);
-        setSpeakButton(btn, "playing");
+      if (held) {
+        if (!held.length) setTiming(row, "tts", (performance.now() - start) / 1000); // first audio
+        held.push(buffer);
+        heldSeconds += buffer.duration;
+        if (heldSeconds < playbackBufferS) continue;
+        held.forEach(play);
+        held = null;
+      } else {
+        play(buffer);
       }
-      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
-      source.start(playAt);
-      playAt += buffer.duration;
-      last = source;
     }
     if (speech !== current) return;
+    held?.forEach(play); // all of it was shorter than the buffer
     if (!last) throw new Error("no audio received");
     last.onended = () => {
       if (speech !== current) return;
@@ -763,6 +778,7 @@ async function loadConfig() {
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;
     maxBacklog = config.max_backlog ?? maxBacklog;
+    playbackBufferS = (config.playback_buffer_ms ?? playbackBufferS * 1000) / 1000;
     updateStatus(); // the playback indicator depends on the switch
     if (config.mock) showMockConversation(config.mock_conversation);
   } catch (err) {

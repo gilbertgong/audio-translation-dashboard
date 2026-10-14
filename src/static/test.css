@@ -41,7 +41,7 @@ main.tests {
 .test button:disabled { opacity: 0.5; cursor: default; }
 .file-btn input { display: none; }
 
-.test textarea, .test select {
+.test textarea, .test select, .test input[type="number"] {
   font: inherit;
   color: inherit;
   background: var(--bg);
@@ -51,6 +51,7 @@ main.tests {
 
 .test textarea { width: 100%; padding: 6px 8px; resize: vertical; }
 .test label { font-size: 0.9rem; }
+#tts-buffer { width: 4.5em; padding: 2px 4px; }
 
 .samples button { font-size: 0.8rem; padding: 2px 8px; color: var(--muted); }
 

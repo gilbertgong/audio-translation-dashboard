@@ -70,7 +70,7 @@ Output is 24 kHz mono. Voicepacks are not mixed across models: use this file wit
 
 **In this project:** `src/kokoro_server.py` loads it as `beth_thomas`, the Kokoro default voice for English, Chinese
 and Japanese (`[api_servers.kokoro.voices]` and `language_voices` in `config/defaults.toml`, passed at start as
-`--voice beth_thomas=voices/RC3/beth_thomas_rc3.pt`). The server runs sherpa-onnx's fp32 ONNX export of v1.1-zh
+`--voice beth_thomas=voices/beth_thomas/RC3/beth_thomas_rc3.pt`). The server runs sherpa-onnx's fp32 ONNX export of v1.1-zh
 (`kokoro-multi-lang-v1_1`) with onnxruntime, behind misaki, the same front end as `KPipeline` above, so it sounds the
 same as the PyTorch render.
 

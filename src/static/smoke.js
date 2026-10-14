@@ -1,5 +1,5 @@
 // Smoke test page: the real dashboard in a frame, with known speech
-// (voices/test_audio/, served by /api/test-audio) as its microphone and its
+// (voices/beth_thomas/test_audio/, served by /api/test-audio) as its microphone and its
 // captured audio. The dashboard's getUserMedia and getDisplayMedia are
 // replaced with streams this page plays the clips into, on a schedule; then
 // the dashboard's rows, statuses and playback are checked. Nothing in the
@@ -14,10 +14,10 @@ const frame = $("dashboard");
 // whisper should hear, or "other" for one outside [languages] (rechecked).
 const GAP_S = 2;
 const SOURCES = {
-  mic: { start: 1, clips: [{ file: "beth_thomas.wav", name: "English", expect: "english" }] },
+  mic: { start: 1, clips: [{ file: "beth_thomas/beth_thomas.wav", name: "English", expect: "english" }] },
   capture: { start: 3, channel: 1, clips: [ // right channel; the left stays silent
-    { file: "test_audio/beth_chinese.wav", name: "Chinese", expect: "chinese" },
-    { file: "test_audio/beth_japanese.wav", name: "Japanese", expect: "other" },
+    { file: "beth_thomas/test_audio/beth_chinese.wav", name: "Chinese", expect: "chinese" },
+    { file: "beth_thomas/test_audio/beth_japanese.wav", name: "Japanese", expect: "other" },
   ] },
 };
 const SETTLE_MS = 90000; // after the audio ends: for the last translations to finish

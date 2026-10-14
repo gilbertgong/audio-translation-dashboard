@@ -137,6 +137,10 @@ turn_pause_ms = 1500
 # dropped (its row says so; its ▶ still works). A speaker who never pauses for
 # turn_pause_ms is never talked over, so nothing is spoken until they do.
 max_backlog = 3
+# Speech starts playing once this much audio (ms) has arrived from the TTS
+# server, or all of it if it's shorter, so a slow start doesn't stutter.
+# Applies to automatic playback, the ▶ buttons and the test page.
+playback_buffer_ms = 5000
 
 [models]
 # Used by src/download_models.py. Each server's models are in its own
@@ -181,7 +185,7 @@ model = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 [models.kokoro]
 kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx"
 
-# Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices (see voices/),
+# Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices (see voices/beth_thomas/),
 # about 4GB of GPU memory. Two files: the talker and its codec, passed to
 # tts-server as --model and --codec. Smaller: qwen-talker-0.6b-base-Q8_0.gguf
 # (about 3GB). Preset voices (serena, vivian, ryan, ...) instead of cloning: a
@@ -290,8 +294,8 @@ japanese = "beth_thomas"
 [api_servers.kokoro.voices]
 # Extra voicepacks for this Kokoro model (v1.1-zh): name = a [510, 1, 256]
 # voicepack (.pt, or raw float32 .bin), relative to the project folder, then
-# selected by name like a stock voice. See voices/RC3/README.md.
-beth_thomas = "voices/RC3/beth_thomas_rc3.pt"
+# selected by name like a stock voice. See voices/beth_thomas/RC3/README.md.
+beth_thomas = "voices/beth_thomas/RC3/beth_thomas_rc3.pt"
 
 [api_servers.qwentts]
 # Qwen3-TTS, an alternative (off by default): tts-server from qwentts.cpp, with
@@ -315,8 +319,8 @@ default_voice = "beth_thomas"
 # Cloned voices, registered by src/run_servers.py every time tts-server
 # starts (it keeps them in memory only), then selected by name when speaking.
 # name = WAV file of one speaker, about 10-30 s (relative to the project
-# folder); no transcript needed. See voices/README.md.
-beth_thomas = "voices/beth_thomas.wav"
+# folder); no transcript needed. See voices/beth_thomas/README.md.
+beth_thomas = "voices/beth_thomas/beth_thomas.wav"
 
 [api_servers.llama]
 # start, release and ensure_version: as for whisper above.

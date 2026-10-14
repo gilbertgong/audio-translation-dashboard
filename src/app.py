@@ -305,6 +305,8 @@ def get_config(req):
         # Automatic playback: wait for the end of the speaker's turn; how many may wait.
         "turn_pause_ms": config["tts"].get("turn_pause_ms", 2000),
         "max_backlog": config["tts"].get("max_backlog", 3),
+        # Audio buffered before speech starts playing (dashboard and test page).
+        "playback_buffer_ms": config["tts"].get("playback_buffer_ms", 5000),
         # Browser microphone processing, passed to getUserMedia.
         "audio_processing": {
             key: config["audio"].get(key, default) for key, default in
@@ -401,7 +403,7 @@ def get_voices(req):
 
 @app.get("/api/test-audio")
 def get_test_audio(req):
-    """?file=<a WAV under voices/>, e.g. test_audio/beth_chinese.wav: known
+    """?file=<a WAV under voices/>, e.g. beth_thomas/test_audio/beth_chinese.wav: known
     speech for the smoke test page (smoke.html)."""
     voices = (ROOT / "voices").resolve()
     file = (voices / req.query.get("file", "")).resolve()

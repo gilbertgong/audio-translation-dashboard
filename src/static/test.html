@@ -58,6 +58,8 @@
       <textarea id="tts-input" rows="3" placeholder="Text to speak"></textarea>
       <div class="row">
         <label>Voice <select id="tts-voice"></select></label>
+        <label title="Audio buffered before playback starts ([tts] playback_buffer_ms)">Buffer
+          <input type="number" id="tts-buffer" min="0" max="60" step="0.5" value="5"> s</label>
         <button type="button" id="tts-go">Speak</button>
         <span class="samples" data-target="tts-input"></span>
         <span class="status" id="tts-status"></span>

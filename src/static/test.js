@@ -269,6 +269,19 @@ $("tts-go").addEventListener("click", async () => {
     let leftover = new Uint8Array(0);
     let playAt = 0;
     let last = null;
+    // Audio buffered before playback starts: the Buffer field ([tts] playback_buffer_ms to begin with).
+    const bufferS = Math.max(0, Number($("tts-buffer").value) || 0);
+    let held = []; // pieces waiting until bufferS of audio is in; null once playing
+    let heldSeconds = 0;
+    const play = (buffer) => {
+      const source = new AudioBufferSourceNode(current.ctx, { buffer });
+      source.connect(current.ctx.destination);
+      if (!last) setStatus("tts-status", "Playing...");
+      playAt = Math.max(playAt, current.ctx.currentTime + (last ? 0 : 0.1));
+      source.start(playAt);
+      playAt += buffer.duration;
+      last = source;
+    };
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -284,17 +297,22 @@ $("tts-go").addEventListener("click", async () => {
       pieces.push(samples);
       const buffer = current.ctx.createBuffer(1, samples.length, rate);
       buffer.copyToChannel(samples, 0);
-      const source = new AudioBufferSourceNode(current.ctx, { buffer });
-      source.connect(current.ctx.destination);
-      if (!last) {
-        first = performance.now() - start;
-        setStatus("tts-status", "Playing...");
+      if (held) {
+        if (first === null) {
+          first = performance.now() - start;
+          setStatus("tts-status", "Buffering...");
+        }
+        held.push(buffer);
+        heldSeconds += buffer.duration;
+        if (heldSeconds < bufferS) continue;
+        held.forEach(play);
+        held = null;
+      } else {
+        play(buffer);
       }
-      playAt = Math.max(playAt, current.ctx.currentTime + (last ? 0 : 0.1));
-      source.start(playAt);
-      playAt += buffer.duration;
-      last = source;
     }
+    if (speech !== current) return; // stopped while it was arriving
+    held?.forEach(play); // all of it was shorter than the buffer
     if (!last) throw new Error("no audio received");
     const total = pieces.reduce((n, p) => n + p.length, 0);
     const all = new Float32Array(total);
@@ -328,6 +346,7 @@ async function init() {
     const config = await (await fetch("/api/config")).json();
     sampleRate = config.sample_rate;
     audioProcessing = config.audio_processing || {};
+    if (config.playback_buffer_ms !== undefined) $("tts-buffer").value = config.playback_buffer_ms / 1000;
     if (config.mock) document.querySelector("header h1").insertAdjacentHTML("beforeend", ' <span class="mock-badge">MOCK</span>');
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
