@@ -913,15 +913,35 @@ function encodeWav(samples, sampleRate) {
   return new Blob([view], { type: "audio/wav" });
 }
 
+// Each server gets one request at a time from this page, in the order they're
+// asked for, and runs it with the whole machine; the stages still overlap
+// (the next phrase is transcribed while this one is translated). toWhisper(task)
+// and toLlama(task) run task() once the ones before it have finished (or
+// failed) and return its result. Speech is one at a time already (see
+// speakTranslation).
+function oneAtATime() {
+  let last = Promise.resolve();
+  return (task) => {
+    const run = last.then(task);
+    last = run.catch(() => {});
+    return run;
+  };
+}
+
+const toWhisper = oneAtATime();
+const toLlama = oneAtATime();
+
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).
 async function uploadWav(wav) {
-  const res = await fetch("/api/recordings", {
-    method: "POST",
-    headers: { "Content-Type": "audio/wav" },
-    body: wav,
+  const { res, body } = await toWhisper(async () => {
+    const res = await fetch("/api/recordings", {
+      method: "POST",
+      headers: { "Content-Type": "audio/wav" },
+      body: wav,
+    });
+    return { res, body: await res.json() };
   });
-  const body = await res.json();
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { body });
   return body;
 }
@@ -1047,7 +1067,8 @@ async function translateRow(row, text) {
   setTiming(row, "llm", null);
   row.querySelector('.timing[data-kind="llm"] .row-btn')?.remove(); // an earlier attempt's raw viewer
   try {
-    const result = await requestTranslation(text, (soFar) => setLine(row, ".translation", soFar));
+    const result = await toLlama(() =>
+      requestTranslation(text, (soFar) => setLine(row, ".translation", soFar)));
     setTiming(row, "llm", result.seconds);
     if (result.firstSeconds !== null) {
       setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
@@ -1071,12 +1092,14 @@ async function recheck(row, stt, reason) {
   setLine(row, ".original", `${stt.text} (${reason}; rechecking…)`, "pending");
   setTiming(row, "recheck", null);
   try {
-    const res = await fetch("/api/recordings/recheck", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file: stt.file.split(/[\\/]/).pop() }),
+    const { res, result } = await toWhisper(async () => {
+      const res = await fetch("/api/recordings/recheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: stt.file.split(/[\\/]/).pop() }),
+      });
+      return { res, result: await res.json() };
     });
-    const result = await res.json();
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
     setTiming(row, "recheck", result.stt_seconds);
     addRawButton(row, "recheck", "whisper recheck: both languages", result.stt_raw);

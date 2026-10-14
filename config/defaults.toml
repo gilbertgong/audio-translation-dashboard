@@ -57,7 +57,7 @@ enabled = true
 # Silence (ms) that ends a phrase and sends it to be transcribed: short, so
 # text appears when the speaker takes a breath. (Speaking translations waits
 # for a longer pause: [tts] turn_pause_ms.)
-split_pause_ms = 250
+split_pause_ms = 120
 # How far (dB) above the background noise counts as speech. Raise it if noise
 # triggers phrases; lower it if quiet speech is missed.
 threshold_db = 12
@@ -132,7 +132,7 @@ auto_play = false
 # phrase's split_pause_ms. If someone starts speaking during playback, it stops
 # and that translation is spoken again at the next turn's end. (The ▶ buttons
 # play at once.)
-turn_pause_ms = 2000
+turn_pause_ms = 1500
 # At most this many translations wait to be spoken; beyond that the oldest is
 # dropped (its row says so; its ▶ still works). A speaker who never pauses for
 # turn_pause_ms is never talked over, so nothing is spoken until they do.
@@ -190,6 +190,18 @@ kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kok
 model = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf"
 codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
 
+[gpu]
+# Which NVIDIA GPU(s) the servers may use, by nvidia-smi's index (e.g. "1", or
+# "0,1"): src/run_servers.py starts each server with CUDA_VISIBLE_DEVICES set
+# to it (and CUDA_DEVICE_ORDER=PCI_BUS_ID, so CUDA numbers the cards as
+# nvidia-smi does). "-1" hides them all. Unset: every GPU (llama-server then
+# spreads its model across all of them). Generate config sets it to the card
+# it sized the recipe for. A server can override it with its own gpu = "...",
+# and set other variables in an env table, e.g. [api_servers.qwentts.env];
+# CUDA_VISIBLE_DEVICES doesn't apply to Vulkan builds such as qwentts's, which
+# take GGML_VK_VISIBLE_DEVICES (in Vulkan's own device order).
+# devices = "0"
+
 [api_servers]
 # Used by src/install_api_servers.py and src/run_servers.py. Prebuilt
 # binaries are downloaded from GitHub releases into install_dir/<name>/.
@@ -225,29 +237,61 @@ args = ["--language", "auto"]
 # left over (servers start in the order listed here).
 
 [api_servers.kokoro]
-# Kokoro (default), served by this project's sherpa_server_win.py: a script,
-# run with the same Python, that loads the sherpa-onnx library installed here
-# (CPU build, Windows x64). The release is pinned: sherpa_server_win.py mirrors
-# the C structures of exactly this version. {server_dir} in args is replaced by
-# the install folder (api_servers/kokoro). --threads: CPU threads (Kokoro: about
-# 3x real time on 1, 8x on 8).
+# Kokoro (default), served by this project's kokoro_server.py on the CPU:
+# misaki's phonemes (the front end Kokoro was trained with) on the Kokoro ONNX
+# model, through onnxruntime. Run with the same Python; its packages, below,
+# are installed by install_api_servers.py with pip install --target into the
+# install folder's lib/ ({server_dir} in args), not into a virtual
+# environment. --threads: CPU threads.
 start = true
-repo = "k2-fsa/sherpa-onnx"
-release = "v1.13.8"
-ensure_version = false
-assets = ["sherpa-onnx-v*-win-x64-shared-MT-Release.tar.bz2"]
-script = "src/sherpa_server_win.py"
+script = "src/kokoro_server.py"
+packages = [
+    "misaki==0.9.4",
+    # misaki's English (without spacy-curated-transformers, which brings all
+    # of PyTorch for a transformer model Kokoro doesn't use), Chinese and
+    # Japanese parts (Japanese without pyopenjtalk: kokoro_server.py stands in
+    # for it, as only misaki's non-default Japanese G2P uses it)
+    "spacy==3.8.16",
+    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    "num2words==0.5.14",
+    "phonemizer-fork==3.3.2",
+    "espeakng-loader==0.2.4",
+    "jieba==0.42.1",
+    "pypinyin==0.55.0",
+    "pypinyin-dict==0.9.0",
+    "cn2an==0.5.24",
+    "ordered-set==4.1.0",
+    "fugashi==1.5.2",
+    "unidic-lite==1.0.8",
+    "jaconv==0.5.0",
+    "mojimoji==0.0.13",
+    "onnxruntime==1.31.0",
+    "numpy==2.5.4",
+]
 host = "127.0.0.1"
 port = 8083
 args = ["--lib", "{server_dir}/lib", "--threads", "4"]
-# The voice used unless a better one is set (see [tts]).
-default_voice = "zf_001"
+# The voice used unless a better one is set (see [tts]): Beth, a voicepack
+# (below) that speaks both languages well.
+default_voice = "beth_thomas"
+# The voicepacks below are loaded at start, as --voice NAME=FILE.
+voice_arg = "--voice"
 
 [api_servers.kokoro.language_voices]
-# A native voice per language, by whisper's language name: used for
-# translations spoken in that language (see [tts] above).
-english = "af_maple"
-chinese = "zf_001"
+# A voice per language, by whisper's language name: used for translations
+# spoken in that language (see [tts] above). Beth for all three; the stock
+# voices speak only their own language well (native alternatives: english =
+# "af_maple", chinese = "zf_001"; none for Japanese, which v1.1-zh wasn't
+# trained on, though Beth speaks it well).
+english = "beth_thomas"
+chinese = "beth_thomas"
+japanese = "beth_thomas"
+
+[api_servers.kokoro.voices]
+# Extra voicepacks for this Kokoro model (v1.1-zh): name = a [510, 1, 256]
+# voicepack (.pt, or raw float32 .bin), relative to the project folder, then
+# selected by name like a stock voice. See voices/RC3/README.md.
+beth_thomas = "voices/RC3/beth_thomas_rc3.pt"
 
 [api_servers.qwentts]
 # Qwen3-TTS, an alternative (off by default): tts-server from qwentts.cpp, with

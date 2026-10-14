@@ -5,6 +5,12 @@ sherpa-onnx's C API. Windows only for now: it loads sherpa-onnx-c-api.dll
 
 Each engine is optional; only those given on the command line are loaded:
     --kokoro MODEL       Kokoro TTS (model.onnx; voices.bin etc. next to it)
+      --voice NAME=FILE  an extra Kokoro voicepack (repeatable): a PyTorch .pt
+                         of shape [510, 1, 256], or the same as raw float32 (.bin),
+                         made for the same model; spoken as NAME. It takes the
+                         place of a stock voice, the last ones first (zm_100,
+                         then zm_098, ...): sherpa only accepts a voices.bin with
+                         the model's own voice count
     --sense-voice MODEL  SenseVoice STT (model.onnx or model.int8.onnx; tokens.txt next to it)
     --vad MODEL          Silero VAD (silero_vad.onnx)
 
@@ -37,7 +43,8 @@ Endpoints (each loaded engine's), shaped like the servers the dashboard already 
     GET  /health           {"status": "ok"} once loaded
 
 Usage:
-    python sherpa_server_win.py --lib DIR [--kokoro MODEL] [--sense-voice MODEL] [--vad MODEL]
+    python sherpa_server_win.py --lib DIR [--kokoro MODEL [--voice NAME=FILE ...]]
+                                [--sense-voice MODEL] [--vad MODEL]
                                 [--host 127.0.0.1] [--port 8084] [--threads 4] [--provider cpu]
 
 --lib is the folder with sherpa-onnx-c-api.dll (and onnxruntime.dll) from a
@@ -55,9 +62,11 @@ import logging
 import os
 import queue
 import sys
+import tempfile
 import threading
 import time
 import wave
+import zipfile
 from pathlib import Path
 
 from microweb import App, HTTPError, Stream
@@ -283,14 +292,60 @@ KOKORO_V1_1_VOICES = (
                               82, 89, 91, 95, 96, 97, 98, 100)])
 
 
-class Kokoro:
-    """Kokoro TTS. Generation streams sentence by sentence; one at a time."""
+# A voicepack: one 256-number style vector (float32) for each input length up to 510.
+VOICE_BYTES = 510 * 256 * 4
 
-    def __init__(self, lib, model, threads, provider):
+
+def read_voicepack(path):
+    """A voicepack's raw float32 data (little-endian, as in voices.bin): from a
+    PyTorch .pt file (a zip; the tensor's data is its one data/0 entry), or a
+    raw .bin of the same."""
+    path = Path(path)
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+            order = [n for n in names if n.endswith("/byteorder")]
+            if order and z.read(order[0]).strip() != b"little":
+                raise SystemExit(f"error: {path}: not little-endian data")
+            data = [n for n in names if n.endswith("/data/0")]
+            if len(data) != 1:
+                raise SystemExit(f"error: {path}: expected one tensor (a [510, 1, 256] voicepack)")
+            raw = z.read(data[0])
+    else:
+        raw = path.read_bytes()
+    if len(raw) != VOICE_BYTES:
+        raise SystemExit(f"error: {path}: {len(raw)} bytes of data, not a [510, 1, 256] float32 voicepack")
+    return raw
+
+
+class Kokoro:
+    """Kokoro TTS. Generation streams sentence by sentence; one at a time.
+
+    extra_voices: {name: voicepack file}. sherpa reads voices.bin once, at
+    load, and only with the model's own voice count, so each takes the place
+    of a stock voice, the last ones first, in a temporary copy of voices.bin
+    (deleted once loaded); the downloaded file stays as it is."""
+
+    def __init__(self, lib, model, threads, provider, extra_voices=None):
         d = Path(model).parent
+        stock = d / "voices.bin"
+        stock_count = stock.stat().st_size // VOICE_BYTES
+        extra_voices = extra_voices or {}
+        voices_file = stock
+        if len(extra_voices) >= stock_count:
+            raise SystemExit(f"error: {len(extra_voices)} extra voices, but only {stock_count} slots")
+        first_extra = stock_count - len(extra_voices)  # the slots the extra voices take
+        if extra_voices:
+            data = bytearray(stock.read_bytes())
+            for slot, path in enumerate(extra_voices.values(), first_extra):
+                data[slot * VOICE_BYTES:(slot + 1) * VOICE_BYTES] = read_voicepack(path)
+            merged = tempfile.NamedTemporaryFile(prefix="kokoro_voices_", suffix=".bin", delete=False)
+            with merged:
+                merged.write(data)
+            voices_file = Path(merged.name)
         config = TtsConfig()
         k = config.model.kokoro
-        k.model, k.voices, k.tokens = b(model), b(d / "voices.bin"), b(d / "tokens.txt")
+        k.model, k.voices, k.tokens = b(model), b(voices_file), b(d / "tokens.txt")
         k.data_dir, k.dict_dir = b(d / "espeak-ng-data"), b(d / "dict")
         k.lexicon = b(",".join(str(p) for p in sorted(d.glob("lexicon-*.txt"))))
         k.length_scale = 1.0
@@ -299,13 +354,18 @@ class Kokoro:
         config.max_num_sentences = 1  # one sentence per callback: the streaming granularity
         self.lib = lib
         self.tts = lib.SherpaOnnxCreateOfflineTts(C.byref(config))
+        if voices_file != stock:
+            voices_file.unlink(missing_ok=True)  # read by now (or failed to load)
         if not self.tts:
             raise SystemExit(f"error: could not load Kokoro from {model}")
         self.sample_rate = lib.SherpaOnnxOfflineTtsSampleRate(self.tts)
         self.speakers = lib.SherpaOnnxOfflineTtsNumSpeakers(self.tts)
-        # Names when the model is v1.1 (same speaker count); otherwise ids only.
-        names = KOKORO_V1_1_VOICES if self.speakers == len(KOKORO_V1_1_VOICES) else []
-        self.voices = names or [str(sid) for sid in range(self.speakers)]
+        # Stock names when the model is v1.1 (same voice count); otherwise ids
+        # only. The extra voices' names replace those of the slots they took.
+        names = list(KOKORO_V1_1_VOICES) if stock_count == len(KOKORO_V1_1_VOICES) else []
+        names = names or [str(sid) for sid in range(stock_count)]
+        self.replaced = names[first_extra:]  # the stock voices given up, for the log
+        self.voices = names[:first_extra] + list(extra_voices)
         self.lock = threading.Lock()
 
     def speaker_id(self, voice):
@@ -544,6 +604,8 @@ def main():
     parser.add_argument("--lib", required=True, type=Path,
                         help=f"folder with sherpa-onnx-c-api.dll (sherpa-onnx v{SHERPA_VERSION})")
     parser.add_argument("--kokoro", type=Path, help="Kokoro TTS model.onnx")
+    parser.add_argument("--voice", action="append", default=[], metavar="NAME=FILE",
+                        help="an extra Kokoro voicepack (.pt or raw .bin, [510, 1, 256]) spoken as NAME; repeatable")
     parser.add_argument("--sense-voice", type=Path, help="SenseVoice STT model.onnx or model.int8.onnx")
     parser.add_argument("--vad", type=Path, help="Silero VAD silero_vad.onnx")
     parser.add_argument("--host", default="127.0.0.1")
@@ -557,13 +619,28 @@ def main():
     for path in (args.kokoro, args.sense_voice, args.vad):
         if path and not path.is_file():
             raise SystemExit(f"error: {path} not found")
+    extra_voices = {}
+    for spec in args.voice:
+        name, _, file = spec.partition("=")
+        if not name or not file:
+            parser.error(f"--voice {spec!r}: expected NAME=FILE")
+        if name in KOKORO_V1_1_VOICES or name in extra_voices:
+            parser.error(f"--voice {name}: that name is already taken")
+        if not Path(file).is_file():
+            raise SystemExit(f"error: voicepack {file} not found")
+        extra_voices[name] = Path(file)
+    if extra_voices and not args.kokoro:
+        parser.error("--voice needs --kokoro")
 
     lib = load_library(args.lib)
     if args.kokoro:
         start = time.monotonic()
-        engines["tts"] = Kokoro(lib, args.kokoro, args.threads, args.provider)
-        log.info("Kokoro loaded in %.1fs: %d voices, %d Hz", time.monotonic() - start,
-                 engines["tts"].speakers, engines["tts"].sample_rate)
+        engines["tts"] = Kokoro(lib, args.kokoro, args.threads, args.provider, extra_voices)
+        tts = engines["tts"]
+        log.info("Kokoro loaded in %.1fs: %d voices, %d Hz", time.monotonic() - start, tts.speakers,
+                 tts.sample_rate)
+        for name, replaced in zip(extra_voices, tts.replaced):
+            log.info("voice %s: from %s, in place of %s", name, extra_voices[name], replaced)
     if args.sense_voice:
         start = time.monotonic()
         engines["stt"] = SenseVoice(lib, args.sense_voice, args.threads, args.provider)

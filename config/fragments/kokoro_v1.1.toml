@@ -1,18 +1,16 @@
-# Text-to-speech: Kokoro v1.1 (Chinese + English, 103 voices) on sherpa-onnx,
-# served by this project's sherpa_server_win.py on the CPU (0.36 GB download;
-# model.onnx 0.33 GB). fp32 on purpose: the int8 model is about half as fast.
+# Text-to-speech: Kokoro v1.1 (Chinese + English, 103 voices), served by this
+# project's kokoro_server.py on the CPU: misaki's phonemes on sherpa-onnx's
+# ONNX packaging of the model (0.36 GB download; model.onnx 0.33 GB, fp32 on
+# purpose: the int8 model is about half as fast). Its Python packages (see
+# [api_servers.kokoro] in config/defaults.toml) are installed into
+# api_servers/kokoro/lib by install_api_servers.py.
 
 [api_servers.kokoro]
 start = true
-repo = "k2-fsa/sherpa-onnx"
-# Pinned: sherpa_server_win.py mirrors this version's C structures.
-release = "v1.13.8"
-ensure_version = false
-assets = ["sherpa-onnx-v*-win-x64-shared-MT-Release.tar.bz2"]
-script = "src/sherpa_server_win.py"
+script = "src/kokoro_server.py"
 host = "127.0.0.1"
 port = 8083
-# {server_dir}: the install folder. --threads: about 3x real time on 1, 8x on 8.
+# {server_dir}: the install folder. --threads: CPU threads.
 args = ["--lib", "{server_dir}/lib", "--threads", "4"]
 
 [models.kokoro]

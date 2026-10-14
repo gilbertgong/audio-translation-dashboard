@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smoke Test</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="test.css">
+</head>
+<body>
+  <header>
+    <h1>Smoke Test</h1>
+    <a class="header-link" href="test.html">Component tests</a>
+    <a class="header-link" href="/">Dashboard</a>
+  </header>
+
+  <!-- Runs the real dashboard (below, in a frame) on known speech from
+       voices/test_audio/, fed in as its microphone and its captured audio,
+       and checks that everything still works end to end. Uses the running
+       servers; takes about a minute. -->
+  <main class="tests smoke">
+    <section class="test">
+      <h2>End to end <span class="via">the dashboard, with recorded speech as its sources</span></h2>
+      <p class="about">
+        Mic: Beth in English (30 s). Capture, right channel: the same in Chinese, then in Japanese
+        (a language outside the configured pair, so it should be rechecked). Then silence, with
+        Automatic Translation Playback on. You'll hear the first translation spoken.
+      </p>
+      <div class="row">
+        <button type="button" id="run">Run smoke test</button>
+        <span class="status" id="run-status"></span>
+      </div>
+      <ul class="checks" id="checks"></ul>
+      <details id="rows-details" hidden>
+        <summary>Rows</summary>
+        <table class="smoke-rows">
+          <thead><tr><th>at</th><th>source</th><th>clip</th><th>language</th><th>text</th><th>translation</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </details>
+    </section>
+    <iframe id="dashboard" class="smoke-frame" title="Dashboard under test" allow="autoplay"></iframe>
+  </main>
+
+  <script src="smoke.js"></script>
+</body>
+</html>

@@ -7,7 +7,9 @@ Usage, from the project root:
 Starts COMMAND first (so the dashboard is up, showing the servers' status as
 they start), then each server with start = true in [api_servers], in config
 order, waiting until it answers on /health. Voices listed in
-[api_servers.<name>.voices] are registered as soon as their server is ready.
+[api_servers.<name>.voices] are registered as soon as their server is ready,
+or, for a server with voice_arg (e.g. "--voice"), passed on its command line
+as voice_arg NAME=FILE (Kokoro reads its voices only when it loads).
 The servers are stopped when COMMAND exits. Lines on standard input (typed in
 the terminal, or sent by the launcher's developer controls):
     restart        restart COMMAND alone, keeping the servers running: e.g. to
@@ -26,6 +28,10 @@ again: it's used as it is, and left running when this stops.
 
     python src/run_servers.py python src/app.py
 
+GPUs: [gpu] devices, or a server's own gpu setting, becomes the server's
+CUDA_VISIBLE_DEVICES (by nvidia-smi index: CUDA_DEVICE_ORDER=PCI_BUS_ID);
+a server's [api_servers.<name>.env] table adds other environment variables.
+
 Server output goes to logs/<name>.log; launches and errors are also logged to
 logs/app.log. The servers must already be installed, with their models
 (install_api_servers.py, download_models.py).
@@ -36,6 +42,7 @@ Standard library only (Python 3.11+ for tomllib).
 import argparse
 import base64
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -80,7 +87,25 @@ def server_argv(cfg, name, server):
             raise SystemExit(f"error: {path} not found (run src/{hint})")
     model_args = [arg for flag, _, path in files for arg in (flag, str(path))]
     args = [arg.replace("{server_dir}", str(server_dir)) for arg in server.get("args", [])]
+    if "voice_arg" in server:  # voices given at start (see register_voices for the others)
+        args += [arg for voice, path in voice_files(cfg, server).items()
+                 for arg in (server["voice_arg"], f"{voice}={path}")]
     return [*program, *model_args, "--host", server["host"], "--port", str(server["port"]), *args]
+
+
+def server_env(cfg, server):
+    """The server's environment: ours, with CUDA_VISIBLE_DEVICES from its gpu
+    setting or [gpu] devices (by nvidia-smi index), and its env table; plus a
+    short description of the GPU choice, for the log."""
+    env = dict(os.environ)
+    devices = server.get("gpu", cfg.get("gpu", {}).get("devices"))
+    gpu = "all GPUs"
+    if devices is not None:
+        env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # number the cards as nvidia-smi does
+        env["CUDA_VISIBLE_DEVICES"] = str(devices)
+        gpu = "no GPU" if str(devices).strip() == "-1" else f"GPU {devices}"
+    env.update({key: str(value) for key, value in server.get("env", {}).items()})
+    return env, gpu
 
 
 def health(url):
@@ -112,12 +137,13 @@ def start_server(cfg, name, server, log, log_dir):
         log.info("%s already running at %s: used as it is", name, url)
         return None
     argv = server_argv(cfg, name, server)
+    env, gpu = server_env(cfg, server)
     server_log = log_dir / f"{name}.log"
-    print(f"== Starting {name} at {url} (log: {server_log})")
+    print(f"== Starting {name} at {url}, {gpu} (log: {server_log})")
     with open(server_log, "wb") as out:
         # stdin: not ours (see Command.start).
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
-    log.info("launched %s with command\n  %s", name, subprocess.list2cmdline(argv))
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, env=env)
+    log.info("launched %s (%s) with command\n  %s", name, gpu, subprocess.list2cmdline(argv))
 
     start = time.monotonic()
     while health(url) != 200:
@@ -142,7 +168,10 @@ def voice_files(cfg, server):
 
 def register_voices(cfg, name, server, log):
     """Register the server's voices (tts-server keeps them in memory only, so
-    this runs at every start). Speaker-embedding cloning: no transcript."""
+    this runs at every start). Speaker-embedding cloning: no transcript. Not
+    for a server with voice_arg: its voices were on its command line."""
+    if "voice_arg" in server:
+        return
     for voice, path in voice_files(cfg, server).items():
         body = json.dumps({"name": voice, "wav_b64": base64.b64encode(path.read_bytes()).decode()})
         req = urllib.request.Request(server_url(server) + "/v1/audio/voices", data=body.encode("utf-8"),

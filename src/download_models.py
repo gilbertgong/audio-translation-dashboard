@@ -2,7 +2,7 @@
 llama, TTS).
 
 Usage, from the project root:
-    python src/download_models.py [--dry-run] [--force] [config_local.toml]
+    python src/download_models.py [--dry-run] [--force] [--only NAME] [config_local.toml]
 
 Settings come from config/defaults.toml, with config_local.toml (or the given file)
 on top. Each model is saved to <models.dir>/<name>/ (e.g.
@@ -30,11 +30,15 @@ def main():
                              "(default: the project's config_local.toml)")
     parser.add_argument("--dry-run", action="store_true", help="show what would be downloaded, change nothing")
     parser.add_argument("--force", action="store_true", help="download again even if the file exists")
+    parser.add_argument("--only", action="append", metavar="NAME",
+                        help="just this server (repeatable), e.g. --only kokoro")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     log = setup_logging(cfg, NAME)
     for name in model_names(cfg):
+        if args.only and name not in args.only:
+            continue
         if not starts(cfg, name):
             print(f"== {name}: skipped (start = false)")
             log.info("%s model skipped (start = false)", name)
