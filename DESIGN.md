@@ -196,6 +196,8 @@ python src/app.py --mock
 
 (or `./mock.sh`): the dashboard alone with sample data, for working on the page without the servers. Translations are streamed in pieces like llama's, and speech is silence of about the right length.
 
+On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server build, so it links Homebrew's `whisper-server` and `llama-server` (Metal) into `api_servers/` with a `VERSION` of `homebrew` (which the installer leaves alone), and writes `config_generated.toml` by the Mac's memory, since Generate config needs nvidia-smi. Steps and troubleshooting: `INSTALL_MAC.md` (not yet tried on a real Mac).
+
 ### Servers on another machine
 
 `app.py` reaches each server at its `[api_servers.<name>] host` and `port`, and with `start = false` the scripts neither install, download nor start it. So a laptop can run the dashboard (and Kokoro) while a desktop's GPU runs whisper and llama: on the laptop, `start = false` and the desktop's address for those servers; on the desktop, the servers' `host` set to its network address, so they listen there and its own dashboard still reaches them (on Windows, `0.0.0.0` can be listened on but not connected to). The dashboard then runs on the laptop's localhost, so its microphone works. The servers have no authentication: fine at home, not on shared networks.
@@ -207,6 +209,7 @@ python src/app.py --mock
 ```text
 launcher.pyw          the thing to run (Windows)
 launch.sh, mock.sh    the same from a terminal
+setup_mac.sh, INSTALL_MAC.md   macOS: setup before launch.sh, and the steps
 config/               defaults.toml, fragments/, recipes/
 config_generated.toml, config_local.toml   (yours, git-ignored)
 voices/               reference recordings for Qwen3-TTS
