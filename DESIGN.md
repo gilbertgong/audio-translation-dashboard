@@ -117,7 +117,7 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
   2. *llama's language tag:* the system prompt asks llama to end each translation with the language(s) of the text it was given, e.g. `[chinese]`; the page hides the tag (the raw viewer keeps it), and a language other than the two triggers the recheck after translating.
 
   The **recheck** transcribes the saved recording again forced to each of the two languages and keeps the result whisper is more confident in (segment `avg_logprob`, weighted by length; on the Russian clip, forced Chinese scored −0.40 against English −0.60, and whisper's own language scores agreed). Meanwhile the row shows the first text, marked "(whisper heard russian; rechecking…)"; then it swaps in the corrected text and language, notes "re-transcribed as chinese (…)", and translates again if needed. Speech, including automatic playback, waits for the final translation.
-- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio for when it's played again. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: Beth, `beth_thomas`, for both; the stock voices `af_maple` and `zf_001` are the native alternatives), else `[tts] voice` if set, else the server's `default_voice` (`beth_thomas` for both: Kokoro's voicepack, Qwen's clone). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits phrases (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. At most `max_backlog` (3) wait; beyond that the oldest is dropped, with a note on its row (its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
+- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio for when it's played again. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: Beth, `beth_thomas`, for both; the stock voices `af_maple` and `zf_001` are the native alternatives), else `[tts] voice` if set, else the server's `default_voice` (`beth_thomas` for both: Kokoro's voicepack, Qwen's clone). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits phrases (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. The backlog is limited by time, not count: once the speech waiting (not counting the one playing, and only audio fetched in full) is over `[tts] max_backlog_ms` (30 s), the oldest are dropped, always keeping the newest, each with a note on its row ("over 30 s of speech waiting"; its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. With a muted captured tab, playback talks over the tab, so a fast speaker keeps the backlog full and playback about 30 s behind (see Extension points: a playback speed control). Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
 
 ## Configuration
 
@@ -153,7 +153,7 @@ Sections:
 
 ### Fragments and recipes
 
-- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Voices don't depend on the model, so they stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and Qwen3.5-9B UD-IQ3_XXS; Kokoro v1.1; Qwen3-TTS 1.7B and 0.6B base. Each comment gives the download size.
+- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Voices don't depend on the model, so they stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.1; Qwen3-TTS 1.7B and 0.6B base. Each comment gives the download size.
 - **Recipes** (`config/recipes/<name>.json`, JSON so they aren't mistaken for config): `description`, `vram_gb` (the card size it's meant for), `fragments` (pasted in order) and `off` (servers given `start = false`). Anything in neither list keeps its default, so a recipe can deliberately leave an extra server running.
 
 | Recipe        | VRAM  | STT                       | Translation             | TTS                        |
@@ -208,6 +208,8 @@ On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server buil
 
 ```text
 launcher.pyw          the thing to run (Windows)
+README.md, DESIGN.md  for people: overview, and this document
+AI/, AGENTS.md, CLAUDE.md   for AI assistants: plan, history, working rules (start at AI/MEMORY.md)
 launch.sh, mock.sh    the same from a terminal
 setup_mac.sh, INSTALL_MAC.md   macOS: setup before launch.sh, and the steps
 config/               defaults.toml, fragments/, recipes/
@@ -238,93 +240,14 @@ In `src/tools/`, extras that aren't part of running the app:
 - **`logs/app.log`** — one shared log from `app.py` and the scripts: server commands, downloads, voice registration, each recording, transcription, recheck, translation and speech, and errors.
 - **`logs/<name>.log`** — each server's own output.
 
-## Milestones
+## Known limitations
 
-### Milestone 1 — Web server and audio capture ✅
+- **Phrase splitting:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the phrase (deliberate, so constant noise can't hold it open).
+- **Feedback:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new phrase. Headphones avoid it. (In practice the browser's echo cancellation has handled even a playing video well.)
+- **misaki:** English misreads some names (Beth as "bait"); Japanese reads a decimal point as a sentence end and leaves Latin letters as they are, and a line of kanji only (東京駅) is read as Chinese.
+- **Mac:** `setup_mac.sh` and `INSTALL_MAC.md` haven't been tried on a real Mac.
 
-- Standard-library Python server, a page with a Start/Stop button, and 16 kHz mono WAV capture in the browser, saved by the backend.
-
-### Milestone 2 — STT via whisper.cpp ✅
-
-- Install, model-download and launch scripts; shared logging.
-- Each recording is transcribed by whisper-server (language auto-detected) and shown as soon as it's ready.
-
-### Milestone 3 — Translation via llama.cpp ✅
-
-- Configurable two-language system prompt; translation with thinking off. Measured on Qwen3.8-27B: with thinking on, "Hello, testing." took 3.5 s and 118 tokens; with it off, 0.3 s and 5 tokens.
-- Mock mode for working on the page without the servers.
-- Completes the MVP pipeline: record → whisper → llama → display.
-
-### Milestone 4 — Automatic splitting on pauses ✅ (tuning)
-
-- Continuous Audio Mode (see [Flow](#flow)). The detector measures background noise for the first 400 ms, then tracks it continuously (falls fast, rises slowly — more slowly mid-phrase); speech is anything `threshold_db` above it, never below `min_threshold_db`. A phrase starts at the first loud block (with `pre_roll_ms` of earlier audio) and ends after `split_pause_ms` of quiet (250 ms; first 600 ms, shortened so text appears on a breath) (keeping `tail_ms`) or at `max_phrase_s`; phrases with less than `min_speech_ms` of speech are dropped.
-- **Known limitation:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the phrase (deliberate, so constant noise can't hold it open).
-
-### Milestone 5 — Dashboard layout and debugging aids ✅
-
-- Conversation/activity grid with left/right alignment by language; timings as the main activity information; collapsible Activity column.
-- Controls panel aligned with the window; level meter; gain slider; Space shortcut.
-- Play buttons and raw whisper/llama request/response viewers.
-- Browser microphone processing in the config, with automatic gain control off by default: Chrome's AGC restarts every time the microphone opens and can swing the level (including the Windows microphone level) during the first seconds, which mangled short recordings on a laptop's built-in mic.
-
-### Milestone 6 — microweb ✅
-
-- `microweb.py`: Flask-style, not Flask-compatible. `@app.get`/`@app.post` routes with exact paths; handlers take a request (`method`, `path`, `query`, `headers`, `client`, `body()`, `json()`) and return a dict/list (JSON), str, bytes, `None` or `(body, status)`; `HTTPError(status, message, **extra)` becomes a JSON error. Static files with explicit content types and `no-cache`; no directory listings.
-- Request bodies need a `Content-Length` (411 otherwise: browsers always send one, and it lets oversized bodies be rejected before reading) and are limited to 1 MB unless a handler allows more (recordings use `max_upload_mb`).
-- Wrong method → 405 with `Allow`; unexpected exceptions → 500 with the traceback logged. `app.handle()` runs a request without a network connection, for tests.
-- On Windows, Python's HTTP server would let a second server bind a port already in use; microweb disables that, so a taken port gives a clear error.
-- Handlers use module-level state in `app.py` (`config`, `mock`), set in `main()`.
-
-### Milestone 7 — Streaming translation ✅
-
-- `/api/translate` streams (see [Backend](#backend-srcapppy)): llama's `stream: true` response is relayed byte for byte after one `request` event of our own, so the raw viewer shows llama's actual chunks. The page shows the text as it arrives and the time to first token under the translate time.
-- microweb: a handler can return `Stream(chunks, content_type)`, which sends each piece as it's produced (no `Content-Length`; the connection closes at the end).
-
-### Milestone 8 — Text-to-speech ✅
-
-- Surveyed current TTS models and servers; chose Qwen3-TTS via qwentts.cpp (good English and Chinese, voice cloning, streaming, a small C++ server). Compared the 0.6B and 1.7B base models on CUDA and Vulkan with a cloned voice; chose the 1.7B on Vulkan (see [Engines](#engines)). Measured first audio after about 0.03–0.05 s at the server; end to end through the dashboard, 3.4 s of Chinese speech took 0.84 s in total.
-- tts-server installed, its two model files downloaded, and its voices registered at start by the scripts; the default voice is cloned from Beth Thomas's LibriVox reading (see `voices/beth_thomas/README.md`).
-- `/api/speak`, the ▶ button after each translation, streamed playback, and Automatic Translation Playback with a queue.
-- Dashboard cleanup: Continuous Audio Mode on by default; time to first token on the translate line; split and file details moved behind the `ⓘ` button.
-- **Known limitation:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new phrase. Headphones avoid it.
-
-### Milestone 9 — Kokoro on sherpa-onnx ✅
-
-- Qwen3-TTS works well but takes 2.2 GB of model files and 4 GB of GPU memory. Kokoro (a descendant of StyleTTS 2, 82M parameters) is a fraction of that; the only Windows binaries for it are sherpa-onnx's library, hence `sherpa_server_win.py`.
-- Benchmarked against a StyleTTS 2 baseline (same sentence, 10 runs): StyleTTS 2 0.75× real time on one CPU thread, 3–4× on eight, 24× on GPU; Kokoro fp32 3×, 8× and 26×. The first Kokoro test used the int8 model and looked slow (about 1.5×); the cause was int8 itself (above), not the model or the binding.
-- Listening: Kokoro's Chinese voices sound great in Chinese but poor in English; Qwen's cloned Beth sounds great in both. So the desktop keeps Qwen3-TTS, and Kokoro serves machines without GPU memory to spare.
-- The scripts gained `.tar.bz2` support, models inside archives, and servers that are project scripts; one `[api_servers]` section per engine, chosen by `[tts] server`.
-- The same server got SenseVoice STT and Silero VAD endpoints for later (above). Lessons there: sherpa-onnx's newest SenseVoice release (2025-09-09) is a Cantonese fine-tune, the general model is 2024-07-17; and for SenseVoice, unlike Kokoro, int8 is the fastest and smallest on CPU (an fp16 export saves disk but not RAM: the CPU converts it to fp32).
-
-### Milestone 10 — Component test page ✅
-
-- `test.html` (see [Dashboard](#component-tests-testhtml)): transcribe, translate and speak one at a time, with a voice picker, so each engine can be checked on its own — e.g. Kokoro's English voices without a Chinese speaker at hand. `/api/speak` takes an optional voice; `/api/voices` lists them.
-
-### Milestone 11 — Configuration: layers, fragments, recipes ✅
-
-- Every server's models in its own `[models.<name>]` table (whisper and llama included, now passed as `--model`), so fragments never share a table.
-- Fragments for the nine validated server + model pairs, recipes for 24, 8 and 6 GB NVIDIA cards, and the launcher's Generate config (GPU detection, languages, preview, save).
-- `config_generated.toml` as a layer between the defaults and `config_local.toml`, all read by one module, `configuration.py`, replacing the copies of the merge code in `app.py`, the scripts and the launcher.
-- `[languages]` split out of `[llama_prompt]`, since more than the prompt uses them; TTS fragments set `[tts] server`, and each TTS server's voices (`default_voice`, `language_voices`, Qwen's registered `voices`) live with it in `defaults.toml`, so switching engines never leaves another engine's voice names behind; per-language overrides `voice_language1`/`voice_language2`.
-
-### Milestone 12 — Project layout and launcher ✅
-
-- All Python (and the pages) moved into `src/`, leaving `launcher.pyw` as the obvious thing to run; modules import each other directly, with no path workarounds.
-- Launcher: Open dashboard on top; colored ▶ Launch and ■ Stop that fade when they don't apply; Generate config; Kill servers; Mock (optional), switching cleanly with Launch.
-- Dashboard: server status in the header from `/api/health`.
-- Servers on another machine work as configured (above); `local_proxy.py` for quick tests from a laptop.
-
-### Milestone 13 — Language checks ✅
-
-- whisper's language label and llama's language tag, with a recheck that transcribes again forced to each of the two languages and keeps the more confident result; the row is corrected while you watch (see [Flow](#flow)). From the logs: 1 wrong-language transcription (Russian, for quiet Chinese) in 96, which the recheck fixes.
-- whisper-server's `verbose_json` turned out to include `language_probabilities` and per-segment `avg_logprob` and `no_speech_prob`; the recheck uses `avg_logprob`.
-
-### Milestone 14 — Kokoro with misaki ✅
-
-- A Kokoro voicepack for Beth (`voices/beth_thomas/RC3`), found by a search on the PyTorch `kokoro` pipeline, sounded bad through `sherpa_server_win.py`, Chinese most of all. Same model data (the pack's tensor checked: float32, `[510, 1, 256]`, contiguous), so the suspect was the text front end, as with StyleTTS 2, where swapping back the phonemizer it was trained with was a sudden great improvement.
-- Tested three ways on the same sentences: sherpa-onnx's front end; misaki on sherpa-onnx's ONNX model (a prototype); PyTorch `kokoro`. misaki on ONNX and PyTorch gave identical phonemes and identical durations, and her Chinese sounded top tier in both: the front end, not the ONNX export. sherpa-onnx's C API takes only text, so it can't be given misaki's phonemes; hence `kokoro_server.py`.
-- misaki's English still misreads some names (Beth as "bait"); PyTorch does the same.
-- Japanese added: lines with kana go to misaki's Japanese G2P (before, they were read as Chinese, or as "Japanese letter" over and over by the English G2P). All its phonemes are in v1.1-zh's vocabulary. misaki reads a decimal point as a sentence end (23.5度 as "nijūsan. go do") and leaves Latin letters as they are; the model mostly drops those. A line of kanji only (東京駅) is still read as Chinese.
+The project's history (milestones, measurements and the reasons behind decisions) is in `AI/PROJECT_LOG.md`.
 
 ## Extension points (future)
 
@@ -340,7 +263,7 @@ In `src/tools/`, extras that aren't part of running the app:
   - Pause speech detection while a translation plays, so speakers can't feed it back into Continuous Audio Mode.
   - The speaker's own voice, cloned from their recordings (Qwen3-TTS).
   - Start speaking before the translation finishes (sentence by sentence).
-  - Speaking rate: Kokoro supports `speed` (passed through by `sherpa_server_win.py`); not a setting yet. (Qwen's tts-server accepts it but ignores it.)
+  - Speaking rate: a playback speed control on the page (e.g. 1.0× to 1.5×, the user's choice, not automatic), so playback can keep pace with a fast speaker when it talks over a muted captured tab (a TODO in `app.js`). Kokoro's servers take `speed`; Qwen's tts-server accepts it but ignores it, so speeding up playback in the page may suit both.
   - `sherpa_server_win.py` on Linux/macOS: load the `.so`/`.dylib` and install those builds.
 - **Small devices:** SenseVoice STT (built into `sherpa_server_win.py`) plus Kokoro on the CPU and a small llama model, for a setup without a large GPU.
 - Add stages to the pipeline (summarization, glossary/terminology pass).

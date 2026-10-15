@@ -8,3 +8,6 @@ logs/*
 !logs/.gitkeep
 /config_local.toml
 /config_generated.toml
+
+# AI context for this computer only (see AI/STRATEGY.md)
+/AI/LOCAL.md
