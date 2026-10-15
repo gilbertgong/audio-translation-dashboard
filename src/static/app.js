@@ -666,6 +666,10 @@ function trimBacklog() {
   if (dropped) updateStatus();
 }
 
+// TODO: with a muted captured tab, playback talks over a fast speaker and the
+// backlog sits at max_backlog_ms. Add a playback speed control for the user
+// (e.g. 1.0x to 1.5x) so they can speed it up to keep pace.
+
 // Speak the next waiting translation, once nothing is playing and the
 // speaker's turn has ended; until then, check again when it could have.
 function playNextSpeech() {
