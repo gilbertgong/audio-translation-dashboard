@@ -140,7 +140,7 @@ max_backlog = 3
 # Speech starts playing once this much audio (ms) has arrived from the TTS
 # server, or all of it if it's shorter, so a slow start doesn't stutter.
 # Applies to automatic playback, the ▶ buttons and the test page.
-playback_buffer_ms = 5000
+playback_buffer_ms = 800
 
 [models]
 # Used by src/download_models.py. Each server's models are in its own

@@ -398,7 +398,8 @@ function stopRecordingPlayback() {
 }
 
 function stopPlayback() {
-  speechQueue.length = 0;
+  speechQueue.splice(0).forEach((item) => cancelSpeech(item.audio));
+  cancelSpeech(speech?.audio);
   stopSpeech();
   stopRecordingPlayback();
 }
@@ -433,15 +434,20 @@ function addPlayButton(row, wav) {
 
 // Speaking a translation: the text is sent to /api/speak, which streams
 // tts-server's audio back as raw PCM (16-bit little-endian mono; the rate is
-// in the Content-Type). Playback starts once playback_buffer_ms ([tts]) of
-// audio has arrived, or all of it if less, so a slow start doesn't make it
-// stutter; then each piece is scheduled right after the previous one, so long
-// speech starts before it is fully generated. Only one thing plays at a time:
-// starting speech stops other playback, and vice versa. Active speech:
-// { ctx, controller, btn }.
+// in the Content-Type). Fetching and playing are separate: loadSpeech() fetches
+// a translation's audio into memory, one request at a time from this page
+// (toTts), so queued translations are fetched ahead while another plays or the
+// speaker is still talking; speakTranslation() plays it, starting once
+// playback_buffer_ms ([tts]) of audio is in, or all of it if less (at once if
+// it was fetched ahead), so a slow start doesn't make it stutter; then each
+// piece is scheduled right after the previous one, so long speech starts
+// before it is fully generated. Only one thing plays at a time: starting
+// speech stops other playback, and vice versa. Active speech:
+// { ctx, btn, item, audio, update }.
 let speech = null;
 const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
 let playbackBufferS = 5;
+const toTts = oneAtATime();
 
 function setSpeakButton(btn, state) {
   const looks = {
@@ -452,11 +458,12 @@ function setSpeakButton(btn, state) {
   [btn.textContent, btn.title] = looks[state];
 }
 
+// Stop the speech playing (its audio is kept: see cancelSpeech).
 function stopSpeech() {
   if (!speech) return;
-  const { ctx, controller, btn } = speech;
+  const { ctx, btn, audio, update } = speech;
   speech = null;
-  controller.abort();
+  audio.listeners.delete(update);
   ctx.close();
   setSpeakButton(btn, "idle");
   updateStatus();
@@ -480,30 +487,24 @@ function speechTarget(row) {
   return "";
 }
 
-// item: the automatic-playback queue entry being spoken (null for a ▶ click),
-// put back in the queue if the speaker starts again.
-async function speakTranslation(row, btn, text, item = null) {
-  stopSpeech();
-  stopRecordingPlayback();
-
-  // Created right away (during the click, for the speak button) so the browser
-  // allows it to play; automatic playback relies on the page having been
-  // clicked or typed in before, so resume in case it starts suspended.
-  const ctx = new AudioContext();
-  ctx.resume().catch(() => {});
-  const controller = new AbortController();
-  const current = { ctx, controller, btn, item };
-  speech = current;
-  updateStatus();
-  setSpeakButton(btn, "waiting");
+// Fetch a row's speech in the background, once the requests before it are
+// done. Returns { pieces (sample arrays), seconds, rate, done, error,
+// controller, listeners }: listeners are called as pieces arrive and when it's
+// done (or failed, or cancelled).
+function loadSpeech(row, text) {
+  const audio = { pieces: [], seconds: 0, rate: 24000, done: false, error: null,
+    controller: new AbortController(), listeners: new Set() };
+  const notify = () => audio.listeners.forEach((listener) => listener());
   setTiming(row, "tts", null);
-  const start = performance.now();
-  try {
+  toTts(async () => {
+    const { signal } = audio.controller;
+    if (signal.aborted) return; // cancelled while waiting its turn
+    const start = performance.now();
     const res = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, target: speechTarget(row) || undefined }),
-      signal: controller.signal,
+      signal,
     });
     if (!res.ok) {
       let message = `HTTP ${res.status}`;
@@ -512,23 +513,9 @@ async function speakTranslation(row, btn, text, item = null) {
       } catch {}
       throw new Error(message);
     }
-    const rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
-
+    audio.rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
     const reader = res.body.getReader();
     let leftover = new Uint8Array(0); // an odd byte, completed by the next piece
-    let playAt = 0;
-    let last = null;
-    let held = []; // pieces waiting until enough audio is buffered; null once playing
-    let heldSeconds = 0;
-    const play = (buffer) => {
-      const source = new AudioBufferSourceNode(ctx, { buffer });
-      source.connect(ctx.destination);
-      if (!last) setSpeakButton(btn, "playing");
-      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
-      source.start(playAt);
-      playAt += buffer.duration;
-      last = source;
-    };
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -541,49 +528,96 @@ async function speakTranslation(row, btn, text, item = null) {
       const even = bytes.length & ~1;
       leftover = bytes.slice(even);
       if (!even) continue;
-
+      if (!audio.pieces.length) setTiming(row, "tts", (performance.now() - start) / 1000); // first audio
       const samples = pcmToFloat(bytes.subarray(0, even));
-      const buffer = ctx.createBuffer(1, samples.length, rate);
-      buffer.copyToChannel(samples, 0);
-      if (held) {
-        if (!held.length) setTiming(row, "tts", (performance.now() - start) / 1000); // first audio
-        held.push(buffer);
-        heldSeconds += buffer.duration;
-        if (heldSeconds < playbackBufferS) continue;
-        held.forEach(play);
-        held = null;
-      } else {
-        play(buffer);
-      }
+      audio.pieces.push(samples);
+      audio.seconds += samples.length / audio.rate;
+      notify();
     }
+  }).catch((err) => {
+    if (!audio.controller.signal.aborted) audio.error = err;
+  }).finally(() => {
+    audio.done = true;
+    notify();
+  });
+  return audio;
+}
+
+// Cancel a speech's fetch (waiting or running) when it won't be played.
+function cancelSpeech(audio) {
+  if (audio && !audio.done) audio.controller.abort();
+}
+
+// Play a row's speech: item's audio (an automatic-playback queue entry, put
+// back in the queue if the speaker starts again), else fetched now (a ▶ click).
+function speakTranslation(row, btn, text, item = null) {
+  stopSpeech();
+  stopRecordingPlayback();
+
+  // Created right away (during the click, for the speak button) so the browser
+  // allows it to play; automatic playback relies on the page having been
+  // clicked or typed in before, so resume in case it starts suspended.
+  const ctx = new AudioContext();
+  ctx.resume().catch(() => {});
+  const audio = item?.audio ?? loadSpeech(row, text);
+  const current = { ctx, btn, item, audio, update: null };
+  speech = current;
+  updateStatus();
+  setSpeakButton(btn, "waiting");
+
+  let played = 0; // pieces scheduled so far
+  let playAt = 0;
+  let last = null;
+  const finished = () => {
     if (speech !== current) return;
-    held?.forEach(play); // all of it was shorter than the buffer
-    if (!last) throw new Error("no audio received");
-    last.onended = () => {
-      if (speech !== current) return;
-      stopSpeech();
-      playNextSpeech();
-    };
-  } catch (err) {
-    if (speech !== current) return; // stopped or replaced: not an error
+    stopSpeech();
+    playNextSpeech();
+  };
+  const fail = (err) => {
     console.error(err);
     stopSpeech();
     setTiming(row, "tts", "failed");
     addDetail(row, `Speech error: ${err.message}`, true);
     playNextSpeech();
-  }
+  };
+  current.update = () => {
+    if (speech !== current) return;
+    if (audio.error) return fail(audio.error);
+    if (!last && !audio.done && audio.seconds < playbackBufferS) return; // still buffering
+    for (; played < audio.pieces.length; played++) {
+      const samples = audio.pieces[played];
+      const buffer = ctx.createBuffer(1, samples.length, audio.rate);
+      buffer.copyToChannel(samples, 0);
+      const source = new AudioBufferSourceNode(ctx, { buffer });
+      source.connect(ctx.destination);
+      if (!last) setSpeakButton(btn, "playing");
+      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
+      source.start(playAt);
+      playAt += buffer.duration;
+      last = source;
+    }
+    if (!audio.done) return;
+    audio.listeners.delete(current.update);
+    if (!last) return fail(new Error("no audio received"));
+    if (ctx.currentTime >= playAt) finished(); // already played out
+    else last.onended = finished;
+  };
+  audio.listeners.add(current.update);
+  current.update(); // fetched ahead: plays at once
 }
 
 // Automatic translation playback: each finished translation is queued and
 // spoken, in order, once the speaker's turn has ended: every running source
 // quiet for turn_pause_ms ([tts]; longer than the pause that splits phrases).
-// If someone starts speaking during playback, it stops and that translation
-// goes back to the front of the queue. At most max_backlog wait; beyond that
-// the oldest is dropped. Stopping playback (or starting a recording) drops the
+// Each one's speech is fetched as soon as it's queued (see loadSpeech), so
+// it's ready, or nearly, when its turn comes. If someone starts speaking
+// during playback, it stops and that translation goes back to the front of
+// the queue, keeping its audio. At most max_backlog wait; beyond that the
+// oldest is dropped. Stopping playback (or starting a recording) drops the
 // waiting ones. The ▶ buttons play at once.
 const autoPlayToggle = document.getElementById("auto-play");
 autoPlayToggle.addEventListener("change", () => updateStatus());
-const speechQueue = []; // [{ row, btn, text }]
+const speechQueue = []; // [{ row, btn, text, audio }]
 let turnPauseMs = 2000;
 let maxBacklog = 3;
 let lastSpeechAt = 0; // performance.now() of the last speech from any source
@@ -596,15 +630,16 @@ function noteSpeech(sustained) {
   if (sustained && speech?.item) {
     const item = speech.item;
     stopSpeech();
-    speechQueue.unshift(item); // spoken again at the end of the turn
+    speechQueue.unshift(item); // spoken again at the end of the turn, from its fetched audio
     playNextSpeech();
   }
 }
 
 function queueSpeech(row, btn, text) {
-  speechQueue.push({ row, btn, text });
+  speechQueue.push({ row, btn, text, audio: loadSpeech(row, text) });
   while (speechQueue.length > maxBacklog) {
     const dropped = speechQueue.shift();
+    cancelSpeech(dropped.audio);
     addDetail(dropped.row, "Not spoken automatically: too many waiting");
   }
   playNextSpeech();
@@ -931,10 +966,9 @@ function encodeWav(samples, sampleRate) {
 
 // Each server gets one request at a time from this page, in the order they're
 // asked for, and runs it with the whole machine; the stages still overlap
-// (the next phrase is transcribed while this one is translated). toWhisper(task)
-// and toLlama(task) run task() once the ones before it have finished (or
-// failed) and return its result. Speech is one at a time already (see
-// speakTranslation).
+// (the next phrase is transcribed while this one is translated). toWhisper(task),
+// toLlama(task) and toTts(task) (see loadSpeech) run task() once the ones
+// before it have finished (or failed) and return its result.
 function oneAtATime() {
   let last = Promise.resolve();
   return (task) => {
