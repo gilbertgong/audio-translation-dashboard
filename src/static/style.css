@@ -742,17 +742,14 @@ kbd {
 .ch-db { grid-column: 2; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .capture-mute {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
-.capture-mute:hover:not(:disabled) { border-color: var(--accent); }
-.capture-mute.muted { border-color: var(--recording); color: var(--recording); }
-.capture-mute:disabled { opacity: 0.5; cursor: default; }
+.capture-mute:has(input:disabled) { opacity: 0.5; cursor: default; }
 
 /* The capture help (styled like the raw viewer, smaller). */
 .help-dialog {

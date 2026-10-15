@@ -28,8 +28,8 @@
     <!-- One meter per channel of the captured sound; click one to choose
          which is translated (filled in by app.js). -->
     <div id="capture-channels" class="capture-channels"></div>
-    <button id="capture-mute" class="capture-mute" type="button" disabled
-            title="Mute the captured tab here while still capturing it (browser tabs only)">Mute tab</button>
+    <label class="capture-mute" title="Silence the captured tab here while still capturing it (browser tabs only; set before capturing)">
+      <input type="checkbox" id="capture-mute"> Mute captured tab</label>
   </aside>
 
   <main>
@@ -136,7 +136,7 @@
         browser's picker, choose:</p>
       <ul>
         <li><b>A browser tab</b> (best), with <i>Also share tab audio</i> on: just that tab's
-          sound, e.g. a YouTube video or a meeting in the browser. <b>Mute tab</b> then silences
+          sound, e.g. a YouTube video or a meeting in the browser. <b>Mute captured tab</b> (tick it before capturing) silences
           it for you while it's still captured, so you hear only the translations.</li>
         <li><b>Entire screen</b>, with <i>Also share system audio</i> on: everything your
           computer plays (Windows), e.g. a meeting app. This includes the spoken translations.</li>

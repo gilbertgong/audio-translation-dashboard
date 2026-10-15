@@ -200,7 +200,8 @@ function splitterBlock(sp, block, rms) {
   }
   const loud = db > sp.thresholdDb;
   // For automatic playback: speech now; sustained (past a cough) mid-phrase.
-  if (loud) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms);
+  // A muted captured tab isn't heard here, so the translations talk over it.
+  if (loud && !(sp.source === "capture" && capture?.muted)) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms);
 
   if (!sp.speaking) {
     sp.preRoll.push(block);
@@ -1294,7 +1295,7 @@ recordBtn.addEventListener("click", async () => {
 const captureBtn = document.getElementById("capture-btn");
 const captureStatus = document.getElementById("capture-status");
 const captureChannelsEl = document.getElementById("capture-channels");
-const captureMuteBtn = document.getElementById("capture-mute");
+const captureMuteBox = document.getElementById("capture-mute");
 const captureHelp = document.getElementById("capture-help");
 const CHANNEL_SOUND_DB = -50; // the first channel louder than this is chosen automatically
 const SURFACES = { browser: "a browser tab", window: "a window", monitor: "the entire screen" };
@@ -1378,7 +1379,10 @@ function drawChannels() {
 async function startCapture() {
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { width: { max: 320 }, frameRate: { max: 1 } }, // required by the browser; not used
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    // Mute captured tab: the tab stops playing here but is still captured, so only
+    // the translations are heard. Browsers honour this only when capture starts.
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+             suppressLocalAudioPlayback: captureMuteBox.checked },
     systemAudio: "include", // offer "Also share system audio" for the entire screen
   });
   const surface = stream.getVideoTracks()[0]?.getSettings().displaySurface || "";
@@ -1414,7 +1418,7 @@ async function startCapture() {
     mix.connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
     capture = { session: { stream, ctx, source, gain: mix, node, chunks: [], splitter },
-                channels, selected: null, surface, track, muted: false, buffer: new Float32Array(2048), frame: 0 };
+                channels, selected: null, surface, track, muted: captureMuteBox.checked, buffer: new Float32Array(2048), frame: 0 };
     if (count === 1) selectChannel(0);
     else setCaptureStatus(describeCapture());
     // The browser's own "Stop sharing" ends the tracks.
@@ -1446,9 +1450,7 @@ function setCaptureUi(capturing) {
   // One source at a time (switched off for now, to try both at once):
   // recordBtn.disabled = capturing; // (Space does nothing either)
   // autoSplitToggle.disabled = capturing;
-  captureMuteBtn.disabled = !capturing || capture?.surface !== "browser";
-  captureMuteBtn.textContent = "Mute tab";
-  captureMuteBtn.classList.remove("muted");
+  captureMuteBox.disabled = capturing; // takes effect only when capture starts
 }
 
 captureBtn.addEventListener("click", async () => {
@@ -1468,24 +1470,6 @@ captureBtn.addEventListener("click", async () => {
     setCaptureStatus(err.name === "NotAllowedError" ? "Not capturing" : err.message, err.name !== "NotAllowedError");
   } finally {
     captureBtn.disabled = false;
-  }
-});
-
-// Mute: the captured tab stops playing here but is still captured, so only the
-// translations are heard (browser tabs only: suppressLocalAudioPlayback).
-captureMuteBtn.addEventListener("click", async () => {
-  if (!capture) return;
-  const muted = !capture.muted;
-  try {
-    await capture.track.applyConstraints({ suppressLocalAudioPlayback: muted });
-    const applied = capture.track.getSettings().suppressLocalAudioPlayback;
-    if (applied !== undefined && applied !== muted) throw new Error("not applied");
-    capture.muted = muted;
-    captureMuteBtn.textContent = muted ? "Unmute tab" : "Mute tab";
-    captureMuteBtn.classList.toggle("muted", muted);
-  } catch (err) {
-    console.error(err);
-    setCaptureStatus(`This browser can't mute a captured tab while capturing (${err.message}).`, true);
   }
 });
 
