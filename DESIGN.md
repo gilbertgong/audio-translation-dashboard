@@ -159,8 +159,8 @@ Sections:
 | Recipe        | VRAM  | STT                       | Translation             | TTS                        |
 |---------------|-------|---------------------------|-------------------------|----------------------------|
 | `nvidia-24gb` | 24 GB | whisper large-v3          | Qwen3.8-27B UD-IQ3_XXS  | Qwen3-TTS 1.7B (beth_thomas), GPU |
-| `nvidia-8gb`  | 8 GB  | whisper large-v3-q5_0     | Qwen3.5-9B UD-Q3_K_XL   | Kokoro (beth_thomas), CPU       |
-| `nvidia-6gb`  | 6 GB  | whisper large-v3-turbo-q5_0 | Qwen3.5-9B UD-IQ3_XXS | Kokoro (beth_thomas), CPU       |
+| `nvidia-8gb`  | 8 GB  | whisper large-v3          | Qwen3.5-4B UD-Q4_K_XL (context 2048) | Kokoro (beth_thomas), CPU       |
+| `nvidia-6gb`  | 6 GB  | whisper large-v3-q5_0     | Qwen3.5-4B UD-IQ3_XXS (context 2048) | Kokoro (beth_thomas), CPU       |
 
 - **Generate config** (launcher): reads the GPU with `nvidia-smi` (the card with the most memory; a missing driver just means choosing by hand), pre-selects the largest recipe that fits (cards report a little under their nominal size, hence a 0.5 GiB margin), takes the two languages from dropdowns of whisper's languages (starting from the current `config_generated.toml`), and previews the result: `[languages]`, then the fragments, then the `off` sections. Save writes `config_generated.toml`; the next Launch uses it. A recipe whose fragments are missing or don't fit together can't be saved.
 

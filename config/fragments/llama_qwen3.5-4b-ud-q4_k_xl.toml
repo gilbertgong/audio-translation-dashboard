@@ -1,0 +1,17 @@
+# Translation: llama.cpp's llama-server with Qwen3.5-4B UD-Q4_K_XL (2.91 GB).
+
+[api_servers.llama]
+start = true
+repo = "ggml-org/llama.cpp"
+release = "latest"
+ensure_version = false
+# The cudart zip holds the CUDA runtime DLLs that the CUDA build needs.
+assets = ["llama-*-bin-{binary_type}.zip", "cudart-llama-bin-{binary_type}.zip"]
+executable = "llama-server"
+host = "127.0.0.1"
+port = 8082
+# All layers on the GPU, memory fitted automatically; --ctx-size caps the context.
+args = ["--ctx-size", "2048"]
+
+[models.llama]
+model = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-UD-Q4_K_XL.gguf?download=true"
