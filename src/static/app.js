@@ -402,6 +402,7 @@ function stopPlayback() {
   cancelSpeech(speech?.audio);
   stopSpeech();
   stopRecordingPlayback();
+  updateStatus(); // e.g. "2 queued" -> idle, when nothing was playing
 }
 
 player.addEventListener("ended", () => {
@@ -446,7 +447,7 @@ function addPlayButton(row, wav) {
 // { ctx, btn, item, audio, update }.
 let speech = null;
 const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
-let playbackBufferS = 5;
+let playbackBufferS = 0.8;
 const toTts = oneAtATime();
 
 function setSpeakButton(btn, state) {
@@ -612,14 +613,16 @@ function speakTranslation(row, btn, text, item = null) {
 // Each one's speech is fetched as soon as it's queued (see loadSpeech), so
 // it's ready, or nearly, when its turn comes. If someone starts speaking
 // during playback, it stops and that translation goes back to the front of
-// the queue, keeping its audio. At most max_backlog wait; beyond that the
-// oldest is dropped. Stopping playback (or starting a recording) drops the
-// waiting ones. The ▶ buttons play at once.
+// the queue, keeping its audio. The backlog is the speech waiting (not the
+// one playing), counting only audio fetched in full: once it's over
+// max_backlog_ms, the oldest are dropped until it isn't, always keeping the
+// newest. Stopping playback (or starting a recording) drops the waiting ones.
+// The ▶ buttons play at once.
 const autoPlayToggle = document.getElementById("auto-play");
 autoPlayToggle.addEventListener("change", () => updateStatus());
 const speechQueue = []; // [{ row, btn, text, audio }]
 let turnPauseMs = 2000;
-let maxBacklog = 3;
+let maxBacklogS = 30;
 let lastSpeechAt = 0; // performance.now() of the last speech from any source
 let turnTimer = null;
 
@@ -631,19 +634,35 @@ function noteSpeech(sustained) {
     const item = speech.item;
     stopSpeech();
     speechQueue.unshift(item); // spoken again at the end of the turn, from its fetched audio
+    trimBacklog();
     playNextSpeech();
   }
 }
 
 function queueSpeech(row, btn, text) {
-  speechQueue.push({ row, btn, text, audio: loadSpeech(row, text) });
-  while (speechQueue.length > maxBacklog) {
-    const dropped = speechQueue.shift();
-    cancelSpeech(dropped.audio);
-    addDetail(dropped.row, "Not spoken automatically: too many waiting");
-  }
+  const audio = loadSpeech(row, text);
+  audio.listeners.add(() => audio.done && trimBacklog()); // its length counts once it's all in
+  speechQueue.push({ row, btn, text, audio });
   playNextSpeech();
   updateStatus();
+}
+
+// Seconds of speech waiting to be played, fetched in full.
+function backlogSeconds() {
+  return speechQueue.reduce((sum, { audio }) => sum + (audio.done && !audio.error ? audio.seconds : 0), 0);
+}
+
+// Drop the oldest waiting translations while the backlog is over the limit,
+// keeping at least the newest.
+function trimBacklog() {
+  let dropped = false;
+  while (speechQueue.length > 1 && backlogSeconds() > maxBacklogS) {
+    const oldest = speechQueue.shift();
+    cancelSpeech(oldest.audio);
+    addDetail(oldest.row, `Not spoken automatically: over ${maxBacklogS} s of speech waiting`);
+    dropped = true;
+  }
+  if (dropped) updateStatus();
 }
 
 // Speak the next waiting translation, once nothing is playing and the
@@ -812,7 +831,7 @@ async function loadConfig() {
     autoSplitToggle.checked = !!enabled;
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;
-    maxBacklog = config.max_backlog ?? maxBacklog;
+    maxBacklogS = (config.max_backlog_ms ?? maxBacklogS * 1000) / 1000;
     playbackBufferS = (config.playback_buffer_ms ?? playbackBufferS * 1000) / 1000;
     updateStatus(); // the playback indicator depends on the switch
     if (config.mock) showMockConversation(config.mock_conversation);

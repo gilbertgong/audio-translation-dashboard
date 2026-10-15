@@ -19,7 +19,9 @@ steps for just that server (install_api_servers.py, download_models.py and
 run_servers.py, each with --only NAME); a later Launch uses it as it is and
 leaves it running. During a
 launch, the launch's servers are stopped and started through its
-run_servers.py ("stop NAME" / "start NAME").
+run_servers.py ("stop NAME" / "start NAME"). Restart launcher closes this
+window (stopping what it runs, as closing it does) and opens a new one, to
+pick up changes to the launcher itself.
 
 Generate config: detects the largest GPU (nvidia-smi), suggests a recipe from
 config/recipes/, takes the two languages to translate between (from whisper's
@@ -27,7 +29,8 @@ list, config/whisper_languages.json), previews the result (the languages, the
 recipe's fragments from config/fragments/ pasted together, and start = false
 for the servers it turns off, and [gpu] devices = that GPU's index, so the
 servers use just that card) and saves it to config_generated.toml, which the
-next Launch uses: on top of the defaults, under config_local.toml.
+next Launch uses: on top of the defaults, under config_local.toml. Saving
+also refreshes the server buttons for the new settings.
 
 Kill servers: lists this project's running processes (servers from
 api_servers/, Python running src/ scripts), e.g. strays left by an earlier
@@ -80,9 +83,12 @@ MODES = {
 if os.name == "nt":
     # Hidden console; the servers inherit it.
     CHILD_OPTIONS = {"creationflags": subprocess.CREATE_NO_WINDOW}
+    # A new launcher (Restart launcher), independent of this one.
+    DETACHED = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
 else:
     # Own process group, so Stop can signal the whole tree.
     CHILD_OPTIONS = {"start_new_session": True}
+    DETACHED = {"start_new_session": True}
 
 
 def launched_servers():
@@ -281,9 +287,10 @@ def assemble(name, recipe, languages=None, gpu=None):
 class GenerateConfigWindow:
     """Detect the GPU, suggest a recipe, preview it, and save it to config_generated.toml."""
 
-    def __init__(self, parent):
+    def __init__(self, parent, on_save):
         self.window = tk.Toplevel(parent)
         self.window.title("Generate config")
+        self.on_save = on_save  # called after saving, so the launcher picks up the new settings
         self.recipes = load_recipes()
         self.text = ""
         self.gpu_index = None  # the detected card's nvidia-smi index, once known
@@ -393,6 +400,7 @@ class GenerateConfigWindow:
         temp = GENERATED_FILE.with_name(GENERATED_FILE.name + ".tmp")
         temp.write_text(self.text, encoding="utf-8", newline="\n")
         temp.replace(GENERATED_FILE)
+        self.on_save()
         self.status.configure(text=f"Saved {self.selected()} to {GENERATED_FILE.name}: used from the next "
                                    f"Launch ({configuration.CONFIG_LOCAL_FILE.name} still takes priority)")
 
@@ -434,6 +442,7 @@ class Launcher:
         if setting("launcher", "show_dev_controls", False):
             self.mock_button.pack(side="right")
             self.restart_button.pack(side="right", padx=(0, 6))
+            tool_button(bar, "Restart launcher", self.restart_launcher).pack(side="right", padx=(0, 6))
         tool_button(bar, "Generate config", self.generate_config).pack(side="right", padx=(0, 6))
         self.kill_button = tool_button(bar, "Kill servers", self.kill_servers)
         self.kill_button.pack(side="right", padx=(0, 6))
@@ -593,12 +602,29 @@ class Launcher:
             except OSError as err:
                 self.write(f"== could not restart the dashboard: {err}\n")
 
+    def reload_config(self):
+        """After Generate config saves: the server buttons for the new settings
+        (everything else reads the settings when it's used)."""
+        if self.server_buttons or setting("launcher", "show_dev_controls", False):
+            self.make_server_buttons()
+            self.update_buttons()
+
+    def restart_launcher(self):
+        """Close this window (stopping what it runs, as closing it does) and
+        start the launcher again, e.g. to pick up changes to this file."""
+        if (self.mode or self.solo) and not messagebox.askyesno(
+                "Restart launcher", "Restarting the launcher stops what it's running (the launch, and servers "
+                "started on their own), as closing it does. Restart?", parent=self.root):
+            return
+        subprocess.Popen([sys.executable, str(Path(__file__).resolve())], cwd=ROOT, **DETACHED)
+        self.close()
+
     def generate_config(self):
         """Open the Generate config window (or bring it to the front)."""
         if self.generate_window and self.generate_window.window.winfo_exists():
             self.generate_window.window.lift()
         else:
-            self.generate_window = GenerateConfigWindow(self.root)
+            self.generate_window = GenerateConfigWindow(self.root, self.reload_config)
 
     def kill_servers(self):
         """Find this project's processes (in a worker thread: it takes a moment),

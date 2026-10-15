@@ -133,10 +133,12 @@ auto_play = false
 # and that translation is spoken again at the next turn's end. (The ▶ buttons
 # play at once.)
 turn_pause_ms = 1500
-# At most this many translations wait to be spoken; beyond that the oldest is
-# dropped (its row says so; its ▶ still works). A speaker who never pauses for
-# turn_pause_ms is never talked over, so nothing is spoken until they do.
-max_backlog = 3
+# At most this much speech (ms) waits to be spoken: the translations waiting
+# (not the one playing), counting each once its audio has come back from the
+# TTS server in full. Beyond that the oldest are dropped (each row says so;
+# its ▶ still works), keeping at least the newest. A speaker who never pauses
+# for turn_pause_ms is never talked over, so nothing is spoken until they do.
+max_backlog_ms = 30000
 # Speech starts playing once this much audio (ms) has arrived from the TTS
 # server, or all of it if it's shorter, so a slow start doesn't stutter.
 # Applies to automatic playback, the ▶ buttons and the test page.

@@ -302,11 +302,11 @@ def get_config(req):
         "language_checks": not config["unknown_languages"],
         "auto_split": config.get("auto_split", {}),
         "auto_play": config["tts"].get("auto_play", False),
-        # Automatic playback: wait for the end of the speaker's turn; how many may wait.
+        # Automatic playback: wait for the end of the speaker's turn; how much speech may wait.
         "turn_pause_ms": config["tts"].get("turn_pause_ms", 2000),
-        "max_backlog": config["tts"].get("max_backlog", 3),
+        "max_backlog_ms": config["tts"].get("max_backlog_ms", 30000),
         # Audio buffered before speech starts playing (dashboard and test page).
-        "playback_buffer_ms": config["tts"].get("playback_buffer_ms", 5000),
+        "playback_buffer_ms": config["tts"].get("playback_buffer_ms", 800),
         # Browser microphone processing, passed to getUserMedia.
         "audio_processing": {
             key: config["audio"].get(key, default) for key, default in
