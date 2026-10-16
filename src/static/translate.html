@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Text Translation</title>
+  <script src="view-entry.js" data-view="text"></script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="translate.css">
+</head>
+<body>
+  <header>
+    <h1>Text Translation</h1>
+    <a class="header-link" href="/">Live translation</a>
+    <a class="header-link" href="test.html">Component tests</a>
+  </header>
+  <main class="text-translator">
+    <div class="chat-toolbar">
+      <button id="clear" type="button" disabled>New conversation</button>
+      <div class="direction" aria-label="Translation direction">
+        <span class="from-label">From</span>
+        <strong id="source-language">…</strong>
+        <button id="swap" type="button" disabled title="Swap languages" aria-label="Swap languages">⇄</button>
+        <span class="to-label">To</span>
+        <strong id="target-language">…</strong>
+      </div>
+    </div>
+    <section id="conversation" aria-label="Translation conversation" tabindex="0">
+      <div id="empty-conversation" class="chat-empty">
+        <p>Type a message to translate.</p>
+        <span>Your text and its translation will appear here.</span>
+      </div>
+      <div id="messages"></div>
+    </section>
+    <div class="composer">
+      <label for="source-text" class="visually-hidden">Message to translate</label>
+      <textarea id="source-text" rows="2" placeholder="Type a message…" dir="auto" disabled></textarea>
+      <div class="composer-footer">
+        <span class="shortcut-hint">Enter to translate · Shift+Enter for a new line</span>
+        <button id="translate" type="button" disabled>Translate</button>
+      </div>
+    </div>
+    <p id="translation-status" role="status" aria-live="polite">Loading languages…</p>
+  </main>
+  <script src="translation-actions.js"></script>
+  <script src="translate.js"></script>
+</body>
+</html>
