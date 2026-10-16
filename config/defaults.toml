@@ -283,7 +283,7 @@ voice_arg = "--voice"
 # "af_maple", chinese = "zf_001"; none for Japanese, which v1.1-zh wasn't
 # trained on, though Beth speaks it well).
 english = "beth_thomas"
-chinese = "beth_thomas"
+chinese = "zf_001"
 japanese = "beth_thomas"
 
 [api_servers.kokoro.voices]

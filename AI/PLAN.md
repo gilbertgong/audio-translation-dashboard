@@ -88,6 +88,8 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 
 - User-requested work is tracked in `TODO.md`. Language direction was the highest priority;
   implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.
+- Added requests: launcher ZIP updates/version checking, a new default Kokoro Chinese voice, and
+  investigation of a better llama model for the 6 GB recipe. Details and update design in `TODO.md`.
 - **Playback speed control** (low priority): a user-set speed on the page (e.g. 1.0× to 1.5×), not automatic, for
   keeping up with fast speakers when talking over a muted tab. TODO in `src/static/app.js` above `playNextSpeech`.
 - Try the 4B recipes on real laptops (speed, memory, translation quality).

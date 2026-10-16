@@ -225,3 +225,12 @@ DESIGN.md).
   Layout-only change; no tests run per user preference.
 
 - Removed the divider between the dashboard title and navigation row. Layout-only; no tests run.
+
+## 2026-10-15: additional requested TODOs
+
+- Recorded launcher updates/version checking, changing the default Chinese Kokoro voice, and
+  investigating whether the 6 GB recipe needs a better llama model. No implementation requested yet.
+- Update discussion: support release ZIP installs without Git; local/remote JSON `.version` files
+  carry version, direct download URL and master version file URL. Compare numeric version components;
+  the remote file describes the latest published release. Stage a ZIP, then run a temporary updater
+  outside the installation folder after shutdown to install, preserve user data and restart.
