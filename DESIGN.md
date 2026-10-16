@@ -47,25 +47,71 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 ### Dashboard (`src/static/`)
 
 - **Capture:** microphone → software gain → AudioWorklet. The page builds 16 kHz mono WAV itself, so whisper gets lossless audio in its native format with no ffmpeg.
-- **Translation window:** one row per recording. The left column (Conversation) shows the original and its translation, aligned left or right by language; the translation fills in as llama generates it (the page sends whisper, llama and the TTS server one request at a time each, in order, while the stages overlap: the next phrase is transcribed while this one is translated, and the next translation's speech is generated while this one plays), and gets a ▶ button to speak it once complete. The right column (Activity) shows timings — audio length, transcribe time, recheck time (when one ran), translate time (with time to first token, TTFT, under it), and time until speech starts — plus notes and errors. The Activity column is collapsible.
+- **Translation window:** one row per recording. The left column (Conversation) shows the original and its translation, aligned left or right by language; the translation fills in as llama generates it (the page sends whisper, llama and the TTS server one request at a time each, in order, while the stages overlap: the next phrase is transcribed while this one is translated, and the next translation's speech is generated while this one plays), and gets matching inline ▶ playback and copy icon buttons once complete. The right column (Activity) shows timings — audio length, transcribe time, recheck time (when one ran), translate time (with time to first token, TTFT, under it), and time until speech starts — plus notes and errors. The Activity column is collapsible.
 - **Capture audio** (a sidebar in the left margin; the main area keeps its size when there's room, and the sidebar moves above it on narrow screens): translates the sound of a browser tab, a window or the whole system instead of the microphone. It uses the browser's screen sharing (`getDisplayMedia`) in reverse: you share with the page, and it listens; the video is requested tiny and unused, and the audio comes unprocessed (no echo cancellation, noise suppression or gain control). A meter per channel; until one is chosen, the first channel with sound is (left if both start together), and clicking a meter switches. The chosen channel goes, mono, through the same pipeline as Continuous Audio Mode; its rows are noted "captured audio". **Mute captured tab**, a checkbox ticked before capturing (browsers honour `suppressLocalAudioPlayback` only when capture starts; it's locked while capturing), stops a captured tab playing here while it's still captured, so only the translations are heard; automatic playback then talks over it, waiting only for the microphone. The microphone and a capture can run at the same time (each has its own recording session, phrase splitting and meters: the one by Start Recording is the microphone's, the sidebar's are the capture's; the status line notes "capturing too"); an experiment, to see how the pipeline copes. The code that made them exclusive is kept, commented out. A `?` explains which share choice gives sound (a tab with tab audio, or the entire screen with system audio; a window gives none).
 - **Controls:** Start/Stop (or Space), the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status row and the microphone's level meter aligned under the Activity column. The status row has three independent, unlabeled indicators separated by light dividers (position says which is which; tooltips spell them out): the capture (left) and the mic (middle) each show their source's state (off, calibrating, listening, speech, or recording; for the capture, "no sound yet" until a channel is chosen) and how many of its phrases are still being translated; playback (right) shows what is playing, how many translations are queued for a pause, or whether automatic playback is on.
 - **Server status:** in the header, a dot per server — Transcribe, Translate, Speak — green (ok), amber (loading: llama-server while it loads its model), red (down), from `/api/health` every 10 s; the tooltip names the server, its address and what the check found.
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
 - **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a phrase was split, the saved file's path).
 
+#### Persistent views
+
+`index.html` keeps the live dashboard mounted, with `views.js` switching between live, text and
+component-test views. Its header puts the title alone on the first row; the second row has live/text
+links on the left, with service status and test links on the right. Navigation uses
+`#live`, `#text` and `#tests`. Text and tests are lazy-loaded into same-origin
+frames once and then retained. Switching views (including hash Back/Forward) never unloads capture,
+queues or playback. Live processing continues while either other view is visible; chat history/drafts
+and component-test inputs also survive switching. The live Space shortcut is limited to the live view.
+`view-entry.js` redirects old standalone text/test URLs into the shell; embedded pages hide their own
+headers. The tests view exposes Smoke test in a separate tab so it does not replace the running app.
+Typed translation and speech generation share the live dashboard's per-engine request queues.
+
+Actual page exit cancels live requests/queued jobs, timers, capture and playback, discarding unfinished
+audio rather than uploading it. A full-document cache restore reloads those closed resources. These
+exit handlers do not run when switching views. Refreshing or closing the app still ends the session.
+
+#### Text translation (`translate.html`)
+
+An everyday text translation page, linked from the dashboard and component tests. `translate.css`
+uses the dashboard's light/dark colors, compact controls, borders and panel styling. A scrollable
+conversation fills the available height, with a composer anchored below it. Enter sends a message;
+Shift+Enter adds a line (IME composition is left alone). Each submission appends one shared `.utterance` row: time/source-language metadata, original text,
+and a streamed translation underneath. It uses the live dashboard's exact conversation styles: common
+background, padding, separators, source/translation widths and sizes, accent color, and language2
+right alignment. Earlier turns
+remain visible; they are display history only and are not sent as context to llama.
+
+`translate.js` loads the configured language pair, displaying source and target labels with a swap
+button as the sole direction control. Direction changes apply to subsequent messages. Each request captures its own source/target,
+including for retry and speech playback. While a translation runs, the direction controls are locked
+and the send button becomes Stop; the composer remains available for drafting the next message.
+New conversation clears the visible turns and stops playback, preserving the draft and direction.
+
+The toolbar places New conversation on the left and language labels/Swap on the right. Translations
+use the dashboard's accent color and larger type, with smaller original text. Completed responses
+offer identical compact ▶ playback and copy icons inline after the text, shared with the live dashboard
+through `translation-actions.js` and the same CSS sizing. Icons have tooltips and accessible labels; ▶ becomes ■ while
+speech is active. Copy falls back to selecting the text when clipboard
+access fails. Listen requests `/api/speak` with that response's target key, buffers PCM in memory,
+and plays through Web Audio. Clicking Stop on the same response or listening to another stops it.
+Failed/stopped translations retain partial output with a status and Retry action; retry updates the
+same response without duplicating the user's message. Scrolling follows streamed text only when
+already near the bottom. Leaving the page aborts translation and speech. History is held only in
+page memory; backend logging still follows the existing app behavior.
+
 #### Component tests (`test.html`)
 
 A second page, linked from the dashboard's header, that tests one stage at a time through the dashboard's own endpoints, so a result there is what the dashboard would get:
 
 - **Transcribe:** record, or upload any audio file the browser can decode (converted to the dashboard's WAV format in the page); shows the text, language, timings and raw response.
-- **Translate:** any text, streamed; shows the translation, llama's language tag, time to first token and the raw stream.
+- **Translate:** any text, streamed; uses a source-language selector and shows the translation, time to first token and the raw stream.
 - **Speak:** any text in any of the TTS server's voices (a picker from `/api/voices`); shows time to first audio, with Play again and a WAV download.
 - "Translate this ↓" and "Speak this ↓" pass a result to the next panel, and sample texts (English, Chinese, mixed) help test a language you don't speak.
 
 #### Smoke test (`smoke.html`)
 
-Linked from the component tests: checks that nothing broke, end to end, with the running servers (about a minute). It loads the real dashboard in a frame and replaces the frame's `getUserMedia` and `getDisplayMedia` with streams it plays known speech into (`voices/beth_thomas/test_audio/`, served by `/api/test-audio`), so the dashboard runs exactly as it would with a person talking. The microphone gets Beth in English; the capture, on its right channel, the same in Chinese, then in Japanese (outside the language pair). Then silence, with Automatic Translation Playback on. It checks: the capture chose the channel with sound; each clip split into several phrases, each transcribed and translated without errors, in the expected language (the Japanese ones rechecked), with the language tag stripped; nothing spoken automatically while anyone was talking, then playback starting after the turn pause; and all three statuses back to off. It's a smoke test, not an accuracy test: the text itself isn't compared.
+Linked from the component tests: checks that nothing broke, end to end, with the running servers (about a minute). It loads the real dashboard in a frame and replaces the frame's `getUserMedia` and `getDisplayMedia` with streams it plays known speech into (`voices/beth_thomas/test_audio/`, served by `/api/test-audio`), so the dashboard runs exactly as it would with a person talking. The microphone gets Beth in English; the capture, on its right channel, the same in Chinese, then in Japanese (outside the language pair). Then silence, with Automatic Translation Playback on. It checks: the capture chose the channel with sound; each clip split into several phrases, each transcribed and translated without errors, in the expected language (the Japanese ones rechecked), without language tags; nothing spoken automatically while anyone was talking, then playback starting after the turn pause; and all three statuses back to off. It's a smoke test, not an accuracy test: the text itself isn't compared.
 
 ### Backend (`src/app.py`)
 
@@ -77,7 +123,7 @@ Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`
 | `GET /api/health`              | The three servers' status (`ok`, `loading`, `down`), checked in parallel (2 s timeout each). |
 | `POST /api/recordings`         | Save a WAV and transcribe it with whisper. Returns the text, language, confidence, timing and the raw exchange, and `recheck: true` when the language is neither of the two configured. |
 | `POST /api/recordings/recheck` | Transcribe a saved recording again, forced to each of the two languages; return the more confident result. |
-| `POST /api/translate`          | Translate text with llama (system prompt from the config, thinking off), streamed as server-sent events. |
+| `POST /api/translate`          | Translate `{text, source}` with llama (source must match the configured pair; target is the other language; prompt rendered per request), streamed as server-sent events. |
 | `POST /api/speak`              | Speak text with the TTS server, streamed as raw PCM: in a given voice, else the configured voice for its language (`target`: `language1`/`language2`), else the default voice. |
 | `GET /api/voices`              | The TTS server's voices and the configured default (for the test page). |
 
@@ -112,11 +158,8 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 - **Manual mode:** Start/Stop records one clip. The page sends it to `/api/recordings`, shows the text when whisper returns, then sends the text to `/api/translate` and shows the translation as it streams in. Recording can continue while earlier rows are processing.
 - **Continuous Audio Mode** (called *auto-split* in code and config; on by default): Start keeps the microphone open, and a voice activity detector in the page splits the audio at pauses. Each phrase goes through the same pipeline as its own row.
-- **Language checks** (after the fact): speech is expected in one of the two `[languages]`, but quiet or unclear speech can come back as a third (in testing, quiet Chinese came back as Russian, about 1 phrase in 100). Two independent checks catch it, and both lead to the same fix:
-  1. *whisper's own label:* the detected language isn't one of the two → `/api/recordings` says `recheck`, before translating;
-  2. *llama's language tag:* the system prompt asks llama to end each translation with the language(s) of the text it was given, e.g. `[chinese]`; the page hides the tag (the raw viewer keeps it), and a language other than the two triggers the recheck after translating.
-
-  The **recheck** transcribes the saved recording again forced to each of the two languages and keeps the result whisper is more confident in (segment `avg_logprob`, weighted by length; on the Russian clip, forced Chinese scored −0.40 against English −0.60, and whisper's own language scores agreed). Meanwhile the row shows the first text, marked "(whisper heard russian; rechecking…)"; then it swaps in the corrected text and language, notes "re-transcribed as chinese (…)", and translates again if needed. Speech, including automatic playback, waits for the final translation.
+- **Language direction:** Whisper identifies the source language. If it is outside the configured pair and the transcript is nonempty, the page requests a **recheck** before translating: the saved recording is transcribed forced to each language, and the result with the higher duration-weighted segment `avg_logprob` wins. The row shows the provisional transcript while waiting, then replaces its text and language. If the recheck fails, the original result is retained; an empty final transcript is not translated. Language rechecks are disabled if a configured language is not in Whisper's language list.
+- **Translation prompt:** the page sends the final transcript and Whisper language as `{text, source}`. The backend requires a source matching one of the configured languages (case-insensitive), chooses the other as target, and renders `{language1}`, `{language2}`, `{source}` and `{target}` per request. Unknown or missing source languages produce an explicit 400 error, including after a failed recheck. llama returns translation text only: no language tags, parsing or llama-triggered recheck. Bracketed content is preserved. The component tests select the source explicitly for typed input. Custom prompt overrides must use the new direction placeholders and omit tag instructions.
 - **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio for when it's played again. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: Beth, `beth_thomas`, for both; the stock voices `af_maple` and `zf_001` are the native alternatives), else `[tts] voice` if set, else the server's `default_voice` (`beth_thomas` for both: Kokoro's voicepack, Qwen's clone). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits phrases (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. The backlog is limited by time, not count: once the speech waiting (not counting the one playing, and only audio fetched in full) is over `[tts] max_backlog_ms` (30 s), the oldest are dropped, always keeping the newest, each with a note on its row ("over 30 s of speech waiting"; its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. With a muted captured tab, playback talks over the tab, so a fast speaker keeps the backlog full and playback about 30 s behind (see Extension points: a playback speed control). Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
 
 ## Configuration
@@ -162,7 +205,7 @@ Sections:
 | `nvidia-8gb`  | 8 GB  | whisper large-v3          | Qwen3.5-4B UD-Q4_K_XL (context 2048) | Kokoro (beth_thomas), CPU       |
 | `nvidia-6gb`  | 6 GB  | whisper large-v3-q5_0     | Qwen3.5-4B UD-IQ3_XXS (context 2048) | Kokoro (beth_thomas), CPU       |
 
-- **Generate config** (launcher): reads the GPU with `nvidia-smi` (the card with the most memory; a missing driver just means choosing by hand), pre-selects the largest recipe that fits (cards report a little under their nominal size, hence a 0.5 GiB margin), takes the two languages from dropdowns of whisper's languages (starting from the current `config_generated.toml`), and previews the result: `[languages]`, then the fragments, then the `off` sections. Save writes `config_generated.toml`; the next Launch uses it. A recipe whose fragments are missing or don't fit together can't be saved.
+- **Generate config** (launcher): lists NVIDIA GPUs with `nvidia-smi`, showing a GPU dropdown only when more than one is detected (index, name and VRAM). It remembers the previously generated GPU when available, otherwise defaults to the card with the most memory; a missing driver just means choosing a recipe by hand. Selecting a card updates the preview GPU index and pre-selects the largest recipe that fits (cards report a little under their nominal size, hence a 0.5 GiB margin), takes the two languages from dropdowns of whisper's languages (starting from the current `config_generated.toml`), and previews the result: `[languages]`, then the fragments, then the `off` sections. Save writes `config_generated.toml` and immediately refreshes the launcher settings and server buttons, then closes the config window; the next Launch uses it. Existing services keep their current configuration. A recipe whose fragments are missing or don't fit together can't be saved.
 
 ## Running
 

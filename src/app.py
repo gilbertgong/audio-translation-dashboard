@@ -85,7 +85,7 @@ def setup_logging(config_dir):
 def load_config(path):
     """The settings (see configuration.py), with path standing in for
     config_local.toml, plus values derived from them: absolute temp_dir, the
-    servers' URLs and the rendered system prompt."""
+    servers' URLs and unsupported language names."""
     config = configuration.load(path)
     temp_dir = Path(config["audio"]["temp_dir"])
     if not temp_dir.is_absolute():
@@ -97,16 +97,15 @@ def load_config(path):
     config["llama_url"] = f"http://{llama['host']}:{llama['port']}"
     tts = config["api_servers"][config["tts"]["server"]]  # the [api_servers] section of the TTS engine
     config["tts_url"] = f"http://{tts['host']}:{tts['port']}"
-    config["system_prompt"] = render_prompt(config["llama_prompt"], config["languages"])
     config["unknown_languages"] = unknown_languages(config["languages"])
     return config
 
 
-def render_prompt(prompt, languages):
-    """Fill {language1} and {language2} from [languages] into the [llama_prompt] system prompt."""
+def render_prompt(prompt, languages, source, target):
+    """Fill the language pair and this request's explicit translation direction."""
     text = prompt["system"]
-    for key in ("language1", "language2"):
-        text = text.replace("{" + key + "}", languages[key])
+    for key, value in {**languages, "source": source, "target": target}.items():
+        text = text.replace("{" + key + "}", value)
     return text
 
 
@@ -199,13 +198,19 @@ def expected_language(language):
     return (language or "").lower() in pair
 
 
-def translation_request(config, text):
+def translation_request(config, text, source):
     """The (url, body) of a streamed translation request to llama-server's
     OpenAI-style chat endpoint."""
     prompt = config["llama_prompt"]
+    pair = [config["languages"][key] for key in ("language1", "language2")]
+    index = next((i for i, name in enumerate(pair)
+                  if isinstance(source, str) and name.lower() == source.lower()), None)
+    if index is None:
+        raise HTTPError(400, "cannot choose translation direction: source must be one of " + ", ".join(pair))
+    system = render_prompt(prompt, config["languages"], pair[index], pair[1 - index])
     body = {
         "messages": [
-            {"role": "system", "content": config["system_prompt"]},
+            {"role": "system", "content": system},
             {"role": "user", "content": text},
         ],
         "temperature": prompt.get("temperature", 0.2),
@@ -298,7 +303,6 @@ def get_config(req):
         "sample_rate": config["audio"]["sample_rate"],
         "language1": languages["language1"],
         "language2": languages["language2"],
-        # The page's own check (llama's language tag) is off along with whisper's.
         "language_checks": not config["unknown_languages"],
         "auto_split": config.get("auto_split", {}),
         "auto_play": config["tts"].get("auto_play", False),
@@ -322,7 +326,7 @@ def get_config(req):
 
 @app.post("/api/translate")
 def post_translate(req):
-    """Body: {"text": "..."}. Streams text/event-stream:
+    """Body: {"text": "...", "source": "<configured language>"}. Streams text/event-stream:
         event: request    ours: the request sent to llama-server
         data: {...}       llama's streamed response, unchanged
         ...
@@ -337,10 +341,10 @@ def post_translate(req):
     if not text:
         raise HTTPError(400, "no text to translate")
 
+    url, body = translation_request(config, text, data.get("source"))
     if mock:
         return Stream(mock_translation_stream(text), "text/event-stream")
 
-    url, body = translation_request(config, text)
     start = time.monotonic()
     try:
         # Connect before returning the stream, so an unreachable server is a plain 502.

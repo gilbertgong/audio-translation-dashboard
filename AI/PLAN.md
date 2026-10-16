@@ -23,8 +23,9 @@ recipes good.
   server's own folder (`pip install --target`). *Why:* nothing to install beyond Python 3.11+ and a browser.
 - **Configuration fixed at startup,** chosen before launch (Generate config: recipes of validated fragments).
   *Why:* keeps the app simple; the page only has controls you'd change while using it.
-- **Fix after the fact:** language checks run after a result is shown and correct it in place. *Why:* never delay
-  every phrase for a rare error.
+- **Whisper owns language direction:** out-of-pair transcriptions are rechecked before translation;
+  llama gets an explicit source and target and returns no language tags.
+  *Why:* translation depends on transcription accuracy; avoid making llama infer direction again.
 - **Kokoro through misaki** (`kokoro_server.py`), not sherpa-onnx's front end. *Why:* the model was trained on
   misaki's phonemes; Beth's voicepack sounded bad any other way.
 - **Default voice Beth Thomas** for both languages: a Qwen3-TTS clone on the 24 GB desktop, a Kokoro voicepack found
@@ -40,6 +41,15 @@ recipes good.
   results stay in order.
 
 ## Results so far
+
+- Live, text and component-test views stay mounted in a persistent shell. Capture, engine queues,
+  playback, conversation history and drafts survive switching views; typed requests share live queues.
+
+- Text translation uses a dashboard-styled chat layout: scrolling history, bottom composer, Enter to
+  send / Shift+Enter for new lines, source/target labels with swap, streamed replies with Stop/Retry, and
+  per-response Copy/Listen. Linked from the dashboard and component tests.
+- Generate config offers GPU selection on multi-GPU NVIDIA machines, remembers the last generated card,
+  and updates the recipe suggestion/preview on selection. Save refreshes the launcher settings.
 
 - The full pipeline works end to end, from the microphone and from captured tabs, with streamed translation and
   speech starting about as soon as the first audio arrives.
@@ -76,6 +86,8 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 
 ## Next steps
 
+- User-requested work is tracked in `TODO.md`. Language direction was the highest priority;
+  implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.
 - **Playback speed control** (low priority): a user-set speed on the page (e.g. 1.0× to 1.5×), not automatic, for
   keeping up with fast speakers when talking over a muted tab. TODO in `src/static/app.js` above `playNextSpeech`.
 - Try the 4B recipes on real laptops (speed, memory, translation quality).

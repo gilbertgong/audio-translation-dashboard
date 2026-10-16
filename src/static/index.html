@@ -6,17 +6,24 @@
   <title>Audio Translation Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="app-shell">
   <header>
     <h1>Audio Translation Dashboard</h1>
-    <!-- The three servers' status (filled in by app.js from /api/health). -->
-    <div id="services" class="services" aria-live="polite"></div>
-    <a class="header-link" href="test.html">Component tests</a>
+    <div class="app-toolbar">
+      <nav class="primary-views" aria-label="Translation views">
+        <a class="header-link" href="#live" data-view="live">Live translation</a>
+        <a class="header-link" href="#text" data-view="text">Text translation</a>
+      </nav>
+      <!-- The three servers' status (filled in by app.js from /api/health). -->
+      <div id="services" class="services" aria-live="polite"></div>
+      <a class="header-link" href="#tests" data-view="tests">Component tests</a>
+      <a id="smoke-link" class="header-link" href="smoke.html" target="_blank" rel="noopener" hidden>Smoke test ↗</a>
+    </div>
   </header>
 
   <!-- The page: the capture sidebar to the left of the main area, in what was
        empty space (the main area keeps its size, centered, when there's room). -->
-  <div class="layout">
+  <div id="live-view" class="layout">
   <aside id="capture" class="capture-panel" aria-label="Capture audio">
     <div class="capture-head">
       <h2>Capture audio</h2>
@@ -122,6 +129,10 @@
   </main>
   </div>
 
+  <!-- Loaded once, then kept mounted so switching views preserves their state. -->
+  <iframe id="text-view" class="app-view-frame" title="Text translation" data-src="translate.html" hidden></iframe>
+  <iframe id="tests-view" class="app-view-frame" title="Component tests" data-src="test.html" allow="microphone" hidden></iframe>
+
   <!-- How capturing works (the ? in the capture sidebar). -->
   <dialog id="capture-help" class="help-dialog" aria-labelledby="capture-help-title">
     <div class="raw-head">
@@ -159,6 +170,8 @@
     <pre id="raw-body"></pre>
   </dialog>
 
+  <script src="translation-actions.js"></script>
   <script src="app.js"></script>
+  <script src="views.js"></script>
 </body>
 </html>

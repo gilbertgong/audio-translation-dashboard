@@ -19,7 +19,13 @@ for (const span of document.querySelectorAll(".samples")) {
     btn.type = "button";
     btn.textContent = label;
     btn.title = text;
-    btn.addEventListener("click", () => { $(span.dataset.target).value = text; });
+    btn.addEventListener("click", () => {
+      $(span.dataset.target).value = text;
+      if (span.dataset.target === "llm-input" && label !== "Mixed") {
+        const source = [...$("llm-source").options].find((o) => o.value.toLowerCase() === label.toLowerCase());
+        if (source) $("llm-source").value = source.value;
+      }
+    });
     span.append(btn);
   }
 }
@@ -44,6 +50,7 @@ const secs = (ms) => `${(ms / 1000).toFixed(2)}s`;
 
 let recorder = null;
 let sentWav = null;
+let transcribedLanguage = null;
 
 $("stt-record").addEventListener("click", async () => {
   if (recorder) {
@@ -137,6 +144,7 @@ async function transcribe(blob) {
     const res = await fetch("/api/recordings", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: sentWav });
     if (!res.ok) throw new Error(await errorMessage(res));
     const result = await res.json();
+    transcribedLanguage = result.language;
     $("stt-text").textContent = result.text || "(no speech detected)";
     $("stt-meta").textContent = `${result.language || "?"} · ${audioSeconds.toFixed(1)}s audio · ` +
       `whisper ${result.stt_seconds}s · round trip ${secs(performance.now() - start)} · saved as ${result.file}`;
@@ -154,6 +162,8 @@ $("stt-play").addEventListener("click", () => {
 
 $("stt-to-llm").addEventListener("click", () => {
   $("llm-input").value = $("stt-text").textContent;
+  const source = [...$("llm-source").options].find((o) => o.value.toLowerCase() === transcribedLanguage?.toLowerCase());
+  $("llm-source").value = source?.value || "";
   $("llm").scrollIntoView({ behavior: "smooth" });
 });
 
@@ -173,7 +183,7 @@ $("llm-go").addEventListener("click", async () => {
   let first = null;
   try {
     const res = await fetch("/api/translate", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, source: $("llm-source").value }),
     });
     if (!res.ok) throw new Error(await errorMessage(res));
     const reader = res.body.getReader();
@@ -195,15 +205,13 @@ $("llm-go").addEventListener("click", async () => {
         if (piece) {
           first ??= performance.now() - start;
           translation += piece;
-          $("llm-text").textContent = withoutTag(translation).text;
+          $("llm-text").textContent = translation.trim();
         }
       }
       if (done) break;
     }
-    const { text: translated, tag } = withoutTag(translation);
-    $("llm-text").textContent = translated || "(empty translation)";
-    $("llm-meta").textContent = `language tag ${tag ? `[${tag}]` : "(none)"} · ` +
-      `first token ${first === null ? "-" : secs(first)} · total ${secs(performance.now() - start)}`;
+    $("llm-text").textContent = translation.trim() || "(empty translation)";
+    $("llm-meta").textContent = `first token ${first === null ? "-" : secs(first)} · total ${secs(performance.now() - start)}`;
     setStatus("llm-status", "");
   } catch (err) {
     setStatus("llm-status", `Translation failed: ${err.message}`, true);
@@ -212,15 +220,6 @@ $("llm-go").addEventListener("click", async () => {
     $("llm-go").disabled = false;
   }
 });
-
-// llama ends each translation with a language tag, e.g. "Okay. [chinese]"
-// (see [llama_prompt]); split it off, as the dashboard does. A tag that's only
-// partly streamed in is hidden too.
-function withoutTag(translation) {
-  const match = /\s*\[([^\]\n]*)\]?\s*$/.exec(translation);
-  return match ? { text: translation.slice(0, match.index).trim(), tag: match[1].trim() }
-    : { text: translation.trim(), tag: "" };
-}
 
 $("llm-to-tts").addEventListener("click", () => {
   $("tts-input").value = $("llm-text").textContent;
@@ -344,6 +343,9 @@ $("tts-replay").addEventListener("click", () => {
 async function init() {
   try {
     const config = await (await fetch("/api/config")).json();
+    for (const name of [config.language1, config.language2]) {
+      $("llm-source").add(new Option(name, name));
+    }
     sampleRate = config.sample_rate;
     audioProcessing = config.audio_processing || {};
     if (config.playback_buffer_ms !== undefined) $("tts-buffer").value = config.playback_buffer_ms / 1000;

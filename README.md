@@ -22,7 +22,7 @@ Everything runs on your own machine; nothing is sent to the cloud.
 
 **Windows:** double-click `launcher.pyw`.
 
-1. **Generate config:** picks a setup to suit your GPU and lets you choose the two languages. Save.
+1. **Generate config:** choose a GPU (when more than one is detected), a suggested setup, and the two languages. Save refreshes the launcher settings and closes the config window.
 2. **▶ Launch:** downloads the servers and models the first time (this takes a while), then starts everything.
 3. **Open dashboard:** opens <http://localhost:8080/>.
 
@@ -32,8 +32,15 @@ Everything runs on your own machine; nothing is sent to the cloud.
 
 ## Use it
 
+- Whisper identifies the spoken language; translations explicitly target the other configured language.
+- Switch between **Live translation**, **Text translation**, and **Component tests** in the header
+  without stopping capture or losing your place. For example, captured YouTube audio keeps translating
+  while you type a separate translation. Refreshing or closing the app ends the session.
+- **Text translation** in the header opens a chat page for typing or pasting text and choosing a
+  language direction. Enter sends; Shift+Enter adds a line. Each translation appears below your message,
+  with Copy and Listen controls.
 - **Start** (or Space) and talk. With Continuous Audio Mode on, each pause starts a new row.
-- **▶** after a translation speaks it. With Automatic Translation Playback on, translations are spoken when the
+- **▶** after a translation speaks it; the adjacent copy icon copies the translation. With Automatic Translation Playback on, translations are spoken when the
   speaker pauses.
 - **Capture audio** (the left sidebar) translates a browser tab or your whole system instead of the microphone. Tick
   **Mute captured tab** first to hear only the translations.

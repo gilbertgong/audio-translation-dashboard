@@ -66,6 +66,20 @@ h1 { font-size: 1.1rem; margin: 0; }
 .header-link:hover { background: var(--header-btn-hover); }
 .header-link + .header-link { margin-left: 0; } /* several: side by side */
 
+/* Keep live capture running while the other mounted views are visible. */
+.app-shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.app-shell > header { flex-shrink: 0; height: auto; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.app-shell > header > h1 { padding: 14px 16px; }
+.app-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 16px; }
+.primary-views { display: flex; flex-wrap: wrap; gap: 8px; }
+.app-toolbar .header-link { margin-left: 0; }
+.app-shell > #live-view { flex: 1; min-height: 0; }
+.app-shell #live-view > main { height: 100%; min-height: 0; }
+.app-view-frame { display: block; width: 100%; flex: 1; min-height: 0; border: 0; }
+.app-shell > [hidden], .app-shell > header > [hidden] { display: none !important; }
+.header-link[aria-current="page"] { color: var(--accent); }
+.embedded-view header { display: none; }
+
 /* Server status, at the right of the header before the link: a colored dot
    per server (green ok, amber loading, red down, gray not checked yet). */
 .services {
@@ -323,12 +337,35 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
    right-hand column as the single buttons on the other lines. */
 .timing .row-btn + .row-btn { margin-left: 0; }
 
-/* The speak button, just after the translated text. */
-.translation .speak-btn {
+/* Identical play/copy controls inline after translations on either page. */
+.translation-actions {
+  display: inline-flex;
+  gap: 4px;
   margin-left: 8px;
   vertical-align: 0.1em;
+  white-space: nowrap;
+}
+
+.translation-actions > .row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  min-width: 2.2em;
+  height: calc(1.5em + 2px);
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.5;
   font-style: normal;
 }
+
+.translation-actions > .row-btn:hover { border-color: var(--accent); background: var(--panel); }
 
 /* Raw response viewer */
 

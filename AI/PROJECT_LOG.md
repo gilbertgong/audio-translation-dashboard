@@ -138,6 +138,90 @@ DESIGN.md).
   existing tab forward without an extension or a launcher-owned window.
 - Observed: the browser's echo cancellation on the microphone is good enough to transcribe the user talking over a
   video playing on the speakers.
+- **Requested work:** tracked in `TODO.md`: language direction (highest priority; discuss before building),
+  confidential mode, a convenient typed translation page, and advanced controls including playback speed.
 - **AI docs:** `AI/` set up per `AI/STRATEGY.md` (MEMORY, PLAN, this log, a git-ignored LOCAL), with `AGENTS.md`
   and `CLAUDE.md` pointing to it, and a `README.md` for people. DESIGN.md's milestones moved here; it gained a
   Known limitations section.
+
+## 2026-10-15: explicit translation direction
+
+- The user prioritized language direction: larger Whisper models and smaller llama models on the 8 GB/6 GB recipes reflect transcription accuracy being the critical stage.
+- Whisper's final language (after any out-of-pair recheck) now selects the source and opposite target in each translation prompt. Missing or out-of-pair sources fail explicitly instead of guessing.
+- Removed llama language tags, tag stripping and the llama-triggered recheck. Kept Whisper's recheck. Component tests now select a source language and preserve bracketed text.
+- Validation passed: Python/JavaScript syntax, both prompt directions, invalid-source errors, forced-language recheck selection, dashboard source propagation and bracket preservation, and a separate mock dashboard on port 8090 (stopped afterward). No real-model or GPU tests; the user's running services were left alone.
+
+## 2026-10-15: config generator GPU selection
+
+- Added a GPU dropdown only for multiple detected NVIDIA cards, labelled with index, name and VRAM. Defaults to the saved generated GPU when still present, else the largest card. Selection updates the suggested recipe and generated GPU index.
+- Confirmed Save already calls the launcher's config reload after replacing the generated file; made launcher button refresh unconditional. Running services are not restarted by Save.
+- Save closes the config generation window after the file is saved and the launcher refresh completes.
+- Validation passed with mocked GPU output/widgets: enumeration, largest/saved defaults, switching cards and preview index, hiding the selector on single/no-GPU machines, save/reload order, launcher refresh, Python syntax and diff whitespace. No GPU workloads, live launcher UI or running-service changes.
+
+## 2026-10-15: dedicated text translation page
+
+- Added `translate.html`, `translate.css` and `translate.js` for everyday typed translations, linked
+  from the dashboard and component tests. Explicit language direction, swap/reverse translation,
+  streamed results, cancel, clear, copy, listen/stop and Ctrl/Command+Enter; mobile panels stack.
+- Uses the existing config, translation and speech endpoints. No debug output in the page. Failed or
+  cancelled streams retain partial text labelled incomplete and disable result actions.
+- Browser checks passed against a separate mock dashboard on port 8090: streaming with brackets,
+  keyboard submit, swap, clear, cancellation, server errors, mobile overflow and no JS exceptions.
+  JavaScript syntax and diff whitespace checked. Mock stopped afterward; real model servers and GPUs
+  untouched. The sandbox denied localhost access, so browser checks used an approved external retry.
+
+## 2026-10-15: text translation as a chat
+
+- At the user's request, replaced the two-panel translator with a scrolling conversation and a bottom
+  composer. Enter sends, Shift+Enter adds a line; IME composition is preserved. Messages and streamed
+  translations remain in order, with source/target labels and per-response Copy/Listen.
+- Matched dashboard colors, type, compact controls, panel borders and the controls-panel background.
+- Simplified the chat's direction controls to source/target labels and Swap, removing the redundant
+  source-language dropdown at the user's request.
+- Moved New conversation left and language controls right; matched dashboard translation accent color
+  and font sizes, with compact copy and play/stop icons, tooltips and accessible labels.
+- Kept direction switching, Stop and new conversation; added Retry in place. Drafts survive ongoing
+  translations and clearing the conversation. Translation context remains one independent message.
+- Browser checks passed on an isolated mock dashboard: multiple turns, Enter/Shift+Enter, bracketed
+  text, per-response copy and speech target, retry without duplicate messages, Stop, preserved drafts,
+  mobile composer visibility and new conversation. No browser exceptions. Mock stopped afterward;
+  real services left running. Speech response was mocked; real audio quality was not tested.
+
+- Matched chat playback button dimensions to the live dashboard: removed the 24px height override,
+  keeping the shared button font size, line height, padding, border and minimum width.
+
+- Shared translation controls between the chat and live dashboard: equal-size play and copy icons
+  inline after the translated text. Both use `translation-actions.js` and one CSS sizing rule;
+  added copy to live translations. Speech/copy use translation text without icon labels. JavaScript
+  syntax and diff whitespace checked; no running services restarted.
+
+## 2026-10-15: preserve live capture across views
+
+- User reported live issues after navigating to text translation and returning; later recognized the
+  same behavior with component tests. The exact original failure was not reproduced or established.
+  User chose preserving active sessions over cleaning them up on view changes: YouTube capture must
+  keep translating while typed translations are used.
+- Added persistent live/text/test views using hash navigation and retained same-origin frames. Old
+  text/test URLs enter the shell. Hidden live capture keeps its existing media session, queues and
+  playback; chat history/drafts and component inputs remain mounted. Smoke opens separately.
+- Header layout: title alone on top; navigation/status on the second row, with Live translation and
+  Text translation on the left. User explicitly requested skipping testing for layout-only changes;
+  recorded that preference in MEMORY.md and did not test this layout edit.
+- Typed translation and TTS generation share the dashboard engine queues. Cleanup now applies only
+  to actual document exit, never internal view switches; live Space shortcut is scoped to live view.
+- Mocked browser regression passed with synthetic capture and the actual recording worklet: capture
+  identity/track stayed active, live pipeline completed in the text view, chat history/draft and test
+  input survived, hash Back worked, and no page exceptions occurred. No real YouTube/model tests.
+  Sandbox Edge crashed; approved external check used only mocked routes and synthetic audio. Its first
+  worklet URL failed in the harness; loading the same worklet from a test Blob fixed the test setup.
+
+- Text chat spacing: removed the centered 820px message-column limit and matched live conversation
+  side padding (16px desktop, 10px narrow screens), bringing messages closer to the panel borders.
+  Layout-only change; no tests run per user preference.
+
+- Unified typed translation rows with the live conversation using the same `.utterance`, `.meta`,
+  `.original`, `.translation` and `.lang2` classes. Removed chat bubbles and separate user/assistant
+  rows, keeping source and target stacked on one background with identical spacing and colors.
+  Layout-only change; no tests run per user preference.
+
+- Removed the divider between the dashboard title and navigation row. Layout-only; no tests run.

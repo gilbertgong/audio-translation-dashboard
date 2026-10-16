@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Component Tests</title>
+  <script src="view-entry.js" data-view="tests"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="test.css">
 </head>
@@ -11,6 +12,7 @@
   <header>
     <h1>Component Tests</h1>
     <a class="header-link" href="smoke.html">Smoke test</a>
+    <a class="header-link" href="translate.html">Text translation</a>
     <a class="header-link" href="/">Dashboard</a>
   </header>
 
@@ -39,6 +41,7 @@
       <h2>Translate <span class="via">llama · /api/translate</span></h2>
       <textarea id="llm-input" rows="3" placeholder="Text in either language"></textarea>
       <div class="row">
+        <label>From <select id="llm-source"></select></label>
         <button type="button" id="llm-go">Translate</button>
         <span class="samples" data-target="llm-input"></span>
         <span class="status" id="llm-status"></span>

@@ -67,6 +67,7 @@ Mention a risk once at most.
 ### Styling: just edit
 For visual and layout changes, make the edit; the user checks it in the Mock dashboard.
 *Why:* they judge the look themselves faster than any description.
+Skip testing for layout-only changes, per the user's explicit preference.
 
 ### Testing
 - Test on a separate mock dashboard (`python src/app.py --mock` on another port, with a scratch config), never on

@@ -276,7 +276,7 @@ function checkRows(rows, timeline, languageChecks) {
             wrong.map((r) => r.language || "none").join(", "));
     }
     const tagged = mine.filter((r) => /^\s*\[[^\]]*\]|\[[^\]]*\]\s*$/.test(r.translation));
-    check(`${label}: language tags stripped from the translations`, !tagged.length, `${tagged.length} left`);
+    check(`${label}: no language tags added to the translations`, !tagged.length, `${tagged.length} left`);
   }
 }
 

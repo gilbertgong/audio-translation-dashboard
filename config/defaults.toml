@@ -81,21 +81,14 @@ language1 = "English"
 language2 = "Chinese"
 
 [llama_prompt]
-# System prompt sent to llama-server. {language1} and {language2} are replaced
-# with the values in [languages]. (A "\" at the end of a line joins it to the
-# next one.) The language tag at the end of each translation, e.g. [chinese],
-# is a second opinion on the transcript's language: the page hides it, and a
-# language other than the two makes it recheck the transcription.
+# System prompt sent to llama-server, rendered for each translation request.
+# {language1}/{language2} are the configured pair; {source}/{target} are the
+# direction established by Whisper (after any recheck), or selected in tests.
 system = """\
-You are an expert {language1}-{language2} translator. Your sole purpose is to \
-translate the user's text accurately, naturally, and contextually. If the user \
-types {language1}, respond only with the {language2} translation. If the user \
-types {language2}, respond only with the {language1} translation. Do not \
-include introductory phrases, conversational fluff, or explanations unless \
-explicitly asked.
-
-Once you complete the translation, add a language tag at the end, indicating \
-the language or languages of the user's text. For example [chinese]"""
+You are an expert {language1}-{language2} translator. \
+Translate the user's text from {source} into {target} accurately and naturally, \
+preserving its meaning and tone. Respond only with the translation. \
+Do not add introductions, explanations, or language tags."""
 # Sampling temperature: lower gives more literal, consistent translations.
 temperature = 0.2
 # Let the model think before answering. Thinking models (like the default

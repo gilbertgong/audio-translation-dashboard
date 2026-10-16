@@ -6,11 +6,18 @@
 const recordBtn = document.getElementById("record-btn");
 const windowEl = document.getElementById("translation-window");
 const activityToggle = document.getElementById("activity-toggle");
+const pageLifetime = new AbortController();
+
+// Navigation cancels requests, including speech with its own cancellation signal.
+function pageFetch(url, options = {}) {
+  return fetch(url, { ...options, signal: options.signal
+    ? AbortSignal.any([pageLifetime.signal, options.signal]) : pageLifetime.signal });
+}
 
 let targetSampleRate = 16000;
 let language1 = ""; // the two languages to translate between ([languages])
 let language2 = ""; // entries detected in this language are right-aligned
-let languageChecks = true; // off when a language isn't one whisper knows (see app.py)
+let languageChecks = true; // whether Whisper can recheck the configured pair (also used by smoke tests)
 // Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
 let session = null;
@@ -458,6 +465,7 @@ function setSpeakButton(btn, state) {
     playing: ["■", "Stop speaking"],
   };
   [btn.textContent, btn.title] = looks[state];
+  btn.setAttribute("aria-label", btn.title);
 }
 
 // Stop the speech playing (its audio is kept: see cancelSpeech).
@@ -502,7 +510,7 @@ function loadSpeech(row, text) {
     const { signal } = audio.controller;
     if (signal.aborted) return; // cancelled while waiting its turn
     const start = performance.now();
-    const res = await fetch("/api/speak", {
+    const res = await pageFetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, target: speechTarget(row) || undefined }),
@@ -687,15 +695,15 @@ function playNextSpeech() {
 // Add a speak button after a row's translated text (once it's complete).
 // Returns the button.
 function addSpeakButton(row, text) {
-  const btn = el("button", "row-btn speak-btn");
-  btn.type = "button";
-  setSpeakButton(btn, "idle");
-  btn.addEventListener("click", () => {
+  const line = row.querySelector(".translation");
+  const content = el("span", "translation-text", text);
+  const { container, play: btn } = TranslationActions.create(text, content, () => {
     const wasThis = speech?.btn === btn;
     stopPlayback(); // also drops queued automatic speech
     if (!wasThis) speakTranslation(row, btn, text); // else the click was "cancel" or "stop"
   });
-  row.querySelector(".translation").appendChild(btn);
+  setSpeakButton(btn, "idle");
+  line.replaceChildren(content, container);
   return btn;
 }
 
@@ -799,9 +807,10 @@ const HEALTH_INTERVAL_MS = 10000;
 const HEALTH_INTERVAL_STARTING_MS = 2000;
 
 async function checkServices() {
+  if (pageLifetime.signal.aborted) return;
   let allOk = false;
   try {
-    const res = await fetch("/api/health");
+    const res = await pageFetch("/api/health");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { services } = await res.json();
     servicesEl.replaceChildren(...services.map((s) => {
@@ -817,14 +826,17 @@ async function checkServices() {
       item.title = `Dashboard not reachable: ${err.message}`;
     }
   }
-  setTimeout(checkServices, allOk ? HEALTH_INTERVAL_MS : HEALTH_INTERVAL_STARTING_MS);
+  if (!pageLifetime.signal.aborted) {
+    healthTimer = setTimeout(checkServices, allOk ? HEALTH_INTERVAL_MS : HEALTH_INTERVAL_STARTING_MS);
+  }
 }
 
+let healthTimer = null;
 checkServices();
 
 async function loadConfig() {
   try {
-    const res = await fetch("/api/config");
+    const res = await pageFetch("/api/config");
     const config = await res.json();
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
@@ -881,9 +893,14 @@ async function startRecording(auto) {
       echoCancellation: audioProcessing.echo_cancellation,
     },
   });
+  if (pageLifetime.signal.aborted) {
+    stream.getTracks().forEach((t) => t.stop());
+    pageLifetime.signal.throwIfAborted();
+  }
   const ctx = new AudioContext();
   try {
     await ctx.audioWorklet.addModule("recorder-worklet.js");
+    pageLifetime.signal.throwIfAborted();
     const source = ctx.createMediaStreamSource(stream);
     const gain = new GainNode(ctx, { gain: 10 ** (gainDb() / 20) });
     const node = new AudioWorkletNode(ctx, "recorder");
@@ -996,7 +1013,10 @@ function encodeWav(samples, sampleRate) {
 function oneAtATime() {
   let last = Promise.resolve();
   return (task) => {
-    const run = last.then(task);
+    const run = last.then(() => {
+      pageLifetime.signal.throwIfAborted(); // discarded jobs must not start after leaving
+      return task();
+    });
     last = run.catch(() => {});
     return run;
   };
@@ -1004,12 +1024,13 @@ function oneAtATime() {
 
 const toWhisper = oneAtATime();
 const toLlama = oneAtATime();
+window.translationQueues = { whisper: toWhisper, llama: toLlama, tts: toTts };
 
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).
 async function uploadWav(wav) {
   const { res, body } = await toWhisper(async () => {
-    const res = await fetch("/api/recordings", {
+    const res = await pageFetch("/api/recordings", {
       method: "POST",
       headers: { "Content-Type": "audio/wav" },
       body: wav,
@@ -1020,44 +1041,14 @@ async function uploadWav(wav) {
   return body;
 }
 
-// Translate text, streamed. The server sends our "request" event, then
-// llama-server's response exactly as llama sent it (OpenAI-style chunks:
-// "data: {...}" ... "data: [DONE]"), and an "error" event if relaying fails.
-// onText(textSoFar) is called as pieces arrive, without llama's language tag
-// (see splitLanguageTag). Returns { translation, languages, seconds,
-// firstSeconds, raw }; languages is from the tag; raw has the request and every
-// event, in order, for the raw viewer.
-// llama ends each translation with a tag naming the language(s) of the text it
-// was given, e.g. "Okay. [chinese]" (see [llama_prompt] system). Returns
-// { text, languages }: the translation without the tag, and the tag's
-// languages in lowercase ([] if there's none). While streaming, a tag that's
-// only partly there ("Okay. [chin") is hidden too.
-function splitLanguageTag(translation) {
-  const match = /\s*\[([^\]\n]*)\]?\s*$/.exec(translation);
-  if (!match) return { text: translation.trim(), languages: [] };
-  const languages = match[1].split(/,|\band\b|\//).map((l) => l.trim().toLowerCase()).filter(Boolean);
-  return { text: translation.slice(0, match.index).trim(), languages };
-}
-
-// Languages that are neither of the two configured ones (lowercase). A tag
-// that starts one of their names counts as it ("en" for English), and "zh" or
-// "mandarin" as Chinese, so a code instead of a name doesn't cause a recheck.
-const LANGUAGE_ALIASES = { zh: "chinese", mandarin: "chinese" };
-
-function unexpectedLanguages(languages) {
-  const pair = [language1.toLowerCase(), language2.toLowerCase()];
-  return languages.filter((l) => {
-    const name = LANGUAGE_ALIASES[l] || l;
-    return !pair.some((p) => p === name || p.startsWith(name));
-  });
-}
-
-async function requestTranslation(text, onText) {
+// Translate in the direction established by Whisper, preserving the model's text.
+// Returns the translation, timings and raw stream for the activity viewer.
+async function requestTranslation(text, source, onText) {
   const start = performance.now();
-  const res = await fetch("/api/translate", {
+  const res = await pageFetch("/api/translate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, source }),
   });
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -1104,7 +1095,7 @@ async function requestTranslation(text, onText) {
     if (piece) {
       if (firstSeconds === null) firstSeconds = (performance.now() - start) / 1000;
       translation += piece;
-      onText(splitLanguageTag(translation).text);
+      onText(translation.trim());
     }
   };
 
@@ -1125,8 +1116,7 @@ async function requestTranslation(text, onText) {
 
   const seconds = (performance.now() - start) / 1000;
   if (error) throw Object.assign(new Error(error), { raw, seconds });
-  const { text: translated, languages } = splitLanguageTag(translation);
-  return { translation: translated, languages, seconds, firstSeconds, raw };
+  return { translation: translation.trim(), seconds, firstSeconds, raw };
 }
 
 function addFileInfo(row, path) {
@@ -1136,13 +1126,13 @@ function addFileInfo(row, path) {
 // Translate a row's text into its translation line (streamed), with its
 // timing and raw viewer; throws (after showing the error) if it fails. Run
 // again after a recheck, it replaces the earlier translation.
-async function translateRow(row, text) {
+async function translateRow(row, text, source) {
   setLine(row, ".translation", "Translating...", "pending");
   setTiming(row, "llm", null);
   row.querySelector('.timing[data-kind="llm"] .row-btn')?.remove(); // an earlier attempt's raw viewer
   try {
     const result = await toLlama(() =>
-      requestTranslation(text, (soFar) => setLine(row, ".translation", soFar)));
+      requestTranslation(text, source, (soFar) => setLine(row, ".translation", soFar)));
     setTiming(row, "llm", result.seconds);
     if (result.firstSeconds !== null) {
       setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
@@ -1167,7 +1157,7 @@ async function recheck(row, stt, reason) {
   setTiming(row, "recheck", null);
   try {
     const { res, result } = await toWhisper(async () => {
-      const res = await fetch("/api/recordings/recheck", {
+      const res = await pageFetch("/api/recordings/recheck", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ file: stt.file.split(/[\\/]/).pop() }),
@@ -1194,6 +1184,7 @@ async function recheck(row, stt, reason) {
 // note: optional detail for the activity cell (e.g. how an auto-split phrase ended).
 // source: "mic" or "capture" (for the status row's counts).
 async function processRecording(wav, note = "", source = "mic") {
+  if (pageLifetime.signal.aborted) return;
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
   setMeta(row, new Date().toLocaleTimeString());
@@ -1223,19 +1214,13 @@ async function processRecording(wav, note = "", source = "mic") {
       return;
     }
     setLine(row, ".original", stt.text);
-    const rechecked = stt.recheck;
-    if (rechecked) stt = await recheck(row, stt, `whisper heard ${stt.language}`);
-
-    let result = await translateRow(row, stt.text);
-    // Second opinion: llama's language tag. If it names another language and
-    // whisper's own check didn't already recheck, recheck now and translate
-    // the corrected text.
-    const others = unexpectedLanguages(result.languages);
-    if (languageChecks && others.length && !rechecked) {
-      const before = stt.text;
-      stt = await recheck(row, stt, `llama read it as ${others.join(", ")}`);
-      if (stt.text !== before) result = await translateRow(row, stt.text);
+    if (stt.recheck) stt = await recheck(row, stt, `whisper heard ${stt.language}`);
+    if (!stt.text) {
+      setLine(row, ".original", "(no speech detected)", "pending");
+      return;
     }
+
+    const result = await translateRow(row, stt.text, stt.language);
 
     if (result.translation) {
       const speakBtn = addSpeakButton(row, result.translation);
@@ -1389,6 +1374,10 @@ async function startCapture() {
              suppressLocalAudioPlayback: captureMuteBox.checked },
     systemAudio: "include", // offer "Also share system audio" for the entire screen
   });
+  if (pageLifetime.signal.aborted) {
+    stream.getTracks().forEach((t) => t.stop());
+    pageLifetime.signal.throwIfAborted();
+  }
   const surface = stream.getVideoTracks()[0]?.getSettings().displaySurface || "";
   const track = stream.getAudioTracks()[0];
   if (!track) {
@@ -1399,6 +1388,7 @@ async function startCapture() {
   const ctx = new AudioContext();
   try {
     await ctx.audioWorklet.addModule("recorder-worklet.js");
+    pageLifetime.signal.throwIfAborted();
     const source = ctx.createMediaStreamSource(new MediaStream([track]));
     const count = Math.min(2, track.getSettings().channelCount || source.channelCount || 1);
     const split = ctx.createChannelSplitter(count);
@@ -1481,6 +1471,7 @@ captureBtn.addEventListener("click", async () => {
 // from focused buttons and switches (which would otherwise also be toggled);
 // Enter still activates buttons. Text fields keep Space for typing.
 function isSpaceShortcut(e) {
+  if (window.location.hash && window.location.hash !== "#live") return false;
   if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
@@ -1497,6 +1488,37 @@ document.addEventListener("keydown", (e) => {
 // A focused button is "clicked" on Space key-up; block that too.
 document.addEventListener("keyup", (e) => {
   if (isSpaceShortcut(e)) e.preventDefault();
+});
+
+// Discard unfinished audio on navigation; normal Stop still sends the final phrase.
+function discardRecording(recording) {
+  if (!recording) return;
+  recording.node.port.onmessage = null;
+  recording.source.disconnect();
+  recording.gain.disconnect();
+  recording.node.disconnect();
+  recording.stream.getTracks().forEach((track) => track.stop());
+  if (recording.ctx.state !== "closed") recording.ctx.close().catch(() => {});
+}
+
+window.addEventListener("pagehide", () => {
+  pageLifetime.abort();
+  clearTimeout(healthTimer);
+  clearTimeout(turnTimer);
+  stopPlayback();
+  const microphone = session;
+  const captured = capture;
+  session = null;
+  capture = null; // track-ended handlers must not flush abandoned recordings
+  stopMeter();
+  if (captured) cancelAnimationFrame(captured.frame);
+  discardRecording(microphone);
+  discardRecording(captured?.session);
+});
+
+window.addEventListener("pageshow", (event) => {
+  // A back/forward-cache restore otherwise revives aborted queues and closed audio contexts.
+  if (event.persisted) window.location.reload();
 });
 
 loadConfig();

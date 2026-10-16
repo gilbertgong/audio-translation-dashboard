@@ -23,7 +23,8 @@ run_servers.py ("stop NAME" / "start NAME"). Restart launcher closes this
 window (stopping what it runs, as closing it does) and opens a new one, to
 pick up changes to the launcher itself.
 
-Generate config: detects the largest GPU (nvidia-smi), suggests a recipe from
+Generate config: lists NVIDIA GPUs (nvidia-smi), with a selector when there
+is more than one, and suggests a recipe for the selected card from
 config/recipes/, takes the two languages to translate between (from whisper's
 list, config/whisper_languages.json), previews the result (the languages, the
 recipe's fragments from config/fragments/ pasted together, and start = false
@@ -214,9 +215,9 @@ def load_recipes():
     return dict(sorted(recipes.items(), key=lambda item: item[1].get("vram_gb", 0)))
 
 
-def detect_gpu():
-    """(nvidia-smi index, name, VRAM in GiB) of the NVIDIA GPU with the most
-    memory; raises RuntimeError with the reason if nvidia-smi can't tell."""
+def detect_gpus():
+    """All NVIDIA GPUs as (nvidia-smi index, name, VRAM in GiB).
+    Raises RuntimeError with the reason if nvidia-smi can't tell."""
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
@@ -236,7 +237,7 @@ def detect_gpu():
             gpus.append((int(index), name.strip(), int(mib) / 1024))
     if not gpus:
         raise RuntimeError(f"no GPUs in nvidia-smi's output: {result.stdout.strip()[:200]!r}")
-    return max(gpus, key=lambda gpu: gpu[2])
+    return gpus
 
 
 def suggest_recipe(recipes, vram_gib):
@@ -294,11 +295,17 @@ class GenerateConfigWindow:
         self.recipes = load_recipes()
         self.text = ""
         self.gpu_index = None  # the detected card's nvidia-smi index, once known
+        self.gpus = []
 
         top = ttk.Frame(self.window, padding=8)
         top.pack(fill="x")
         self.gpu = ttk.Label(top, text="Checking the GPU...")
         self.gpu.pack(anchor="w")
+        self.gpu_row = ttk.Frame(top)  # shown only when there is a choice of cards
+        ttk.Label(self.gpu_row, text="GPU:").pack(side="left")
+        self.gpu_combo = ttk.Combobox(self.gpu_row, state="readonly", width=54)
+        self.gpu_combo.pack(side="left", padx=(6, 0))
+        self.gpu_combo.bind("<<ComboboxSelected>>", lambda e: self.select_gpu())
         row = ttk.Frame(top)
         row.pack(fill="x", pady=(8, 0))
         ttk.Label(row, text="Recipe:").pack(side="left")
@@ -350,18 +357,39 @@ class GenerateConfigWindow:
     def check_gpu(self):
         """In a worker thread (nvidia-smi can take a moment); the result goes back to the window."""
         try:
-            index, name, vram = detect_gpu()
-            found = f"{name}, {vram:.1f} GiB (GPU {index})", suggest_recipe(self.recipes, vram), index
+            found = detect_gpus(), None
         except RuntimeError as err:
-            found = f"GPU not detected: {err}", None, None
+            found = [], str(err)
         self.window.after(0, self.gpu_found, *found)
 
-    def gpu_found(self, description, suggested, index):
+    def gpu_found(self, gpus, error):
+        self.gpus = gpus
+        if gpus:
+            self.gpu_combo.configure(values=[f"GPU {index}: {name} ({vram:.1f} GiB)"
+                                             for index, name, vram in gpus])
+            selected = max(range(len(gpus)), key=lambda i: gpus[i][2])
+            try:
+                with open(GENERATED_FILE, "rb") as f:
+                    saved = tomllib.load(f).get("gpu", {}).get("devices")
+                selected = next((i for i, gpu in enumerate(gpus) if str(gpu[0]) == saved), selected)
+            except (OSError, tomllib.TOMLDecodeError):
+                pass
+            self.gpu_combo.current(selected)
+            if len(gpus) > 1:
+                self.gpu_row.pack(fill="x", pady=(8, 0), after=self.gpu)
+            self.select_gpu()
+        else:
+            self.gpu.configure(text=f"GPU not detected: {error}. Choose a recipe.")
+            self.combo.current(0)
+            self.show()
+
+    def select_gpu(self):
+        index, name, vram = self.gpus[self.gpu_combo.current()]
         self.gpu_index = index
+        description = f"{name}, {vram:.1f} GiB (GPU {index})"
+        suggested = suggest_recipe(self.recipes, vram)
         if suggested:
             self.gpu.configure(text=f"GPU: {description}. Suggested recipe: {suggested}")
-        elif "not detected" in description:
-            self.gpu.configure(text=f"{description}. Choose a recipe.")
         else:
             self.gpu.configure(text=f"GPU: {description}. No recipe fits; choose one.")
         names = list(self.recipes)
@@ -401,8 +429,7 @@ class GenerateConfigWindow:
         temp.write_text(self.text, encoding="utf-8", newline="\n")
         temp.replace(GENERATED_FILE)
         self.on_save()
-        self.status.configure(text=f"Saved {self.selected()} to {GENERATED_FILE.name}: used from the next "
-                                   f"Launch ({configuration.CONFIG_LOCAL_FILE.name} still takes priority)")
+        self.window.destroy()
 
 
 class Launcher:
@@ -607,7 +634,7 @@ class Launcher:
         (everything else reads the settings when it's used)."""
         if self.server_buttons or setting("launcher", "show_dev_controls", False):
             self.make_server_buttons()
-            self.update_buttons()
+        self.update_buttons()
 
     def restart_launcher(self):
         """Close this window (stopping what it runs, as closing it does) and
