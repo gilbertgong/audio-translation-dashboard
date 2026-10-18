@@ -499,10 +499,9 @@ class Launcher:
             self.next_mode = mode  # started when the current run reports done
             self.stop()
             return
+        self.reload_config()
         self.mode = mode
         self.stopping = False
-        if mode == "launch" and self.server_buttons:
-            self.make_server_buttons()  # the settings may have changed (e.g. Generate config)
         self.update_buttons()
         threading.Thread(target=self.run_steps, args=(MODES[mode],), daemon=True).start()
 
@@ -630,8 +629,7 @@ class Launcher:
                 self.write(f"== could not restart the dashboard: {err}\n")
 
     def reload_config(self):
-        """After Generate config saves: the server buttons for the new settings
-        (everything else reads the settings when it's used)."""
+        """Refresh config-dependent controls before Launch/Mock and after Save."""
         if self.server_buttons or setting("launcher", "show_dev_controls", False):
             self.make_server_buttons()
         self.update_buttons()

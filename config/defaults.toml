@@ -123,7 +123,8 @@ auto_play = false
 # Automatic playback waits until every running source (microphone, capture)
 # has been quiet this long (ms): the end of the speaker's turn, longer than a
 # phrase's split_pause_ms. If someone starts speaking during playback, it stops
-# and that translation is spoken again at the next turn's end. (The ▶ buttons
+# and resumes about 100 ms before the interruption at the next turn's end.
+# (The ▶ buttons
 # play at once.)
 turn_pause_ms = 1500
 # At most this much speech (ms) waits to be spoken: the translations waiting
@@ -241,7 +242,7 @@ args = ["--language", "auto"]
 # model, through onnxruntime. Run with the same Python; its packages, below,
 # are installed by install_api_servers.py with pip install --target into the
 # install folder's lib/ ({server_dir} in args), not into a virtual
-# environment. --threads: CPU threads.
+# environment. --threads: CPU threads (0 lets ONNX Runtime choose automatically).
 start = true
 script = "src/kokoro_server.py"
 packages = [
@@ -269,7 +270,7 @@ packages = [
 ]
 host = "127.0.0.1"
 port = 8083
-args = ["--lib", "{server_dir}/lib", "--threads", "4"]
+args = ["--lib", "{server_dir}/lib", "--threads", "0"]
 # The voice used unless a better one is set (see [tts]): Beth, a voicepack
 # (below) that speaks both languages well.
 default_voice = "beth_thomas"

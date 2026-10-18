@@ -455,6 +455,7 @@ function addPlayButton(row, wav) {
 // { ctx, btn, item, audio, update }.
 let speech = null;
 const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
+const SPEECH_RESUME_REWIND_S = 0.1; // replay a little context after an interruption
 let playbackBufferS = 0.8;
 const toTts = oneAtATime();
 
@@ -570,12 +571,22 @@ function speakTranslation(row, btn, text, item = null) {
   const ctx = new AudioContext();
   ctx.resume().catch(() => {});
   const audio = item?.audio ?? loadSpeech(row, text);
-  const current = { ctx, btn, item, audio, update: null };
+  const resumeSeconds = item?.resumeSeconds || 0;
+  const scheduled = []; // context times mapped to positions in the original audio
+  const current = { ctx, btn, item, audio, update: null, position: () => {
+    const now = ctx.currentTime;
+    for (let i = scheduled.length - 1; i >= 0; i--) {
+      const segment = scheduled[i];
+      if (now >= segment.start) return segment.offset + Math.min(now - segment.start, segment.duration);
+    }
+    return resumeSeconds; // buffering, or the first piece has not started yet
+  } };
   speech = current;
   updateStatus();
   setSpeakButton(btn, "waiting");
 
   let played = 0; // pieces scheduled so far
+  let pieceOffset = 0;
   let playAt = 0;
   let last = null;
   const finished = () => {
@@ -593,22 +604,28 @@ function speakTranslation(row, btn, text, item = null) {
   current.update = () => {
     if (speech !== current) return;
     if (audio.error) return fail(audio.error);
-    if (!last && !audio.done && audio.seconds < playbackBufferS) return; // still buffering
+    if (!last && !audio.done && audio.seconds - resumeSeconds < playbackBufferS) return; // still buffering
     for (; played < audio.pieces.length; played++) {
       const samples = audio.pieces[played];
+      const offset = pieceOffset;
+      pieceOffset += samples.length / audio.rate;
+      if (pieceOffset <= resumeSeconds) continue; // already heard this whole piece
+      const skip = Math.max(0, resumeSeconds - offset);
       const buffer = ctx.createBuffer(1, samples.length, audio.rate);
       buffer.copyToChannel(samples, 0);
       const source = new AudioBufferSourceNode(ctx, { buffer });
       source.connect(ctx.destination);
       if (!last) setSpeakButton(btn, "playing");
       playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
-      source.start(playAt);
-      playAt += buffer.duration;
+      source.start(playAt, skip);
+      const duration = buffer.duration - skip;
+      scheduled.push({ start: playAt, offset: offset + skip, duration });
+      playAt += duration;
       last = source;
     }
     if (!audio.done) return;
     audio.listeners.delete(current.update);
-    if (!last) return fail(new Error("no audio received"));
+    if (!last) return audio.seconds ? finished() : fail(new Error("no audio received"));
     if (ctx.currentTime >= playAt) finished(); // already played out
     else last.onended = finished;
   };
@@ -622,14 +639,14 @@ function speakTranslation(row, btn, text, item = null) {
 // Each one's speech is fetched as soon as it's queued (see loadSpeech), so
 // it's ready, or nearly, when its turn comes. If someone starts speaking
 // during playback, it stops and that translation goes back to the front of
-// the queue, keeping its audio. The backlog is the speech waiting (not the
+// the queue, keeping its audio and resume position. The backlog is the speech waiting (not the
 // one playing), counting only audio fetched in full: once it's over
 // max_backlog_ms, the oldest are dropped until it isn't, always keeping the
 // newest. Stopping playback (or starting a recording) drops the waiting ones.
 // The ▶ buttons play at once.
 const autoPlayToggle = document.getElementById("auto-play");
 autoPlayToggle.addEventListener("change", () => updateStatus());
-const speechQueue = []; // [{ row, btn, text, audio }]
+const speechQueue = []; // [{ row, btn, text, audio, resumeSeconds? }]
 let turnPauseMs = 2000;
 let maxBacklogS = 30;
 let lastSpeechAt = 0; // performance.now() of the last speech from any source
@@ -641,8 +658,13 @@ function noteSpeech(sustained) {
   lastSpeechAt = performance.now();
   if (sustained && speech?.item) {
     const item = speech.item;
+    const position = speech.position();
+    // Don't repeatedly rewind when interrupted before resumed audio starts.
+    if (position > (item.resumeSeconds || 0)) {
+      item.resumeSeconds = Math.max(0, position - SPEECH_RESUME_REWIND_S);
+    }
     stopSpeech();
-    speechQueue.unshift(item); // spoken again at the end of the turn, from its fetched audio
+    speechQueue.unshift(item); // resume at the next turn's end, using the fetched audio
     trimBacklog();
     playNextSpeech();
   }
@@ -658,7 +680,8 @@ function queueSpeech(row, btn, text) {
 
 // Seconds of speech waiting to be played, fetched in full.
 function backlogSeconds() {
-  return speechQueue.reduce((sum, { audio }) => sum + (audio.done && !audio.error ? audio.seconds : 0), 0);
+  return speechQueue.reduce((sum, { audio, resumeSeconds = 0 }) =>
+    sum + (audio.done && !audio.error ? Math.max(0, audio.seconds - resumeSeconds) : 0), 0);
 }
 
 // Drop the oldest waiting translations while the backlog is over the limit,

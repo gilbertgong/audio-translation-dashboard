@@ -64,6 +64,18 @@ Don't design around hypothetical problems (e.g. speaker feedback into the microp
 Mention a risk once at most.
 *Why:* the user prefers minimal features and real evidence; speculative fixes have steered designs wrongly before.
 
+### Keep configuration simple; don't validate it
+Read configuration at startup and use what it specifies. Don't add configuration validation or rules
+that judge whether a configuration is sensible, supported or an expected combination. Don't anticipate
+what configurations people should use; complex configurations are fine. An actual parsing or execution
+failure can report its own error without a separate validation layer.
+
+Avoid spending time and complexity wiring configuration through the entire app. Editing a file and
+launching again is a normal workflow; keep the machinery to read and use it straightforward.
+*Why:* the user considers heavy configuration plumbing a common downfall of AI-built apps. The principle
+is to use configuration without trying to validate it; deployment examples are illustrations, not a
+request to build more configuration infrastructure.
+
 ### Styling: just edit
 For visual and layout changes, make the edit; the user checks it in the Mock dashboard.
 *Why:* they judge the look themselves faster than any description.

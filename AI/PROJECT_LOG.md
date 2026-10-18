@@ -234,3 +234,38 @@ DESIGN.md).
   carry version, direct download URL and master version file URL. Compare numeric version components;
   the remote file describes the latest published release. Stage a ZIP, then run a temporary updater
   outside the installation folder after shutdown to install, preserve user data and restart.
+
+## 2026-10-15: automatic Kokoro CPU threading
+
+- Changed the server argument default, default config, Kokoro recipe fragment and existing generated
+  config from four threads to `0`, letting ONNX Runtime automatically choose its CPU thread pool.
+  Explicit thread counts remain supported. No running servers restarted or benchmarks performed.
+
+## 2026-10-15: resume interrupted automatic speech
+
+- Automatic playback now keeps the heard position and resumes 100 ms earlier after the normal turn
+  pause, skipping complete chunks and offsetting into the first remaining chunk. Playback positions
+  use the AudioContext's scheduled segments, excluding buffering and scheduling gaps. Repeated
+  interruptions before resumed audio starts do not rewind again. Backlog uses remaining duration.
+- Discussed waveform-based rewind to a quiet point: it cannot reliably identify word boundaries, so
+  kept the requested fixed rewind rather than adding signal analysis or alignment.
+- Isolated scheduling checks passed: cross-chunk and repeated resume, pre-start interruptions, gaps,
+  beginning clamp and remaining backlog. JavaScript syntax and whitespace checked; no real servers
+  or audio quality tests, and running services left untouched.
+
+## 2026-10-15: reload config on Launch
+
+- Launch/Mock refreshes config-dependent server controls before starting. Child processes already
+  read files at startup; manual edits do not require restarting the launcher. Removed the added
+  validation/startup-blocking behavior at the user's request; only config refresh was requested.
+- Clarified the standing principle in `AI/MEMORY.md`: keep configuration simple and read it at
+  startup; avoid spending effort wiring settings through the entire app or building unnecessary
+  configuration infrastructure. Field flexibility follows from that broader simplicity philosophy,
+  rather than a blanket ban on parsing or error handling.
+- Further clarification: simple configuration code must support complex deployments, including ten
+  servers. Follow configured entries; recipes and familiar deployment shapes are not restrictions.
+  Simplicity belongs in the implementation, not in limits imposed on user configuration.
+
+- Final clarification of the configuration principle: do not add configuration validation; read and
+  use what is specified. Deployment examples illustrated why not to judge configurations, rather than
+  requesting deployment-specific infrastructure. Updated MEMORY.md to state this directly.

@@ -42,6 +42,11 @@ recipes good.
 
 ## Results so far
 
+- Interrupted automatic speech resumes from its heard position with a 100 ms rewind, rather than
+  starting over; waiting backlog counts the remaining audio.
+
+- Kokoro CPU threading defaults to ONNX Runtime automatic selection (`--threads 0`).
+
 - Live, text and component-test views stay mounted in a persistent shell. Capture, engine queues,
   playback, conversation history and drafts survive switching views; typed requests share live queues.
 

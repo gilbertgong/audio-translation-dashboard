@@ -50,6 +50,7 @@ Everything runs on your own machine; nothing is sent to the cloud.
 
 The launcher's Generate config covers the usual choices. For anything else, put your own settings in
 `config_local.toml` in the project folder; `config/defaults.toml` lists every setting with comments.
+Launch rereads the config files, so edits are picked up on the next launch without restarting the launcher.
 
 ## More
 

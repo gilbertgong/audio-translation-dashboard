@@ -23,7 +23,7 @@ Endpoints, shaped like the servers the dashboard already uses:
 
 Usage:
     python kokoro_server.py --kokoro MODEL [--voice NAME=FILE ...] [--lib DIR]
-                            [--host 127.0.0.1] [--port 8083] [--threads 4]
+                            [--host 127.0.0.1] [--port 8083] [--threads 0]
 
 --kokoro is model.onnx, with voices.bin and tokens.txt next to it. --voice
 adds a voicepack (a PyTorch .pt of shape [510, 1, 256], or the same as raw
@@ -332,7 +332,7 @@ def main():
     parser.add_argument("--lib", type=Path, help="folder of packages installed with pip install --target")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8083)
-    parser.add_argument("--threads", type=int, default=4, help="CPU threads (default: 4)")
+    parser.add_argument("--threads", type=int, default=0, help="CPU threads (0: ONNX Runtime automatic selection; default: 0)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
