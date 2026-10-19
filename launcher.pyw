@@ -34,6 +34,11 @@ next Launch uses: on top of the defaults, under config_local.toml. Saving
 also refreshes the server buttons for the new settings. Remote recipes show a
 host entry and skip local GPU pinning, engine installation and startup.
 
+Check for updates: compares app.version with its masterVersionFile. A newer
+app can be installed from its ZIP while this launcher remains running and
+unchanged; its own app/server processes are stopped and resumed. New launcher
+versions are informational and point to a full download.
+
 Kill servers: lists this project's running processes (servers from
 api_servers/, Python running src/ scripts), e.g. strays left by an earlier
 run, and kills them after you confirm.

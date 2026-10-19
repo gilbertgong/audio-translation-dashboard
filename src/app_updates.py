@@ -107,6 +107,9 @@ def prepare_update(root, remote):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with zipped.open(info) as incoming, destination.open("wb") as output:
                     shutil.copyfileobj(incoming, output)
+                permissions = (info.external_attr >> 16) & 0o777
+                if permissions:
+                    destination.chmod(permissions)
                 files.append(Path(relative))
         if Path("src/app.py") not in files:
             raise ValueError("release ZIP has no src/app.py")

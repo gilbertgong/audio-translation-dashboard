@@ -281,3 +281,19 @@ DESIGN.md).
   all local servers skipped after config merging, local GPU recommendations unchanged, and local
   recipes byte-identical to previous rendering. No real servers contacted or generated/user configs
   modified; no live desktop/laptop network test or launcher UI test performed.
+
+## 2026-10-18: separate versions and app-only ZIP updates
+
+- User chose separate app and launcher versions, both initially 0.1.0. `app.version` also records direct
+  download and master metadata URLs. The latest master describes the published release. A newer
+  launcher is informational, never a prerequisite for updating the app. An optional launcher-only
+  helper is future work, not part of this change.
+- Added manual Check for updates, download/confirmation, staging, owned-process shutdown, app overlay
+  and prior-mode restart. Launcher stays open/unmodified; installed launcher version stays unchanged
+  in local metadata after app-only updates. Full-update availability and download URL are displayed.
+- Explicit app-file scope excludes user configs, voices, models, installed engines, logs, AI notes and
+  Git metadata. ZIP paths stay within staging/install roots; failures roll back modified/new files.
+- Eleven standard-library offline tests passed, covering version checks, newer-launcher information
+  without an app gate, preservation, rollback, download failure, archive traversal/version mismatch,
+  and launcher shutdown/resume sequencing. Scratch installs and mocked network/processes only; no
+  actual update applied, no running services changed, no release published or live UI/network test.

@@ -63,6 +63,21 @@ Run the normal **nvidia-24gb** setup on the desktop, with those servers listenin
 or `0.0.0.0`. On the laptop, use the actual desktop address, not `0.0.0.0`. The ports remain editable
 in the config, and `config_local.toml` still takes priority over generated settings.
 
+## App updates
+
+The launcher shows separate app and launcher versions. **Check for updates** reads the published
+`app.version` file and offers an app update when its `appVersion` is newer. After confirmation it
+stages the ZIP, stops this launcher's app and local servers, installs the app, and resumes what was
+running. The launcher stays open and is not replaced.
+
+User files (`config_local.toml`, `config_generated.toml`), models, voices, installed engines and logs
+are kept. App code, shipped defaults/recipes, documentation and launch scripts are updated. A newer
+`launcherVersion` is informational: the launcher reports that a full installation is available and
+shows its download URL in the output. It does not prevent updating the app.
+
+Checks require the master version file and the matching release ZIP to be published. This feature
+works with ZIP installations and does not require Git.
+
 ## More
 
 - [DESIGN.md](DESIGN.md): how it works, in detail: architecture, configuration, scripts, running servers on another

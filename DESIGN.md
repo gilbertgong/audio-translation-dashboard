@@ -243,6 +243,54 @@ python src/app.py --mock
 
 On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server build, so it links Homebrew's `whisper-server` and `llama-server` (Metal) into `api_servers/` with a `VERSION` of `homebrew` (which the installer leaves alone), and writes `config_generated.toml` by the Mac's memory, since Generate config needs nvidia-smi. Steps and troubleshooting: `INSTALL_MAC.md` (not yet tried on a real Mac).
 
+### App updates and release versions
+
+`app.version` is a JSON file, initially:
+
+```json
+{
+  "appVersion": "0.1.0",
+  "launcherVersion": "0.1.0",
+  "directDownloadURL": "https://github.com/gilbertgong/audio_translation_dash/archive/refs/tags/v0.1.0.zip",
+  "masterVersionFile": "https://raw.githubusercontent.com/gilbertgong/audio_translation_dash/main/app.version"
+}
+```
+
+The local file records the installed app and launcher. The file at `masterVersionFile` describes the
+latest published release, including its download URL. Versions are dotted numeric strings, compared
+numerically (0.10.0 is newer than 0.9.0). `launcherVersion` is informational, never a compatibility gate
+on app updates. App-only installation copies remote metadata but keeps the installed launcher version.
+A full manual installation supplies both new version values together with the new launcher.
+
+The launcher's **Check for updates** does its network work in a thread. If a newer app is available,
+it asks whether to update. `src/app_updates.py` downloads into a unique `tmp/app-update-*` folder and
+stages the ZIP before stopping anything. GitHub's single wrapper directory and flat release ZIPs are
+supported. The archive must include a matching `app.version` and `src/app.py`. Paths cannot escape the
+staging/installation folder, and application symlink entries are not installed.
+
+Only files under `src/` and `config/`, plus README.md, DESIGN.md, INSTALL_MAC.md, LICENSE, launch.sh,
+mock.sh and setup_mac.sh are replaced. `launcher.pyw`, user configs, voices, models, installed engines,
+logs, AI notes and Git metadata are excluded. Additional files are not pruned. Existing files being
+replaced are backed up in staging; on installation failure they are restored and newly installed files
+are removed. If restoration itself fails, staging is retained and its backup path is reported.
+
+The launcher waits for its own app and locally managed server processes to stop before installation;
+remote or independently started servers are not stopped. It remains open throughout, then resumes the
+previous Launch/Mock mode (or standalone servers when no Launch was active). Failed installs report an
+error and leave restarting to the user. No configuration validation is added. Imported launcher helper
+modules remain loaded until the launcher is restarted; future app releases must preserve their callable
+interfaces while older launchers remain in use.
+
+For a release, increment `appVersion` for app changes and `launcherVersion` for launcher changes. Set
+`directDownloadURL` to the new release/tag ZIP and include this metadata in that archive. Make the ZIP
+available before publishing its master metadata. Keep the master describing a published release,
+rather than unreleased development work. The current local tag predates this feature; publish a new
+release containing the manifest before exercising a real upgrade. Launcher self-updates are future
+work; a separate helper could later replace only the launcher while residing beside the app.
+
+Offline regression checks: `python -m unittest discover -s tests -v`. They use scratch installations
+and mocked network/processes; they never update the working checkout or contact model servers.
+
 ### Servers on another machine
 
 Generate config offers `remote-nvidia-24gb` for a laptop connecting to an existing 24 GB desktop.
