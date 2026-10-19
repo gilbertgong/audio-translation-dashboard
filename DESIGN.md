@@ -204,6 +204,7 @@ Sections:
 |---------------|-------|---------------------------|-------------------------|----------------------------|
 | `nvidia-24gb` | 24 GB | whisper large-v3          | Qwen3.8-27B UD-IQ3_XXS  | Qwen3-TTS 1.7B (beth_thomas), GPU |
 | `nvidia-8gb`  | 8 GB  | whisper large-v3          | Qwen3.5-4B UD-Q4_K_XL (context 2048) | Kokoro (beth_thomas), CPU       |
+| `remote-nvidia-24gb` | None locally | Desktop Whisper, port 8081 | Desktop llama, port 8082 | Desktop Qwen3-TTS, port 8085 |
 | `nvidia-6gb`  | 6 GB  | whisper large-v3-q5_0     | Qwen3.5-4B UD-IQ3_XXS (context 2048) | Kokoro (beth_thomas), CPU       |
 
 - **Generate config** (launcher): lists NVIDIA GPUs with `nvidia-smi`, showing a GPU dropdown only when more than one is detected (index, name and VRAM). It remembers the previously generated GPU when available, otherwise defaults to the card with the most memory; a missing driver just means choosing a recipe by hand. Selecting a card updates the preview GPU index and pre-selects the largest recipe that fits (cards report a little under their nominal size, hence a 0.5 GiB margin), takes the two languages from dropdowns of whisper's languages (starting from the current `config_generated.toml`), and previews the result: `[languages]`, then the fragments, then the `off` sections. Save writes `config_generated.toml` and immediately refreshes the launcher settings and server buttons, then closes the config window; the next Launch uses it. Existing services keep their current configuration. A recipe whose fragments are missing or don't fit together can't be saved.
@@ -243,6 +244,17 @@ python src/app.py --mock
 On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server build, so it links Homebrew's `whisper-server` and `llama-server` (Metal) into `api_servers/` with a `VERSION` of `homebrew` (which the installer leaves alone), and writes `config_generated.toml` by the Mac's memory, since Generate config needs nvidia-smi. Steps and troubleshooting: `INSTALL_MAC.md` (not yet tried on a real Mac).
 
 ### Servers on another machine
+
+Generate config offers `remote-nvidia-24gb` for a laptop connecting to an existing 24 GB desktop.
+The recipe's `remote_host` metadata requests a text entry (default `127.0.0.1`); `assemble` fills the
+fragment's quoted `{host}` placeholders using an escaped TOML string. Host text is passed through,
+without IP/hostname validation. The fragment selects Qwen3-TTS and sets Whisper, llama and Qwen3-TTS
+`start = false`, with ports 8081, 8082 and 8085; its `off` list also disables Kokoro. Existing skip
+logic handles local installation/download/startup. No new runtime server mode or configuration loader
+is needed. Remote recipes are excluded from local GPU suggestions and omit local GPU pinning; the GPU
+picker is hidden while a remote recipe is selected. The generated preview keeps hosts/ports explicit.
+The desktop runs its normal recipe with reachable listening addresses; no servers are managed remotely.
+
 
 `app.py` reaches each server at its `[api_servers.<name>] host` and `port`, and with `start = false` the scripts neither install, download nor start it. So a laptop can run the dashboard (and Kokoro) while a desktop's GPU runs whisper and llama: on the laptop, `start = false` and the desktop's address for those servers; on the desktop, the servers' `host` set to its network address, so they listen there and its own dashboard still reaches them (on Windows, `0.0.0.0` can be listened on but not connected to). The dashboard then runs on the laptop's localhost, so its microphone works. The servers have no authentication: fine at home, not on shared networks.
 

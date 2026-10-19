@@ -42,6 +42,9 @@ recipes good.
 
 ## Results so far
 
+- Generate config includes `remote-nvidia-24gb`: enter one desktop IP/hostname for Whisper, llama
+  and Qwen3-TTS; all local engines are skipped using existing `start = false` behavior.
+
 - Interrupted automatic speech resumes from its heard position with a 100 ms rewind, rather than
   starting over; waiting backlog counts the remaining audio.
 

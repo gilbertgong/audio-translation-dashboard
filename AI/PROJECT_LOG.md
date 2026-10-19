@@ -269,3 +269,15 @@ DESIGN.md).
 - Final clarification of the configuration principle: do not add configuration validation; read and
   use what is specified. Deployment examples illustrated why not to judge configurations, rather than
   requesting deployment-specific infrastructure. Updated MEMORY.md to state this directly.
+
+## 2026-10-18: remote desktop recipe
+
+- Added `remote-nvidia-24gb`, a laptop-side recipe targeting a desktop's normal 24 GB setup. Existing
+  `start = false` skips local installs, model downloads and startup; runtime host/port support is unchanged.
+- Recipe metadata requests a Remote host text field (default 127.0.0.1), expanded into the fragment's
+  Whisper/llama/Qwen3-TTS endpoints. No hostname/IP validation. Local GPU selection is hidden for this
+  recipe, no local GPU is pinned, and remote recipes are excluded from GPU-based recommendations.
+- Isolated generation checks passed: default/custom/empty/quoted hosts, ports, Qwen TTS selection,
+  all local servers skipped after config merging, local GPU recommendations unchanged, and local
+  recipes byte-identical to previous rendering. No real servers contacted or generated/user configs
+  modified; no live desktop/laptop network test or launcher UI test performed.

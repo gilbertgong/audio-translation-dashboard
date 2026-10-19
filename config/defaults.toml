@@ -213,7 +213,7 @@ binary_type = "win-cuda-12.*-x64"
 
 [api_servers.whisper]
 # false: don't install or start this server, or download its model (the app
-# still uses host and port below; using an instance you already run is planned).
+# still uses host and port below, including servers running on another machine).
 start = true
 repo = "ggml-org/whisper.cpp"
 # "latest" = newest release (including b#### pre-release builds) that has files

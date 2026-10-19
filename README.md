@@ -52,6 +52,17 @@ The launcher's Generate config covers the usual choices. For anything else, put 
 `config_local.toml` in the project folder; `config/defaults.toml` lists every setting with comments.
 Launch rereads the config files, so edits are picked up on the next launch without restarting the launcher.
 
+## Use a remote desktop
+
+On the laptop, open **Generate config**, choose **remote-nvidia-24gb**, and enter the desktop's IP
+address or hostname in **Remote host** (default `127.0.0.1`). Save, then Launch. The dashboard runs
+locally and connects to the desktop's Whisper, llama and Qwen3-TTS servers on ports 8081, 8082 and
+8085. No local engine installation, model downloads or server startup are needed.
+
+Run the normal **nvidia-24gb** setup on the desktop, with those servers listening on its LAN address
+or `0.0.0.0`. On the laptop, use the actual desktop address, not `0.0.0.0`. The ports remain editable
+in the config, and `config_local.toml` still takes priority over generated settings.
+
 ## More
 
 - [DESIGN.md](DESIGN.md): how it works, in detail: architecture, configuration, scripts, running servers on another

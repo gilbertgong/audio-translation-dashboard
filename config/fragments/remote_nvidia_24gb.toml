@@ -1,0 +1,21 @@
+# Client for a desktop running the nvidia-24gb recipe. The generator fills {host}.
+# start = false skips local installation, model downloads and process startup;
+# the dashboard still uses the configured endpoints.
+
+[api_servers.whisper]
+start = false
+host = "{host}"
+port = 8081
+
+[api_servers.llama]
+start = false
+host = "{host}"
+port = 8082
+
+[api_servers.qwentts]
+start = false
+host = "{host}"
+port = 8085
+
+[tts]
+server = "qwentts"

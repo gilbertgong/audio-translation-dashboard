@@ -1,0 +1,11 @@
+{
+  "description": "Remote desktop, 24 GB NVIDIA: Whisper, llama and Qwen3-TTS; nothing started locally",
+  "vram_gb": 24,
+  "remote_host": "127.0.0.1",
+  "fragments": [
+    "remote_nvidia_24gb"
+  ],
+  "off": [
+    "kokoro"
+  ]
+}
