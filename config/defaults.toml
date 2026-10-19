@@ -57,7 +57,7 @@ enabled = true
 # Silence (ms) that ends a phrase and sends it to be transcribed: short, so
 # text appears when the speaker takes a breath. (Speaking translations waits
 # for a longer pause: [tts] turn_pause_ms.)
-split_pause_ms = 120
+split_pause_ms = 600
 # How far (dB) above the background noise counts as speech. Raise it if noise
 # triggers phrases; lower it if quiet speech is missed.
 threshold_db = 12
@@ -126,7 +126,7 @@ auto_play = false
 # and resumes about 100 ms before the interruption at the next turn's end.
 # (The ▶ buttons
 # play at once.)
-turn_pause_ms = 1500
+turn_pause_ms = 1000
 # At most this much speech (ms) waits to be spoken: the translations waiting
 # (not the one playing), counting each once its audio has come back from the
 # TTS server in full. Beyond that the oldest are dropped (each row says so;
