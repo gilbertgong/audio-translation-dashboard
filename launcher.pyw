@@ -62,6 +62,7 @@ from tkinter.scrolledtext import ScrolledText
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))  # the project's Python modules
 import configuration  # noqa: E402
+import app_updates  # noqa: E402
 
 # Run the steps with python.exe, not the pythonw.exe running this window: with
 # a (hidden) console of their own, the servers they start don't each pop up one.
@@ -471,6 +472,11 @@ class Launcher:
         self.server_states = {}  # name: state reported by run_servers.py
         self.server_buttons = {}  # name: button (developer controls)
         self.solo = {}  # name: run_servers.py --only NAME, for a server started on its own
+        self.updating = None  # check, download, stop or install; launcher itself stays running
+        self.update_package = None
+        self.update_resume = None
+        self.update_resume_solo = []
+        self.update_killed = set()
 
         root.title("Audio Translation Dashboard - Launcher")
         # Row 1: the dashboard itself, the thing to open once it's running.
@@ -496,7 +502,8 @@ class Launcher:
             self.mock_button.pack(side="right")
             self.restart_button.pack(side="right", padx=(0, 6))
             tool_button(bar, "Restart launcher", self.restart_launcher).pack(side="right", padx=(0, 6))
-        tool_button(bar, "Generate config", self.generate_config).pack(side="right", padx=(0, 6))
+        self.generate_button = tool_button(bar, "Generate config", self.generate_config)
+        self.generate_button.pack(side="right", padx=(0, 6))
         self.kill_button = tool_button(bar, "Kill servers", self.kill_servers)
         self.kill_button.pack(side="right", padx=(0, 6))
         self.generate_window = None
@@ -507,6 +514,14 @@ class Launcher:
         if setting("launcher", "show_dev_controls", False):
             self.servers_row.pack(fill="x")
             self.make_server_buttons()
+
+        row = ttk.Frame(root, padding=(8, 0, 8, 8))
+        row.pack(fill="x")
+        self.update_button = tool_button(row, "Check for updates", self.check_updates)
+        self.update_button.pack(side="right")
+        self.version_label = ttk.Label(row, text="")
+        self.version_label.pack(side="left")
+        self.show_versions()
         self.update_buttons()
 
         # Sized in characters, like a terminal; the window fits around it.
@@ -521,6 +536,8 @@ class Launcher:
 
     def start(self, mode):
         """Run mode's steps; if something else is running, stop it first."""
+        if self.updating:
+            return
         if self.mode:
             self.next_mode = mode  # started when the current run reports done
             self.stop()
@@ -542,7 +559,10 @@ class Launcher:
         """Launch and Mock are available unless that mode is already running
         (or a switch is under way); Stop while anything runs; Restart app once
         the dashboard is running."""
-        busy = self.stopping and self.mode is not None
+        busy = bool(self.updating) or (self.stopping and self.mode is not None)
+        set_enabled(self.update_button, not self.updating)
+        set_enabled(self.generate_button, not self.updating)
+        set_enabled(self.kill_button, not self.updating)
         set_enabled(self.launch_button, not busy and self.mode != "launch")
         set_enabled(self.mock_button, not busy and self.mode != "mock")
         set_enabled(self.stop_button, bool(self.mode) and not busy)
@@ -583,7 +603,7 @@ class Launcher:
         state = self.server_states.get(name)
         solo = name in self.solo
         launch_will_start = self.mode == "launch" and state is None and not solo
-        if (busy and not solo) or launch_will_start:
+        if self.updating or (busy and not solo) or launch_will_start:
             button.configure(text=name, fg="#1d2125", disabledforeground="#9aa1ab")
             set_enabled(button, False)
             return
@@ -598,6 +618,8 @@ class Launcher:
         """Stop a running server, or start a stopped one: one started on its own
         through its own run_servers.py, a launch's through the launch's; with
         no launch running, a server is started on its own."""
+        if self.updating:
+            return
         stop = self.server_states.get(name) == "ready"
         if name in self.solo:
             if stop:
@@ -629,6 +651,8 @@ class Launcher:
 
         def run():
             for argv in steps:
+                if self.updating in ("stop", "install"):
+                    break
                 proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT, **CHILD_OPTIONS)
                 self.solo[name] = proc
@@ -663,6 +687,8 @@ class Launcher:
     def restart_launcher(self):
         """Close this window (stopping what it runs, as closing it does) and
         start the launcher again, e.g. to pick up changes to this file."""
+        if self.updating:
+            return
         if (self.mode or self.solo) and not messagebox.askyesno(
                 "Restart launcher", "Restarting the launcher stops what it's running (the launch, and servers "
                 "started on their own), as closing it does. Restart?", parent=self.root):
@@ -721,6 +747,9 @@ class Launcher:
         webbrowser.open(f"http://localhost:{setting('server', 'port', 8080)}/")
 
     def close(self):
+        if self.updating:
+            messagebox.showinfo("Update in progress", "Please wait for the update operation to finish.", parent=self.root)
+            return
         self.next_mode = None
         if self.mode:
             self.stop()
@@ -728,6 +757,129 @@ class Launcher:
             if proc:
                 stop_tree(proc)
         self.root.destroy()
+
+    # --- app updates (launcher version is informational, never an update prerequisite)
+
+    def show_versions(self, newer_launcher=None):
+        try:
+            version = app_updates.read_version(ROOT / app_updates.VERSION_FILE)
+            text = f"App {version['appVersion']} · Launcher {version['launcherVersion']}"
+            if newer_launcher:
+                text += f" · Full update available: launcher {newer_launcher}"
+            self.version_label.configure(text=text)
+        except (OSError, ValueError, KeyError):
+            self.version_label.configure(text="Version information unavailable")
+
+    def check_updates(self):
+        if self.updating:
+            return
+        self.updating = "check"
+        self.status.configure(text="Checking for updates...")
+        self.update_buttons()
+
+        def check():
+            try:
+                local, remote = app_updates.check_update(ROOT)
+                app_new = app_updates.newer(remote["appVersion"], local["appVersion"])
+                launcher_new = app_updates.newer(remote["launcherVersion"], local["launcherVersion"])
+                self.output.put(("update-check", (local, remote, app_new, launcher_new)))
+            except Exception as err:
+                self.output.put(("update-error", str(err)))
+        threading.Thread(target=check, daemon=True).start()
+
+    def offer_update(self, result):
+        local, remote, app_new, launcher_new = result
+        self.updating = None
+        self.update_buttons()
+        self.show_versions(remote["launcherVersion"] if launcher_new else None)
+        summary = (f"App: {local['appVersion']} → {remote['appVersion']}\n"
+                   f"Launcher: {local['launcherVersion']} (latest {remote['launcherVersion']})")
+        if launcher_new:
+            summary += "\n\nA newer full installation is available. App updates leave your launcher unchanged."
+            self.write(f"== Full update available: launcher {remote['launcherVersion']}\n"
+                       f"   Download: {remote['directDownloadURL']}\n")
+        if not app_new:
+            self.status.configure(text="App is up to date")
+            messagebox.showinfo("Version check", summary + "\n\nThe app is up to date.", parent=self.root)
+            return
+        self.status.configure(text=f"App {remote['appVersion']} available")
+        if not messagebox.askyesno("Update app", summary +
+                "\n\nDownload and update the app? Running app and launcher-managed servers will stop, "
+                "then resume. Your launcher, user configs, models and voices are kept.", parent=self.root):
+            return
+        self.updating = "download"
+        self.status.configure(text="Downloading app update...")
+        self.update_buttons()
+
+        def download():
+            try:
+                self.output.put(("update-ready", app_updates.prepare_update(ROOT, remote)))
+            except Exception as err:
+                self.output.put(("update-error", str(err)))
+        threading.Thread(target=download, daemon=True).start()
+
+    def stop_for_update(self, prepared):
+        self.update_package = prepared
+        self.update_resume = self.mode
+        self.update_resume_solo = list(self.solo)
+        self.update_killed.clear()
+        self.next_mode = None
+        self.updating = "stop"
+        if self.mode:
+            self.stop()
+        self.wait_for_update_stop()
+
+    def wait_for_update_stop(self):
+        # Stop only processes owned by this launcher, never remote/independent servers.
+        for proc in list(self.solo.values()):
+            if proc and proc.poll() is None and proc.pid not in self.update_killed:
+                self.update_killed.add(proc.pid)
+                threading.Thread(target=stop_tree, args=(proc,), daemon=True).start()
+        if self.mode or self.solo:
+            self.status.configure(text="Stopping app and local servers for update...")
+            self.root.after(100, self.wait_for_update_stop)
+            return
+        self.updating = "install"
+        self.status.configure(text="Installing app update...")
+        self.update_buttons()
+
+        def install():
+            try:
+                app_updates.install_update(ROOT, self.update_package)
+                self.output.put(("update-installed", self.update_package.remote))
+            except Exception as err:
+                self.output.put(("update-error", str(err)))
+        threading.Thread(target=install, daemon=True).start()
+
+    def finish_update(self, remote):
+        self.update_package.close()
+        self.update_package = None
+        mode, self.update_resume = self.update_resume, None
+        solo, self.update_resume_solo = self.update_resume_solo, []
+        self.updating = None
+        local = app_updates.read_version(ROOT / app_updates.VERSION_FILE)
+        self.show_versions(remote["launcherVersion"] if app_updates.newer(
+            remote["launcherVersion"], local["launcherVersion"]) else None)
+        self.status.configure(text=f"Updated app to {remote['appVersion']}")
+        self.write(f"== Updated app to {remote['appVersion']}; launcher unchanged\n")
+        self.reload_config()
+        if mode != "launch":
+            for name in solo:
+                self.start_solo(name)
+        if mode:
+            self.start(mode)
+
+    def update_error(self, error):
+        if self.update_package:
+            self.update_package.close()
+            self.update_package = None
+        self.updating = None
+        self.update_resume = None
+        self.update_resume_solo = []
+        self.status.configure(text="Update failed")
+        self.update_buttons()
+        self.write(f"== Update failed: {error}\n")
+        messagebox.showerror("App update", error, parent=self.root)
 
     # --- worker thread: runs the steps, passing their output to the window
 
@@ -788,6 +940,14 @@ class Launcher:
                 elif kind == "status":
                     self.status.configure(text=value)
                     self.update_buttons()  # e.g. Restart app, once the dashboard runs
+                elif kind == "update-check":
+                    self.offer_update(value)
+                elif kind == "update-ready":
+                    self.stop_for_update(value)
+                elif kind == "update-installed":
+                    self.finish_update(value)
+                elif kind == "update-error":
+                    self.update_error(value)
                 elif kind == "done":
                     self.write(f"== {value}\n\n")
                     self.status.configure(text=value)
