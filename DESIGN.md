@@ -251,8 +251,8 @@ On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server buil
 {
   "appVersion": "0.1.0",
   "launcherVersion": "0.1.0",
-  "directDownloadURL": "https://github.com/gilbertgong/audio_translation_dash/archive/refs/tags/v0.1.0.zip",
-  "masterVersionFile": "https://raw.githubusercontent.com/gilbertgong/audio_translation_dash/main/app.version"
+  "directDownloadURL": "https://github.com/gilbertgong/audio-translation-dashboard/archive/refs/tags/v0.1.0.zip",
+  "masterVersionFile": "https://raw.githubusercontent.com/gilbertgong/audio-translation-dashboard/main/app.version"
 }
 ```
 

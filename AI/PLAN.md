@@ -42,6 +42,8 @@ recipes good.
 
 ## Results so far
 
+- Repository/download URLs use `audio-translation-dashboard`.
+
 - Launcher app updates: `app.version` tracks app/launcher versions independently. ZIP updates replace
   app files while preserving the launcher/user data. New launcher versions only inform the user that
   a full update is available; they do not gate app updates. Offline updater/lifecycle checks passed;

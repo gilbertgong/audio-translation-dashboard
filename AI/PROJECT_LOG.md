@@ -297,3 +297,12 @@ DESIGN.md).
   without an app gate, preservation, rollback, download failure, archive traversal/version mismatch,
   and launcher shutdown/resume sequencing. Scratch installs and mocked network/processes only; no
   actual update applied, no running services changed, no release published or live UI/network test.
+
+## 2026-10-21: repository rename
+
+- Updated the Git origin, release ZIP URL and master version URL to
+  `audio-translation-dashboard`, matching the user-planned GitHub rename.
+- User completed the local folder rename after closing the editor that held it open.
+- User bumped the app version and release ZIP target to 0.3.2; launcher remains 0.3.0.
+  ZIP extraction discovers the wrapper folder from app.version, independent of repository name.
+- All eleven offline updater tests passed; git diff --check passed.
