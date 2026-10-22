@@ -42,6 +42,10 @@ recipes good.
 
 ## Results so far
 
+- Session audio uses automatically deleted temporary files by default, retained as open handles
+  only while needed for rechecks. `[diagnostics] save_session_data = true` restores saved WAVs
+  and application content logging. Operational diagnostics and API-server logs are unchanged.
+
 - Playback panel opposite Capture audio: pause/resume, stop/clear, restart and next,
   seek bar with elapsed/total clip time, output dB meter, queue status and persistent per-language 0.5×–2× speed controls.
   Web Audio rate changes also affect pitch. Mock browser and offline transport checks passed.

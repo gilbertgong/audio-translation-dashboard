@@ -2,8 +2,9 @@
 
 - [x] **Language direction — highest priority.** Use Whisper's final language after any recheck to fill
   explicit source/target prompt fields. Remove llama language tags and its recheck trigger.
-- [ ] **Confidential mode.** No logs or saved session WAV files; cover the dashboard, launcher and
-  engine output, and preserve transcription rechecks without saving recordings to disk.
+- [x] **Session retention defaults.** Automatically deleted temporary WAVs and no transcript/translation
+  content in application logs. Keep activity/diagnostics and API-server logs. Config-only opt-in
+  restores saved files and content logging; rechecks use the original server-side temporary file.
 - [x] **Typed text translations.** Chat page styled like the dashboard, with explicit language
   direction, conversation history, streamed replies, copy and spoken playback.
 - [x] **Advanced controls.** Playback panel with transport controls, output meter, queue status and independent language speed sliders.

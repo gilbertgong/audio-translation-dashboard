@@ -1300,8 +1300,8 @@ async function requestTranslation(text, source, onText) {
   return { translation: translation.trim(), seconds, firstSeconds, raw };
 }
 
-function addFileInfo(row, path) {
-  addInfo(row, `Saved as: ${path}`);
+function addFileInfo(row, path, temporary = false) {
+  addInfo(row, temporary ? "Temporary recording (automatically deleted)" : `Saved as: ${path}`);
 }
 
 // Translate a row's text into its translation line (streamed), with its
@@ -1383,12 +1383,12 @@ async function processRecording(wav, note = "", source = "mic") {
     } catch (err) {
       setTiming(row, "stt", "failed");
       setLine(row, ".original", `Error: ${err.message}`, "error");
-      if (err.body?.file) addFileInfo(row, err.body.file);
+      if (err.body?.file) addFileInfo(row, err.body.file, err.body.temporary);
       throw err;
     }
     setTiming(row, "stt", stt.stt_seconds);
     if (stt.stt_raw) addRawButton(row, "stt", "whisper request and response", stt.stt_raw);
-    addFileInfo(row, stt.file);
+    addFileInfo(row, stt.file, stt.temporary);
     setLanguage(row, stt.language);
     if (!stt.text) {
       setLine(row, ".original", "(no speech detected)", "pending");

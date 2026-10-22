@@ -28,8 +28,14 @@ port = 8080
 # changes to it, keeping the servers running.
 show_dev_controls = false
 
+[diagnostics]
+# true restores the original behavior: keep session WAVs and include transcript,
+# translation and spoken text in application logs. API-server logs are unaffected.
+# Default: automatically deleted temporary audio files and no application log text.
+save_session_data = false
+
 [audio]
-# Where recorded WAV files are written.
+# Recording directory. Files are temporary unless diagnostics.save_session_data is true.
 temp_dir = "tmp/audio"
 # Recordings are saved as mono 16-bit PCM WAV at this rate (whisper.cpp expects 16000).
 sample_rate = 16000

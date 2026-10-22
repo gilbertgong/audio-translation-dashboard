@@ -52,6 +52,16 @@ The launcher's Generate config covers the usual choices. For anything else, put 
 `config_local.toml` in the project folder; `config/defaults.toml` lists every setting with comments.
 Launch rereads the config files, so edits are picked up on the next launch without restarting the launcher.
 
+By default, session recordings use temporary files that are automatically deleted after transcription
+or any recheck. Application logs keep activity and diagnostics but omit transcript, translation and
+spoken-text fields. API-server logs are unchanged. To restore saved recordings and application
+content logging, add this to `config_local.toml` and restart the app:
+
+```toml
+[diagnostics]
+save_session_data = true
+```
+
 ## Use a remote desktop
 
 On the laptop, open **Generate config**, choose **remote-nvidia-24gb**, and enter the desktop's IP

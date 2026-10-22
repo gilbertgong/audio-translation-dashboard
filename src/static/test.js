@@ -147,7 +147,8 @@ async function transcribe(blob) {
     transcribedLanguage = result.language;
     $("stt-text").textContent = result.text || "(no speech detected)";
     $("stt-meta").textContent = `${result.language || "?"} · ${audioSeconds.toFixed(1)}s audio · ` +
-      `whisper ${result.stt_seconds}s · round trip ${secs(performance.now() - start)} · saved as ${result.file}`;
+      `whisper ${result.stt_seconds}s · round trip ${secs(performance.now() - start)} · ` +
+      (result.temporary ? "temporary recording (automatically deleted)" : `saved as ${result.file}`);
     $("stt-raw").textContent = JSON.stringify(result.stt_raw ?? result, null, 2);
     $("stt-result").hidden = false;
     setStatus("stt-status", "");

@@ -28,7 +28,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
         v          |
 +---------------------+       WAV audio, text       +---------------------+
 |  Dashboard (page)   | --------------------------> |  app.py (backend)   |
-|  capture, meter,    | <-------------------------- |  saves recordings,  |
+|  capture, meter,    | <-------------------------- |  handles audio,     |
 |  splitting,         |  text, timing, speech audio |  calls the servers, |
 |  display, playback  |                             |  relays streams     |
 +---------------------+                             +----------+----------+
@@ -53,7 +53,7 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 - **Controls:** Start/Stop (or Space), the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status row and the microphone's level meter aligned under the Activity column. The status row has three independent, unlabeled indicators separated by light dividers (position says which is which; tooltips spell them out): the capture (left) and the mic (middle) each show their source's state (off, calibrating, listening, speech, or recording; for the capture, "no sound yet" until a channel is chosen) and how many of its phrases are still being translated; playback (right) shows what is playing, how many translations are queued for a pause, or whether automatic playback is on.
 - **Server status:** in the header, a dot per server — Transcribe, Translate, Speak — green (ok), amber (loading: llama-server while it loads its model), red (down), from `/api/health` every 10 s; the tooltip names the server, its address and what the check found.
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
-- **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a phrase was split, the saved file's path).
+- **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a phrase was split, temporary recording status, or the saved path when retention is enabled).
 
 #### Persistent views
 
@@ -122,8 +122,8 @@ Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`
 |--------------------------------|---------------------------------------------------------------|
 | `GET /api/config`              | Settings the page needs.                                      |
 | `GET /api/health`              | The three servers' status (`ok`, `loading`, `down`), checked in parallel (2 s timeout each). |
-| `POST /api/recordings`         | Save a WAV and transcribe it with whisper. Returns the text, language, confidence, timing and the raw exchange, and `recheck: true` when the language is neither of the two configured. |
-| `POST /api/recordings/recheck` | Transcribe a saved recording again, forced to each of the two languages; return the more confident result. |
+| `POST /api/recordings`         | Transcribe a WAV with whisper using an automatically deleted temporary file by default. Returns the text, language, confidence, timing and the raw exchange, and `recheck: true` when the language is neither of the two configured. |
+| `POST /api/recordings/recheck` | Transcribe the original server-side recording again, forced to each of the two languages; return the more confident result. |
 | `POST /api/translate`          | Translate `{text, source}` with llama (source must match the configured pair; target is the other language; prompt rendered per request), streamed as server-sent events. |
 | `POST /api/speak`              | Speak text with the TTS server, streamed as raw PCM: in a given voice, else the configured voice for its language (`target`: `language1`/`language2`), else the default voice. |
 | `GET /api/voices`              | The TTS server's voices and the configured default (for the test page). |
@@ -160,7 +160,7 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 - **Manual mode:** Start/Stop records one clip. The page sends it to `/api/recordings`, shows the text when whisper returns, then sends the text to `/api/translate` and shows the translation as it streams in. Recording can continue while earlier rows are processing.
 - **Continuous Audio Mode** (called *auto-split* in code and config; on by default): Start keeps the microphone open, and a voice activity detector in the page splits the audio at pauses. Each phrase goes through the same pipeline as its own row.
-- **Language direction:** Whisper identifies the source language. If it is outside the configured pair and the transcript is nonempty, the page requests a **recheck** before translating: the saved recording is transcribed forced to each language, and the result with the higher duration-weighted segment `avg_logprob` wins. The row shows the provisional transcript while waiting, then replaces its text and language. If the recheck fails, the original result is retained; an empty final transcript is not translated. Language rechecks are disabled if a configured language is not in Whisper's language list.
+- **Language direction:** Whisper identifies the source language. If it is outside the configured pair and the transcript is nonempty, the page requests a **recheck** before translating: the server-side recording is transcribed forced to each language, and the result with the higher duration-weighted segment `avg_logprob` wins. The row shows the provisional transcript while waiting, then replaces its text and language. If the recheck fails, the original result is retained; an empty final transcript is not translated. Language rechecks are disabled if a configured language is not in Whisper's language list.
 - **Translation prompt:** the page sends the final transcript and Whisper language as `{text, source}`. The backend requires a source matching one of the configured languages (case-insensitive), chooses the other as target, and renders `{language1}`, `{language2}`, `{source}` and `{target}` per request. Unknown or missing source languages produce an explicit 400 error, including after a failed recheck. llama returns translation text only: no language tags, parsing or llama-triggered recheck. Bracketed content is preserved. The component tests select the source explicitly for typed input. Custom prompt overrides must use the new direction placeholders and omit tag instructions.
 - **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio and heard position, resuming 100 ms before that position after the next turn pause. The cursor follows scheduled audio segments, so initial buffering and gaps do not count as heard speech; already-heard pieces are skipped and the first remaining piece starts at an offset. The backlog counts only the remaining audio. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro's: Beth, `beth_thomas`, for both; the stock voices `af_maple` and `zf_001` are the native alternatives), else `[tts] voice` if set, else the server's `default_voice` (`beth_thomas` for both: Kokoro's voicepack, Qwen's clone). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits phrases (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. The backlog is limited by time, not count: once the speech waiting (not counting the one playing, and only audio fetched in full) is over `[tts] max_backlog_ms` (30 s), the oldest are dropped, always keeping the newest, each with a note on its row ("over 30 s of speech waiting"; its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. With a muted captured tab, playback talks over the tab, so a fast speaker keeps the backlog full and playback about 30 s behind (see Extension points: a playback speed control). Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
 
@@ -343,7 +343,21 @@ In `src/tools/`, extras that aren't part of running the app:
 ### Logs
 
 - **`logs/app.log`** — one shared log from `app.py` and the scripts: server commands, downloads, voice registration, each recording, transcription, recheck, translation and speech, and errors.
-- **`logs/<name>.log`** — each server's own output.
+- **`logs/<name>.log`** — each server's own output (unchanged by session retention settings).
+
+`[diagnostics] save_session_data = false` is the default. Application log entries keep their activity,
+timings, language, confidence and diagnostics, with explicit transcript/translation/spoken-text fields
+replaced by `[content omitted]`. API-server logs are not modified or filtered. Set the option to `true`
+in `config_local.toml` to restore saved WAVs and application content logging; there is no UI toggle.
+
+Session WAVs use `tempfile.TemporaryFile` under `[audio] temp_dir`: Unix uses an unnamed/unlinked file;
+Windows deletes it on close. A normal transcription closes it immediately, including on error. If a
+recheck is needed, the backend retains its open handle keyed by the existing recording name. The
+browser sends the same small JSON filename request as before; it never uploads audio again for a
+recheck. The handle stays open through both forced-language attempts and closes on completion or
+failure. Abandoned rechecks expire after 15 minutes; pending handles also close at process exit.
+With retention enabled, the original saved-file recheck behavior is preserved. Existing recordings
+and logs are not removed by this setting.
 
 ## Known limitations
 
@@ -363,7 +377,7 @@ The project's history (milestones, measurements and the reasons behind decisions
 - **Configuration:**
   - Recipes for other hardware: no GPU, non-NVIDIA (Vulkan builds), and remote setups (a laptop using a desktop's servers).
   - A recipe with two TTS servers (e.g. one per language) would define `[tts]` twice; it needs a per-language `[tts]` first.
-- **Housekeeping:** a retention limit for `tmp/audio/` (it grows by about 115 MB per hour of recorded speech).
+- **Housekeeping:** a retention limit for `tmp/audio/` when session retention is explicitly enabled (about 115 MB per hour of recorded speech).
 - **Speech:**
   - Pause speech detection while a translation plays, so speakers can't feed it back into Continuous Audio Mode.
   - The speaker's own voice, cloned from their recordings (Qwen3-TTS).

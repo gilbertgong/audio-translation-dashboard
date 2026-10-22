@@ -339,3 +339,21 @@ DESIGN.md).
 
 - Capitalized capture UI labels as Capture Audio and Stop Capture, including the panel/help
   headings and accessible panel name. Text-only; no tests.
+
+## 2026-10-22: targeted session retention defaults
+
+- At user direction discarded the earlier uncommitted confidentiality work and restarted from
+  the playback commit. Scope: one config-only opt-in for original behavior, temporary session
+  audio by default, and omit conversation text fields in application logs only.
+- TemporaryFile provides unlink/delete-on-close semantics across Unix/Windows. Preserve its
+  server-side handle for rechecks using the existing filename JSON request; no second WAV upload
+  and no retained in-memory audio cache. Close after transcription/recheck, on failure, abandoned
+  request expiry (15 minutes), or process exit. Browser playback continues using its own audio.
+- Keep application activity/timing/language/confidence/error diagnostics and API-server output.
+  No broad log filters, launcher changes, server logging changes, or cleanup of existing user files.
+- Offline tests cover actual temporary-file cleanup, recheck ownership, success/failure/expiry/exit,
+  original opt-in behavior, content omission and preserved activity/error diagnostics. No live
+  dashboard or model servers were restarted or contacted.
+
+- Release metadata bumped to app 0.4.0 at user request; launcher stays 0.3.0.
+  Release notes include the playback panel and targeted session retention defaults.

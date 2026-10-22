@@ -14,10 +14,14 @@ microweb.py.
 """
 
 import argparse
+import atexit
+import contextlib
 import itertools
 import json
 import logging
 import re
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -44,6 +48,57 @@ LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 log = logging.getLogger("app")
+
+
+def save_session_data():
+    return config.get("diagnostics", {}).get("save_session_data", False)
+
+
+def logged_text(text):
+    return text if save_session_data() else "[content omitted]"
+
+
+# Rechecks use the original server-side file handle, never a second audio upload.
+# Unclaimed handles expire; TemporaryFile handles unlink/delete-on-close for us.
+temporary_recordings = {}
+temporary_lock = threading.Lock()
+RECHECK_EXPIRY_S = 900
+
+
+def take_temporary_recording(name):
+    with temporary_lock:
+        entry = temporary_recordings.pop(name, None)
+    if entry is None:
+        return None
+    recording, timer = entry
+    timer.cancel()
+    return recording
+
+
+def discard_temporary_recording(name):
+    recording = take_temporary_recording(name)
+    if recording is not None:
+        recording.close()
+
+
+def keep_for_recheck(name, recording):
+    timer = threading.Timer(RECHECK_EXPIRY_S, discard_temporary_recording, args=(name,))
+    timer.daemon = True
+    with temporary_lock:
+        temporary_recordings[name] = (recording, timer)
+    timer.start()
+
+
+def close_temporary_recordings():
+    with temporary_lock:
+        entries = list(temporary_recordings.values())
+        temporary_recordings.clear()
+    for recording, timer in entries:
+        timer.cancel()
+        recording.close()
+
+
+atexit.register(close_temporary_recordings)
 
 # Sample conversation for --mock mode. "language" is as whisper reports it;
 # the audio length and timings are shown for the lines displayed when the page loads.
@@ -249,11 +304,11 @@ def relay_translation(text, url, body, resp, start):
                     pieces.append(content)
     except OSError as err:
         error = f"relaying llama's response failed: {err}"
-        log.warning("%s; text: %r", error, text)
+        log.warning("%s; text: %r", error, logged_text(text))
         yield sse_event("error", {"error": error})
     seconds = time.monotonic() - start
     log.info("translated in %.2fs (first token after %.2fs): %r -> %r",
-             seconds, first or 0, text, "".join(pieces).strip())
+             seconds, first or 0, logged_text(text), logged_text("".join(pieces).strip()))
 
 
 def mock_translation_stream(text):
@@ -351,7 +406,7 @@ def post_translate(req):
         resp = open_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
     except (OSError, RuntimeError) as err:
         error = f"translation failed: {err} (is llama-server running at {config['llama_url']}?)"
-        log.warning("%s; text: %r", error, text)
+        log.warning("%s; text: %r", error, logged_text(text))
         raise HTTPError(502, error) from err
     return Stream(relay_translation(text, url, body, resp, start), "text/event-stream")
 
@@ -467,7 +522,7 @@ def post_speak(req):
         # RuntimeError: the server answered with an error; OSError: it couldn't be reached.
         hint = "" if isinstance(err, RuntimeError) else f" (is the TTS server running at {config['tts_url']}?)"
         error = f"speech failed: {err}{hint}"
-        log.warning("%s; text: %r", error, text)
+        log.warning("%s; text: %r", error, logged_text(text))
         raise HTTPError(502, error) from err
 
     def relay():
@@ -478,9 +533,9 @@ def post_speak(req):
                     n += len(chunk)
                     yield chunk
         except OSError as err:
-            log.warning("relaying speech failed: %s; text: %r", err, text)
+            log.warning("relaying speech failed: %s; text: %r", err, logged_text(text))
         log.info("spoke %.1fs of audio in %.2fs (voice %r): %r", n / 2 / 24000,
-                 time.monotonic() - start, voice, text)
+                 time.monotonic() - start, voice, logged_text(text))
 
     return Stream(relay(), TTS_PCM_TYPE)
 
@@ -508,21 +563,33 @@ def post_recording(req):
     temp_dir = config["audio"]["temp_dir"]
     temp_dir.mkdir(parents=True, exist_ok=True)
     path = temp_dir / datetime.now().strftime("recording_%Y%m%d_%H%M%S_%f.wav")
-    path.write_bytes(data)
-    log.info("saved recording %s (%d bytes)", path, len(data))
+    temporary = not save_session_data()
+    with contextlib.ExitStack() as cleanup:
+        if temporary:
+            recording = cleanup.enter_context(tempfile.TemporaryFile(dir=temp_dir, suffix=".wav"))
+            recording.write(data)
+            recording.seek(0)
+            log.info("received temporary recording %s (%d bytes)", path.name, len(data))
+        else:
+            path.write_bytes(data)
+            log.info("saved recording %s (%d bytes)", path, len(data))
 
-    start = time.monotonic()
-    try:
-        result = transcribe(config["whisper_url"], data, path.name)
-    except (OSError, RuntimeError, ValueError) as err:
-        # OSError: connection problems; RuntimeError: errors from whisper-server.
-        error = f"transcription failed: {err} (is whisper-server running at {config['whisper_url']}?)"
-        log.warning("%s; recording: %s", error, path.name)
-        raise HTTPError(502, error, file=str(path), bytes=len(data)) from err
-    seconds = round(time.monotonic() - start, 2)
-    log.info("transcribed %s in %ss (%s): %r", path.name, seconds, result["language"], result["text"])
-    recheck = bool(result["text"]) and not expected_language(result["language"])
-    return {"file": str(path), "bytes": len(data), **result, "recheck": recheck, "stt_seconds": seconds}, 201
+        start = time.monotonic()
+        try:
+            result = transcribe(config["whisper_url"], data, path.name)
+        except (OSError, RuntimeError, ValueError) as err:
+            # OSError: connection problems; RuntimeError: errors from whisper-server.
+            error = f"transcription failed: {err} (is whisper-server running at {config['whisper_url']}?)"
+            log.warning("%s; recording: %s", error, path.name)
+            raise HTTPError(502, error, file=str(path), bytes=len(data), temporary=temporary) from err
+        seconds = round(time.monotonic() - start, 2)
+        log.info("transcribed %s in %ss (%s): %r", path.name, seconds, result["language"], logged_text(result["text"]))
+        recheck = bool(result["text"]) and not expected_language(result["language"])
+        if temporary and recheck:
+            keep_for_recheck(path.name, recording)
+            cleanup.pop_all()  # the recheck request or expiry now owns the handle
+        return {"file": str(path), "bytes": len(data), **result, "recheck": recheck,
+                "stt_seconds": seconds, "temporary": temporary}, 201
 
 
 @app.post("/api/recordings/recheck")
@@ -534,11 +601,19 @@ def post_recheck(req):
     "stt_raw"}, where stt_raw has both attempts."""
     data = req.json()
     name = Path(data.get("file", "")).name if isinstance(data, dict) else ""
+    if not re.fullmatch(r"recording_[\d_]+\.wav", name):
+        raise HTTPError(400, 'expected JSON {"file": "<a recording\'s name>"}')
+    recording = take_temporary_recording(name)
+    if recording is not None:
+        with recording:
+            return recheck_recording(recording.read(), name)
     path = config["audio"]["temp_dir"] / name
-    if not re.fullmatch(r"recording_[\d_]+\.wav", name) or not path.is_file():
+    if not save_session_data() or not path.is_file():
         raise HTTPError(400, 'expected JSON {"file": "<a saved recording\'s name>"}')
-    wav = path.read_bytes()
+    return recheck_recording(path.read_bytes(), name)
 
+
+def recheck_recording(wav, name):
     start = time.monotonic()
     attempts = []
     for key in ("language1", "language2"):
@@ -551,7 +626,7 @@ def post_recheck(req):
         raise HTTPError(502, f"recheck failed (is whisper-server running at {config['whisper_url']}?)")
     best = max(attempts, key=lambda a: a["confidence"] if a["confidence"] is not None else float("-inf"))
     seconds = round(time.monotonic() - start, 2)
-    log.info("rechecked %s in %ss as %s: %r (confidence %s)", name, seconds, best["language"], best["text"],
+    log.info("rechecked %s in %ss as %s: %r (confidence %s)", name, seconds, best["language"], logged_text(best["text"]),
              ", ".join(f"{a['language']} {a['confidence']:.3f}" for a in attempts if a["confidence"] is not None))
     return {**best, "stt_seconds": seconds,
             "stt_raw": {"attempts": [a["stt_raw"] for a in attempts], "chosen": best["language"]}}
@@ -578,7 +653,7 @@ def main():
         *(["Mode:       MOCK (sample data; whisper, llama and tts are not used)"] if mock else []),
         f"Config:     {' + '.join(p.name for p in config['_files'])}",
         f"Log:        {log_path}",
-        f"Recordings: {config['audio']['temp_dir']}",
+        f"Recordings: {config['audio']['temp_dir']}" + (" (temporary; automatically deleted)" if not save_session_data() else ""),
         f"Whisper:    {config['whisper_url']}",
         f"Llama:      {config['llama_url']}",
         f"TTS:        {config['tts_url']} ({config['tts']['server']}; voices: "
