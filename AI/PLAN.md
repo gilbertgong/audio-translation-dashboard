@@ -42,6 +42,10 @@ recipes good.
 
 ## Results so far
 
+- Playback panel opposite Capture audio: pause/resume, stop/clear, restart and next,
+  seek bar with elapsed/total clip time, output dB meter, queue status and persistent per-language 0.5×–2× speed controls.
+  Web Audio rate changes also affect pitch. Mock browser and offline transport checks passed.
+
 - Repository/download URLs use `audio-translation-dashboard`.
 
 - Launcher app updates: `app.version` tracks app/launcher versions independently. ZIP updates replace
@@ -105,8 +109,6 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
   implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.
 - Remaining requests include a new default Kokoro Chinese voice and investigation of a better llama
   model for the 6 GB recipe. App update/version checking is implemented; see `TODO.md`.
-- **Playback speed control** (low priority): a user-set speed on the page (e.g. 1.0× to 1.5×), not automatic, for
-  keeping up with fast speakers when talking over a muted tab. TODO in `src/static/app.js` above `playNextSpeech`.
 - Try the 4B recipes on real laptops (speed, memory, translation quality).
 - Try the Mac install on a real Mac.
 - Longer-term ideas: `DESIGN.md`, Extension points.

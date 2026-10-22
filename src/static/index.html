@@ -24,13 +24,13 @@
   <!-- The page: the capture sidebar to the left of the main area, in what was
        empty space (the main area keeps its size, centered, when there's room). -->
   <div id="live-view" class="layout">
-  <aside id="capture" class="capture-panel" aria-label="Capture audio">
+  <aside id="capture" class="capture-panel" aria-label="Capture Audio">
     <div class="capture-head">
-      <h2>Capture audio</h2>
+      <h2>Capture Audio</h2>
       <button id="capture-help-btn" class="help-btn" type="button" aria-label="How capturing works"
               title="How capturing works">?</button>
     </div>
-    <button id="capture-btn" type="button" title="Capture the sound of a tab, a window or the whole system">Capture audio</button>
+    <button id="capture-btn" type="button" title="Capture the sound of a tab, a window or the whole system">Capture Audio</button>
     <div id="capture-status" class="capture-status">Not capturing</div>
     <!-- One meter per channel of the captured sound; click one to choose
          which is translated (filled in by app.js). -->
@@ -127,6 +127,28 @@
       </div>
     </div>
   </main>
+  <aside id="playback" class="capture-panel playback-panel" aria-label="Playback">
+    <div class="capture-head"><h2>Playback</h2></div>
+    <div class="playback-timeline">
+      <input id="playback-position" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in current clip" disabled>
+      <div class="playback-times"><span id="playback-elapsed">0:00</span><span id="playback-duration">/ 0:00</span><span id="playback-status" class="capture-status" role="status">Idle</span></div>
+    </div>
+    <div class="playback-controls translation-actions" role="group" aria-label="Playback controls">
+      <button id="playback-restart" class="row-btn" type="button" title="Restart clip" aria-label="Restart clip" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5 4h3v16H5zm14 0v16L8 12z"/></svg></button>
+      <button id="playback-pause" class="row-btn" type="button" title="Pause playback" aria-label="Pause playback" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg></button>
+      <button id="playback-stop" class="row-btn" type="button" title="Stop and clear queue" aria-label="Stop and clear queue" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+      <button id="playback-next" class="row-btn" type="button" title="Next queued clip" aria-label="Next queued clip" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M16 4h3v16h-3zM5 4l11 8-11 8z"/></svg></button>
+    </div>
+    <div id="playback-queue" class="capture-status">0 queued</div>
+    <div class="level">
+      <div id="playback-meter" class="meter" role="meter" aria-label="Playback level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" title="Playback output level (dBFS)"><div class="meter-fill"></div></div>
+      <span id="playback-db" class="meter-db">-∞ dB</span>
+    </div>
+    <div class="playback-speeds" role="group" aria-label="Translation playback speed">
+      <label class="playback-speed"><span id="speed-language1">Language 1</span><output for="speed1">1.00×</output><input id="speed1" type="range" min="0.5" max="2" step="0.05" value="1" aria-labelledby="speed-language1"></label>
+      <label class="playback-speed"><span id="speed-language2">Language 2</span><output for="speed2">1.00×</output><input id="speed2" type="range" min="0.5" max="2" step="0.05" value="1" aria-labelledby="speed-language2"></label>
+    </div>
+  </aside>
   </div>
 
   <!-- Loaded once, then kept mounted so switching views preserves their state. -->
@@ -136,7 +158,7 @@
   <!-- How capturing works (the ? in the capture sidebar). -->
   <dialog id="capture-help" class="help-dialog" aria-labelledby="capture-help-title">
     <div class="raw-head">
-      <h2 id="capture-help-title">Capture audio</h2>
+      <h2 id="capture-help-title">Capture Audio</h2>
       <button id="capture-help-close" type="button" aria-label="Close" title="Close (Esc)">&#x2715;</button>
     </div>
     <div class="help-body">

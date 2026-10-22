@@ -21,7 +21,7 @@ let languageChecks = true; // whether Whisper can recheck the configured pair (a
 // Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
 let session = null;
-let capture = null; // a running audio capture (see Capture audio, below)
+let capture = null; // a running audio capture (see Capture Audio, below)
 const pending = { mic: 0, capture: 0 }; // each source's phrases still being processed
 
 // The status row: three independent, unlabeled indicators (kept short; the
@@ -58,12 +58,14 @@ function updateStatus() {
   sourceStatus(capture?.session, "capture");
   sourceStatus(session, "mic");
   const waiting = speechQueue.length;
-  if (speech) setIndicator("playback", ...(speech.item
+  if (playbackPaused) setIndicator("playback", "paused", "waiting", "playback paused");
+  else if (speech) setIndicator("playback", ...(speech.item
     ? ["speaking", "active"] : ["speaking ▶", "active", "speaking (played with ▶)"]));
   else if (playingBtn) setIndicator("playback", "playing", "active", "playing a recording");
   else if (waiting) setIndicator("playback", `${waiting} queued`, "waiting", `${waiting} waiting for a pause in the speech`);
   else setIndicator("playback", ...(autoPlayToggle.checked
     ? ["auto", "", "automatic playback, idle"] : ["▶ only", "", "plays only with ▶ (automatic playback is off)"]));
+  updatePlaybackPanel();
 }
 
 // Microphone level meter, running while recording. Audio blocks from the
@@ -406,6 +408,9 @@ function stopRecordingPlayback() {
 }
 
 function stopPlayback() {
+  playbackSeeking = false;
+  playbackPaused = false;
+  clearTimeout(turnTimer);
   speechQueue.splice(0).forEach((item) => cancelSpeech(item.audio));
   cancelSpeech(speech?.audio);
   stopSpeech();
@@ -429,6 +434,7 @@ function addPlayButton(row, wav) {
     stopPlayback();
     if (wasPlaying) return;
     player.src = url;
+    connectRecordingMeter();
     player.play().catch((err) => {
       console.error(err);
       stopPlayback();
@@ -454,6 +460,8 @@ function addPlayButton(row, wav) {
 // speech stops other playback, and vice versa. Active speech:
 // { ctx, btn, item, audio, update }.
 let speech = null;
+let playbackPaused = false;
+let recordingOutput = null;
 const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb network jitter
 const SPEECH_RESUME_REWIND_S = 0.1; // replay a little context after an interruption
 let playbackBufferS = 0.8;
@@ -561,7 +569,7 @@ function cancelSpeech(audio) {
 
 // Play a row's speech: item's audio (an automatic-playback queue entry, put
 // back in the queue if the speaker starts again), else fetched now (a ▶ click).
-function speakTranslation(row, btn, text, item = null) {
+function speakTranslation(row, btn, text, item = null, resume = null) {
   stopSpeech();
   stopRecordingPlayback();
 
@@ -569,15 +577,20 @@ function speakTranslation(row, btn, text, item = null) {
   // allows it to play; automatic playback relies on the page having been
   // clicked or typed in before, so resume in case it starts suspended.
   const ctx = new AudioContext();
-  ctx.resume().catch(() => {});
-  const audio = item?.audio ?? loadSpeech(row, text);
-  const resumeSeconds = item?.resumeSeconds || 0;
+  if (playbackPaused) ctx.suspend().catch(() => {});
+  else ctx.resume().catch(() => {});
+  const audio = resume?.audio ?? item?.audio ?? loadSpeech(row, text);
+  const resumeSeconds = resume?.position ?? item?.resumeSeconds ?? 0;
+  const speed = playbackSpeed(row);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.connect(ctx.destination);
   const scheduled = []; // context times mapped to positions in the original audio
-  const current = { ctx, btn, item, audio, update: null, position: () => {
+  const current = { ctx, btn, row, text, item, audio, analyser, speed, update: null, position: () => {
     const now = ctx.currentTime;
     for (let i = scheduled.length - 1; i >= 0; i--) {
       const segment = scheduled[i];
-      if (now >= segment.start) return segment.offset + Math.min(now - segment.start, segment.duration);
+      if (now >= segment.start) return segment.offset + Math.min((now - segment.start) * speed, segment.duration);
     }
     return resumeSeconds; // buffering, or the first piece has not started yet
   } };
@@ -613,16 +626,17 @@ function speakTranslation(row, btn, text, item = null) {
       const skip = Math.max(0, resumeSeconds - offset);
       const buffer = ctx.createBuffer(1, samples.length, audio.rate);
       buffer.copyToChannel(samples, 0);
-      const source = new AudioBufferSourceNode(ctx, { buffer });
-      source.connect(ctx.destination);
+      const source = new AudioBufferSourceNode(ctx, { buffer, playbackRate: speed });
+      source.connect(analyser);
       if (!last) setSpeakButton(btn, "playing");
       playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
       source.start(playAt, skip);
       const duration = buffer.duration - skip;
       scheduled.push({ start: playAt, offset: offset + skip, duration });
-      playAt += duration;
+      playAt += duration / speed;
       last = source;
     }
+    updateStatus();
     if (!audio.done) return;
     audio.listeners.delete(current.update);
     if (!last) return audio.seconds ? finished() : fail(new Error("no audio received"));
@@ -656,7 +670,7 @@ let turnTimer = null;
 // interrupt automatic playback (not just a cough or a click).
 function noteSpeech(sustained) {
   lastSpeechAt = performance.now();
-  if (sustained && speech?.item) {
+  if (sustained && speech?.item && !playbackPaused) {
     const item = speech.item;
     const position = speech.position();
     // Don't repeatedly rewind when interrupted before resumed audio starts.
@@ -672,7 +686,9 @@ function noteSpeech(sustained) {
 
 function queueSpeech(row, btn, text) {
   const audio = loadSpeech(row, text);
-  audio.listeners.add(() => audio.done && trimBacklog()); // its length counts once it's all in
+  audio.listeners.add(() => {
+    if (audio.done) { trimBacklog(); updateStatus(); } // its length counts once it's all in
+  });
   speechQueue.push({ row, btn, text, audio });
   playNextSpeech();
   updateStatus();
@@ -680,8 +696,8 @@ function queueSpeech(row, btn, text) {
 
 // Seconds of speech waiting to be played, fetched in full.
 function backlogSeconds() {
-  return speechQueue.reduce((sum, { audio, resumeSeconds = 0 }) =>
-    sum + (audio.done && !audio.error ? Math.max(0, audio.seconds - resumeSeconds) : 0), 0);
+  return speechQueue.reduce((sum, { row, audio, resumeSeconds = 0 }) =>
+    sum + (audio.done && !audio.error ? Math.max(0, audio.seconds - resumeSeconds) / playbackSpeed(row) : 0), 0);
 }
 
 // Drop the oldest waiting translations while the backlog is over the limit,
@@ -697,15 +713,11 @@ function trimBacklog() {
   if (dropped) updateStatus();
 }
 
-// TODO: with a muted captured tab, playback talks over a fast speaker and the
-// backlog sits at max_backlog_ms. Add a playback speed control for the user
-// (e.g. 1.0x to 1.5x) so they can speed it up to keep pace.
-
 // Speak the next waiting translation, once nothing is playing and the
 // speaker's turn has ended; until then, check again when it could have.
 function playNextSpeech() {
   clearTimeout(turnTimer);
-  if (speech || playingBtn || !speechQueue.length) return;
+  if (playbackPaused || speech || playingBtn || !speechQueue.length) return;
   const wait = turnPauseMs - (performance.now() - lastSpeechAt);
   if (wait > 0) {
     turnTimer = setTimeout(playNextSpeech, wait + 20);
@@ -714,6 +726,150 @@ function playNextSpeech() {
   const next = speechQueue.shift();
   speakTranslation(next.row, next.btn, next.text, next);
 }
+
+// Playback controls share the live queue, including manually played row audio.
+const pausePlaybackBtn = document.getElementById("playback-pause");
+const restartPlaybackBtn = document.getElementById("playback-restart");
+const stopPlaybackBtn = document.getElementById("playback-stop");
+const nextPlaybackBtn = document.getElementById("playback-next");
+const speedInputs = [document.getElementById("speed1"), document.getElementById("speed2")];
+const playbackPosition = document.getElementById("playback-position");
+let playbackSeeking = false;
+
+function playbackTime(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function updatePlaybackTimeline() {
+  const duration = speech?.audio.seconds ?? (playingBtn && Number.isFinite(player.duration) ? player.duration : 0);
+  const position = speech?.position() ?? (playingBtn ? player.currentTime : 0);
+  const growing = speech && !speech.audio.done;
+  playbackPosition.disabled = !duration;
+  playbackPosition.max = String(duration || 1);
+  if (!playbackSeeking) playbackPosition.value = String(Math.min(position, duration));
+  const elapsed = playbackTime(playbackSeeking ? Number(playbackPosition.value) : position);
+  const length = `${playbackTime(Math.ceil(duration - 0.000001))}${growing ? "+" : ""}`;
+  document.getElementById("playback-elapsed").textContent = elapsed;
+  document.getElementById("playback-duration").textContent = `/ ${length}`;
+  playbackPosition.setAttribute("aria-valuetext", `${elapsed} of ${length}${growing ? ", still generating" : ""}`);
+  playbackPosition.title = growing ? "Seek within received audio; total duration is still growing" : "Seek within current clip";
+}
+
+playbackPosition.addEventListener("input", () => {
+  playbackSeeking = true;
+  updatePlaybackTimeline();
+});
+playbackPosition.addEventListener("change", () => {
+  const position = Number(playbackPosition.value);
+  playbackSeeking = false;
+  if (speech) restartCurrentSpeech(position);
+  else if (playingBtn) player.currentTime = position;
+  updatePlaybackTimeline();
+});
+
+function playbackSpeed(row) {
+  return Number(speedInputs[speechTarget(row) === "language2" ? 1 : 0].value);
+}
+
+function updatePlaybackPanel() {
+  const active = !!(speech || playingBtn);
+  const waiting = speechQueue.length;
+  const label = playbackPaused ? "Paused" : speech
+    ? (speech.btn.title === "Stop speaking" ? "Speaking" : "Buffering")
+    : playingBtn ? "Playing recording" : waiting ? "Waiting for speaker to pause" : "Idle";
+  document.getElementById("playback-status").textContent = speech
+    ? `${label} · ${speechTarget(speech.row) === "language2" ? language2 : language1}` : label;
+  document.getElementById("playback-queue").textContent = `${waiting} queued · ${Math.ceil(backlogSeconds())} s waiting`;
+  pausePlaybackBtn.disabled = !active && !waiting && !playbackPaused;
+  pausePlaybackBtn.title = playbackPaused ? "Resume playback" : "Pause playback";
+  pausePlaybackBtn.setAttribute("aria-label", pausePlaybackBtn.title);
+  pausePlaybackBtn.setAttribute("aria-pressed", String(playbackPaused));
+  pausePlaybackBtn.querySelector("path").setAttribute("d", playbackPaused ? "M6 3l15 9-15 9z" : "M6 4h4v16H6zm8 0h4v16h-4z");
+  stopPlaybackBtn.disabled = !active && !waiting && !playbackPaused;
+  restartPlaybackBtn.disabled = !active;
+  nextPlaybackBtn.disabled = !waiting;
+  updatePlaybackTimeline();
+}
+
+function restartCurrentSpeech(position) {
+  const current = speech;
+  if (!current) return;
+  if (current.item) current.item.resumeSeconds = position;
+  speakTranslation(current.row, current.btn, current.text, current.item,
+    { audio: current.audio, position });
+}
+
+pausePlaybackBtn.addEventListener("click", () => {
+  playbackPaused = !playbackPaused;
+  if (speech) (playbackPaused ? speech.ctx.suspend() : speech.ctx.resume()).catch(console.error);
+  if (playingBtn) {
+    if (playbackPaused) player.pause();
+    else player.play().catch(console.error);
+  }
+  if (!playbackPaused) playNextSpeech();
+  updateStatus();
+});
+stopPlaybackBtn.addEventListener("click", stopPlayback);
+restartPlaybackBtn.addEventListener("click", () => {
+  if (speech) restartCurrentSpeech(0);
+  else if (playingBtn) player.currentTime = 0;
+});
+nextPlaybackBtn.addEventListener("click", () => {
+  cancelSpeech(speech?.audio);
+  stopSpeech();
+  stopRecordingPlayback();
+  const next = speechQueue.shift();
+  if (next) speakTranslation(next.row, next.btn, next.text, next);
+  updateStatus();
+});
+speedInputs.forEach((input, index) => {
+  try { input.value = localStorage.getItem(`playbackSpeed${index + 1}`) || "1"; } catch {}
+  const show = () => { input.previousElementSibling.value = `${Number(input.value).toFixed(2)}×`; };
+  show();
+  input.addEventListener("input", () => {
+    show();
+    try { localStorage.setItem(`playbackSpeed${index + 1}`, input.value); } catch {}
+    if (speech && speechTarget(speech.row) === `language${index + 1}`) restartCurrentSpeech(speech.position());
+    updateStatus();
+  });
+});
+
+function connectRecordingMeter() {
+  if (!recordingOutput) {
+    const ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    ctx.createMediaElementSource(player).connect(analyser).connect(ctx.destination);
+    recordingOutput = { ctx, analyser };
+  }
+  recordingOutput.ctx.resume().catch(() => {});
+}
+
+const playbackMeter = document.getElementById("playback-meter");
+const playbackSamples = new Float32Array(2048);
+let playbackShownDb = METER_FLOOR_DB;
+let playbackMeterFrame = null;
+function drawPlaybackMeter() {
+  updatePlaybackTimeline();
+  const analyser = !playbackPaused && (speech?.analyser || (playingBtn && recordingOutput?.analyser));
+  let rms = 0, peak = 0;
+  if (analyser) {
+    analyser.getFloatTimeDomainData(playbackSamples);
+    ({ rms, peak } = blockLevel(playbackSamples));
+  }
+  const db = toDb(rms);
+  playbackShownDb = Math.max(db, playbackShownDb - 1);
+  playbackMeter.querySelector(".meter-fill").style.width = `${dbToPercent(playbackShownDb)}%`;
+  playbackMeter.classList.toggle("active", !!analyser);
+  playbackMeter.classList.toggle("hot", playbackShownDb > METER_HOT_DB);
+  playbackMeter.classList.toggle("clip", peak >= 0.99);
+  playbackMeter.classList.toggle("quiet", playbackShownDb < METER_QUIET_DB);
+  playbackMeter.setAttribute("aria-valuenow", String(Math.round(playbackShownDb)));
+  document.getElementById("playback-db").textContent = playbackShownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(playbackShownDb)} dB`;
+  playbackMeterFrame = requestAnimationFrame(drawPlaybackMeter);
+}
+playbackMeterFrame = requestAnimationFrame(drawPlaybackMeter);
 
 // Add a speak button after a row's translated text (once it's complete).
 // Returns the button.
@@ -864,6 +1020,8 @@ async function loadConfig() {
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
+    document.getElementById("speed-language1").textContent = language1;
+    document.getElementById("speed-language2").textContent = language2;
     languageChecks = config.language_checks !== false;
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
@@ -1297,7 +1455,7 @@ recordBtn.addEventListener("click", async () => {
   }
 });
 
-// --- Capture audio (the sidebar): translate the sound of a browser tab, a
+// --- Capture Audio (the sidebar): translate the sound of a browser tab, a
 // window or the whole system instead of the microphone, through the browser's
 // screen sharing (getDisplayMedia) used in reverse. The captured sound goes
 // through the same pipeline as Continuous Audio Mode: one chosen channel, mono,
@@ -1340,15 +1498,20 @@ function makeChannelRow(name, index) {
   const row = el("button", "channel");
   row.type = "button";
   row.title = `Translate the ${name.toLowerCase()} channel`;
-  const bar = el("span", "ch-bar");
-  const fill = el("span", "ch-fill");
-  const peak = el("span", "ch-peak");
+  const bar = el("span", "meter active");
+  bar.setAttribute("role", "meter");
+  bar.setAttribute("aria-label", `${name} channel level`);
+  bar.setAttribute("aria-valuemin", String(METER_FLOOR_DB));
+  bar.setAttribute("aria-valuemax", "0");
+  bar.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
+  const fill = el("span", "meter-fill");
+  const peak = el("span", "meter-peak");
   bar.append(fill, peak);
-  const db = el("span", "ch-db", "-∞ dB");
-  row.append(el("span", "ch-name", name), bar, db);
+  const db = el("span", "meter-db", "-∞ dB");
+  row.append(el("span", "ch-name", name[0]), bar, db);
   row.addEventListener("click", () => selectChannel(index));
   captureChannelsEl.append(row);
-  return { row, fill, peak, db, shownDb: METER_FLOOR_DB, maxDb: METER_FLOOR_DB };
+  return { row, bar, fill, peak, db, shownDb: METER_FLOOR_DB, maxDb: METER_FLOOR_DB };
 }
 
 // Send channel index to the recorder (the others are gated off).
@@ -1379,7 +1542,10 @@ function drawChannels() {
     ch.shownDb = db > ch.shownDb ? db : Math.max(db, ch.shownDb - 1);
     ch.maxDb = Math.max(ch.maxDb, toDb(peak));
     ch.fill.style.width = `${dbToPercent(ch.shownDb)}%`;
-    ch.fill.className = "ch-fill" + (peak >= 0.99 ? " clip" : ch.shownDb > METER_HOT_DB ? " hot" : "");
+    ch.bar.classList.toggle("clip", peak >= 0.99);
+    ch.bar.classList.toggle("hot", ch.shownDb > METER_HOT_DB);
+    ch.bar.classList.toggle("quiet", ch.shownDb < METER_QUIET_DB);
+    ch.bar.setAttribute("aria-valuenow", String(Math.round(ch.shownDb)));
     ch.peak.style.left = `calc(${dbToPercent(ch.maxDb)}% - 1px)`;
     ch.db.textContent = `${ch.shownDb <= METER_FLOOR_DB ? "-∞" : Math.round(ch.shownDb)} dB`;
     if (first === null && db > CHANNEL_SOUND_DB) first = i;
@@ -1462,7 +1628,7 @@ async function stopCapture() {
 }
 
 function setCaptureUi(capturing) {
-  captureBtn.textContent = capturing ? "Stop capture" : "Capture audio";
+  captureBtn.textContent = capturing ? "Stop Capture" : "Capture Audio";
   captureBtn.classList.toggle("capturing", capturing);
   // One source at a time (switched off for now, to try both at once):
   // recordBtn.disabled = capturing; // (Space does nothing either)
@@ -1498,6 +1664,7 @@ function isSpaceShortcut(e) {
   if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
+  if (target.closest("#playback")) return false; // Space operates focused transport controls
   const isTextInput = target.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(target.type);
   return !(target.isContentEditable || isTextInput || ["TEXTAREA", "SELECT"].includes(target.tagName));
 }
@@ -1530,6 +1697,8 @@ window.addEventListener("pagehide", () => {
   clearTimeout(turnTimer);
   stopPlayback();
   const microphone = session;
+  cancelAnimationFrame(playbackMeterFrame);
+  recordingOutput?.ctx.close().catch(() => {});
   const captured = capture;
   session = null;
   capture = null; // track-ended handlers must not flush abandoned recordings

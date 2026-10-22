@@ -129,7 +129,7 @@ button { font: inherit; color: inherit; }
 .layout {
   --capture-width: 240px;
   display: grid;
-  grid-template-columns: minmax(calc(var(--capture-width) + 16px), 1fr) minmax(0, 1100px) minmax(0, 1fr);
+  grid-template-columns: minmax(calc(var(--capture-width) + 16px), 1fr) minmax(0, 1100px) minmax(calc(var(--capture-width) + 16px), 1fr);
 }
 
 .layout > main { grid-column: 2; width: 100%; }
@@ -470,17 +470,21 @@ body.activity-hidden #activity-toggle .chevron { transform: scaleX(-1); }
 .controls .switch { grid-row: 2; grid-column: 2; justify-self: start; }
 .controls .switch + .switch { grid-row: 3; }
 .controls .gain { grid-row: 2 / 4; grid-column: 3; justify-self: center; }
-.controls .level { grid-row: 2 / 4; grid-column: 4; justify-self: stretch; }
+.controls .level { grid-row: 2 / 4; grid-column: 4; justify-self: center; width: calc(100% - 28px); }
 
 /* The level: meter bar filling the width, dB readout to its right. */
 .level {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 0 14px; /* same side padding as the activity cells above */
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.level .meter { flex: 1; width: auto; }
+.level .meter { flex: 1; width: auto; min-width: 0; }
+.level .meter-db { min-width: 0; white-space: nowrap; text-align: center; }
 
 #record-btn {
   font-size: 1rem;
@@ -740,13 +744,25 @@ kbd {
 .capture-status { font-size: 0.8rem; color: var(--muted); }
 .capture-status.error { color: var(--recording); }
 
+.playback-panel { grid-column: 3; grid-row: 1; justify-self: start; margin: 16px 16px 0 0; }
+.playback-controls { margin: 0; gap: 8px; }
+.playback-controls .row-btn:disabled { opacity: 0.35; cursor: default; border-color: var(--border); }
+.playback-panel .level { width: 100%; align-self: center; }
+.playback-timeline input { width: 100%; margin: 0; accent-color: var(--accent); }
+.playback-times #playback-status { margin-left: auto; text-align: right; }
+.playback-times { display: flex; gap: 4px; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.playback-speeds { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.playback-speed { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+.playback-speed output { font-variant-numeric: tabular-nums; }
+.playback-speed input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--accent); }
+
 /* A channel's meter is a button: click it to translate that channel. */
 .capture-channels { display: flex; flex-direction: column; gap: 6px; }
 .capture-channels:empty { display: none; }
 
 .channel {
   display: grid;
-  grid-template-columns: 3em 1fr;
+  grid-template-columns: 1ch minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
@@ -763,20 +779,8 @@ kbd {
 .channel .ch-name { color: var(--muted); }
 .channel.selected .ch-name { color: var(--accent); font-weight: 600; }
 
-.ch-bar {
-  position: relative;
-  height: 10px;
-  border-radius: 5px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.ch-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: #16a34a; }
-.ch-fill.hot { background: #f59e0b; }
-.ch-fill.clip { background: var(--recording); }
-.ch-peak { position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: var(--text); opacity: 0.5; }
-.ch-db { grid-column: 2; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.channel .meter { width: 100%; }
+.channel .meter-db { min-width: 0; white-space: nowrap; text-align: right; }
 
 .capture-mute {
   display: flex;
@@ -802,10 +806,23 @@ kbd {
 .help-body { padding: 4px 18px 12px; font-size: 0.9rem; line-height: 1.5; }
 .help-body li { margin-bottom: 4px; }
 
-/* Narrower screens: the sidebar moves above the main area. */
-@media (max-width: 900px) {
-  .layout { display: block; }
-  .capture-panel { width: auto; margin: 16px 16px 0; }
+/* Keep the center controls usable as the two side panels take up space. */
+@media (max-width: 1400px) {
+  .layout { --capture-width: 200px; }
+  .controls { grid-template-columns: auto minmax(0, 1fr); padding: 10px 14px; background: var(--panel); }
+  .controls #status { grid-column: 2; padding: 0; }
+  .controls .gain { grid-row: 4; grid-column: 1; }
+  .controls .level { grid-row: 4; grid-column: 2; min-width: 0; width: 100%; }
+}
+
+/* Narrower screens: the side panels move above the main area. */
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); }
+  .capture-panel { grid-column: 1; grid-row: 1; width: auto; justify-self: stretch; margin: 12px 8px 0 16px; }
+  .playback-panel { grid-column: 2; margin: 12px 16px 0 8px; }
+  .layout > main { grid-column: 1 / -1; grid-row: 2; }
+  .playback-speeds { flex-direction: row; }
+  .playback-speed { flex: 1; min-width: 0; }
 }
 
 /* Narrow screens: the activity column becomes narrower. */

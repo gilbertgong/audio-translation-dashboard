@@ -6,7 +6,7 @@
   engine output, and preserve transcription rechecks without saving recordings to disk.
 - [x] **Typed text translations.** Chat page styled like the dashboard, with explicit language
   direction, conversation history, streamed replies, copy and spoken playback.
-- [ ] **Advanced controls.** Include a manual playback speed control for spoken translations.
+- [x] **Advanced controls.** Playback panel with transport controls, output meter, queue status and independent language speed sliders.
 - [x] **Launcher app updates and version checker.** `app.version` records separate `appVersion` and
   `launcherVersion`, plus download/master URLs. ZIP app updates leave the launcher and user data
   intact; newer launcher versions are informational and point to a full download. Publish a matching

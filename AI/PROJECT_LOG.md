@@ -306,3 +306,36 @@ DESIGN.md).
 - User bumped the app version and release ZIP target to 0.3.2; launcher remains 0.3.0.
   ZIP extraction discovers the wrapper folder from app.version, independent of repository name.
 - All eleven offline updater tests passed; git diff --check passed.
+
+## 2026-10-21: playback panel
+
+- Added Playback opposite Capture audio, reusing panel, button and meter styles;
+  responsive layout keeps both panels and recording controls usable on narrow screens.
+- Transport controls hold streamed speech on pause, clear/cancel queued speech on stop,
+  restart fetched audio or skip to the next clip. Manual recording playback shares transport
+  and metering. User pause survives incoming speech, streaming, speed changes and view switches.
+- Per-language browser-persisted speed sliders apply at the current position; scheduled chunk
+  durations, interruption positions and backlog seconds account for speed. Rate changes pitch.
+- Verified with an isolated tone-generating mock dashboard and desktop/narrow browser layouts:
+  pause/resume, restart, rate change, meter, view switching, next while paused, stop/queue clear.
+  Offline Node checks cover scheduling/positions, interruption rewind, per-language rates,
+  cancellation, meter, recordings and streamed arrival while paused. No real model servers used.
+
+- Follow-up: added a matching current-clip seek bar and elapsed/total time. A trailing +
+  indicates total duration is still growing during streaming. Seeking preserves pause and
+  handles recordings as well as speech. Offline checks cover drag preview, paused seek,
+  stop/reset and growing/final durations; mock browser verified paused seeking to 0:03 / 0:08.
+
+- Layout follow-up: placed the seek bar above transport controls, with playback status
+  aligned right on the elapsed/total time row. Layout-only; testing skipped per preference.
+
+- Capture channel meters now reuse the microphone/playback meter styles, colors,
+  dimensions and dB typography. Compact L/R labels (M for mono) place label, meter and
+  value on one row; full channel names remain in tooltips/accessibility labels. Styling-only
+  follow-up; testing skipped per preference.
+
+- Matched the microphone and playback meter containers to the capture channel boxes,
+  with centered alignment and consistent border, rounding and padding. Layout-only; no tests.
+
+- Capitalized capture UI labels as Capture Audio and Stop Capture, including the panel/help
+  headings and accessible panel name. Text-only; no tests.

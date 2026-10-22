@@ -63,6 +63,12 @@ Run the normal **nvidia-24gb** setup on the desktop, with those servers listenin
 or `0.0.0.0`. On the laptop, use the actual desktop address, not `0.0.0.0`. The ports remain editable
 in the config, and `config_local.toml` still takes priority over generated settings.
 
+## Playback
+
+The **Playback** panel, opposite Capture audio, has restart, pause/resume, stop/clear queue and
+next-clip controls, a seek bar with elapsed/total clip time, an output level meter and queue status. Separate language sliders adjust live
+translation speed from 0.5× to 2× and remember your choices. Speed changes also affect pitch.
+
 ## App updates
 
 The launcher shows separate app and launcher versions. **Check for updates** reads the published
