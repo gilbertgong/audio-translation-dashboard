@@ -56,6 +56,8 @@ Tick **Advanced mode** to choose individual local fragments for transcription, t
 speech, starting from the selected recipe. Speech groups Kokoro and Qwen together. Each selector
 also offers **Off** and remote backends with separate host/IP and port fields. Remote choices use
 the existing backend defaults for voices and other settings; `config_local.toml` can override them.
+Reopening the generator restores a previously generated advanced setup immediately, including
+fragment selections, remote endpoints, languages and the saved GPU selection when available.
 The config preview colors TOML comments, section headings, strings, numbers and booleans.
 Advanced mode also shows each selection's model file size and a rough local VRAM
 estimate: model size plus 10% for llama with context up to 2048, or 20% otherwise. CPU Kokoro

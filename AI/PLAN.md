@@ -42,6 +42,9 @@ recipes good.
 
 ## Results so far
 
+- Reopening Generate config restores advanced selections and endpoints immediately, before GPU
+  detection; later GPU suggestions preserve these backend choices. Nine generator checks passed.
+
 - Generate config has Advanced mode: individual local fragments, remote host/port or Off per
   backend, with one grouped speech selector. Remote choices use defaults for other fields.
   Remote choices appear last. Fragment size comments feed per-selection sizes and local totals,

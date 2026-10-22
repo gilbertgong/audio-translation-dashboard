@@ -248,6 +248,11 @@ No compatibility, VRAM or endpoint checks are added. The read-only preview uses 
 muted gray comments, blue sections, green strings and purple numeric/boolean literals; this lexical
 coloring neither parses nor alters the generated text.
 
+On opening the generator, an advanced generated config is recognized by its existing header.
+Fragment/remote comment markers restore the selectors; TOML values restore endpoints, languages
+and GPU selection. This happens before GPU detection finishes; later GPU suggestions preserve
+advanced backend choices. Recipe-generated files keep existing recipe-mode startup behavior.
+
 Advanced choices list local fragments first and remote backends last. Each fragment documents
 approximate model weights/codec size using `# Model files: N GB ...` (decimal GB); CPU placement
 is marked in that comment. Advanced mode puts file sizes in parentheses in local dropdown choices,

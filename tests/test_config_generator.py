@@ -192,6 +192,48 @@ class ConfigGeneratorTests(unittest.TestCase):
             self.assertEqual(tomllib.loads(path.read_text()), tomllib.loads(window.text))
         callback.assert_called_once_with()
 
+    def test_advanced_generated_config_restores_before_gpu_detection(self):
+        root = launcher.tk.Tk()
+        root.withdraw()
+        self.addCleanup(root.destroy)
+        work = ROOT / "tmp"
+        work.mkdir(exist_ok=True)
+        cases = [
+            [("local", "whisper", "whisper_large-v3-q5_0", "", ""),
+             ("remote", "llama", None, "desktop.example", "9002"),
+             ("local", "kokoro", "kokoro_v1.0", "", "")],
+            [("remote", "whisper", None, "192.168.1.8", "9101"),
+             ("off", None, None, "", ""),
+             ("remote", "qwentts", None, "speech.example", "9105")],
+            [("off", None, None, "", "")] * 3,
+        ]
+        with tempfile.TemporaryDirectory(prefix="restore-generator-", dir=work) as scratch:
+            path = Path(scratch) / "generated.toml"
+            for selections in cases:
+                with self.subTest(selections=selections):
+                    text = launcher.assemble_advanced(selections, ["English", "Japanese"], gpu=2)
+                    path.write_text(text, encoding="utf-8")
+                    with patch.object(launcher, "GENERATED_FILE", path), patch.object(launcher.threading, "Thread"):
+                        window = launcher.GenerateConfigWindow(root, Mock())
+                        window.window.withdraw()
+                        self.assertTrue(window.advanced.get())
+                        self.assertEqual(window.recipe_row.winfo_manager(), "")
+                        self.assertEqual(window.backend_frame.winfo_manager(), "pack")
+                        self.assertEqual([v.get() for v in window.languages], ["English", "Japanese"])
+                        self.assertEqual(tomllib.loads(window.text), tomllib.loads(text))
+                        # The delayed GPU result must not replace restored selections.
+                        window.gpu_found([(2, "Small test GPU", 6), (7, "Large test GPU", 24)], None)
+                        self.assertEqual(tomllib.loads(window.text), tomllib.loads(text))
+                        window.gpu_found([], "No GPU")
+                        self.assertEqual(tomllib.loads(window.text), tomllib.loads(text))
+                        window.window.destroy()
+            path.write_text(launcher.assemble("nvidia-8gb", launcher.load_recipes()["nvidia-8gb"]), encoding="utf-8")
+            with patch.object(launcher, "GENERATED_FILE", path), patch.object(launcher.threading, "Thread"):
+                window = launcher.GenerateConfigWindow(root, Mock())
+                window.window.withdraw()
+                self.assertFalse(window.advanced.get())
+                window.window.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

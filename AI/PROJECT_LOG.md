@@ -440,3 +440,12 @@ DESIGN.md).
 - User clarified launcher bumps use the current release version (0.4.1 here), rather than an
   independent patch increment. Corrected the unpublished commit/tag after the initial push failed
   to resolve GitHub from the sandbox.
+
+## 2026-10-22: Restore advanced generator settings on open
+
+- Scan config_generated.toml for the existing advanced header and fragment/remote markers.
+  Restore advanced mode, local fragments, Off and per-server remote hosts/ports immediately;
+  retain language/GPU restoration and preserve advanced choices through delayed GPU detection.
+  No additional config schema or validation layer.
+- Nine generator checks passed, covering mixed/remote/Off round trips, startup before GPU detection,
+  delayed GPU/no-GPU results and recipe-mode startup. Scratch files only; user config/services untouched.
