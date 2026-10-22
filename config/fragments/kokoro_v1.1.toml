@@ -11,7 +11,7 @@ script = "src/kokoro_server.py"
 host = "127.0.0.1"
 port = 8083
 # {server_dir}: the install folder. --threads: CPU threads (0 lets ONNX Runtime choose automatically).
-args = ["--lib", "{server_dir}/lib", "--threads", "0"]
+args = ["--lib", "{server_dir}/lib", "--threads", "0", "--repo-id", "hexgrad/Kokoro-82M-v1.1-zh"]
 
 [models.kokoro]
 # The archive is unpacked into models/kokoro/; the file after # is passed.

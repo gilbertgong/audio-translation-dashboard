@@ -2,20 +2,18 @@
 front end Kokoro was trained with) on the Kokoro ONNX model, through
 onnxruntime, on the CPU.
 
-The model and its voices are sherpa-onnx's packaging of Kokoro v1.1-zh
-(model.onnx, voices.bin and tokens.txt from kokoro-multi-lang-v1_1); its
-own text front end isn't used. misaki turns text into phonemes as the
-official kokoro package does (KPipeline): Japanese (any kana) with its
-Japanese G2P (cutlet, KPipeline's for lang_code "j"), Chinese (Han characters
-without kana) with its v1.1 G2P (any English words in it with the English
-one), anything else with its American English G2P and the espeak fallback for
-unknown words; chunked the same way,
-each chunk spoken with the voice's style vector for its phoneme count. Voices
-made by a search on that pipeline (voices/beth_thomas/RC3) sound as they did there.
+The model and its voices use sherpa-onnx's packaging (model.onnx, voices.bin
+and tokens.txt); its own text front end isn't used. --repo-id identifies the
+original Kokoro package, as in the reference KPipeline, including its Chinese
+phonemizer version. Misaki setup and chunking follow KPipeline without its
+PyTorch dependency. Explicit lang_code selects the reference language pipeline.
+For existing dashboard clients without lang_code, script-based English/Chinese/
+Japanese selection is retained deliberately. Chinese uses the reference's
+optional English callback for mixed text. See DESIGN.md for deliberate differences.
 
 Endpoints, shaped like the servers the dashboard already uses:
     POST /v1/audio/speech  OpenAI-style TTS: JSON {"input", "voice" (name such as
-                           "zf_001", or index), "speed",
+                           "zf_001", or index; comma-separated blends), "speed", "lang_code" (optional),
                            "response_format": "pcm" (streamed chunk by chunk,
                            s16le mono 24 kHz) or "wav"}
     GET  /v1/audio/voices  {"voices": [names]}
@@ -23,9 +21,12 @@ Endpoints, shaped like the servers the dashboard already uses:
 
 Usage:
     python kokoro_server.py --kokoro MODEL [--voice NAME=FILE ...] [--lib DIR]
+                            [--repo-id hexgrad/Kokoro-82M-v1.1-zh]
                             [--host 127.0.0.1] [--port 8083] [--threads 0]
 
---kokoro is model.onnx, with voices.bin and tokens.txt next to it. --voice
+--kokoro is model.onnx, with voices.bin and tokens.txt next to it. --repo-id
+identifies the original model package (v1.0: hexgrad/Kokoro-82M); it does not
+download assets. --voice
 adds a voicepack (a PyTorch .pt of shape [510, 1, 256], or the same as raw
 float32) made for the same model, spoken as NAME. --lib is a folder of
 packages installed with pip install --target (misaki and its English,
@@ -49,11 +50,17 @@ from pathlib import Path
 
 from microweb import App, HTTPError, Stream
 
+# Preprocessing/chunking adapted from hexgrad/kokoro's KPipeline (Apache-2.0).
+# Modified for ONNX, bundled voices and the HTTP adapter. License: licenses/Kokoro-LICENSE.txt.
 log = logging.getLogger("kokoro_server")
 SAMPLE_RATE = 24000
 PCM_TYPE = f"audio/pcm; rate={SAMPLE_RATE}; channels=1"
 MAX_PHONEMES = 510  # the model's limit, and the voicepacks' rows
 VOICE_FLOATS = MAX_PHONEMES * 256
+LANG_CODES = {"a": "American English", "b": "British English", "e": "es", "f": "fr-fr",
+              "h": "hi", "i": "it", "p": "pt-br", "j": "Japanese", "z": "Mandarin Chinese"}
+LANG_ALIASES = {"en-us": "a", "en-gb": "b", "es": "e", "fr-fr": "f", "hi": "h",
+                "it": "i", "pt-br": "p", "ja": "j", "zh": "z"}
 JAPANESE = re.compile(r"[ぁ-ヿｦ-ﾟ]")  # kana (hiragana, katakana, half-width katakana)
 CHINESE = re.compile(r"[㐀-䶿一-鿿豈-﫿]")  # Han characters
 
@@ -93,7 +100,7 @@ class Kokoro:
     """The model, its voices and misaki. Generation goes chunk by chunk; one
     request at a time."""
 
-    def __init__(self, model, extra_voices, threads):
+    def __init__(self, model, extra_voices, threads, repo_id="hexgrad/Kokoro-82M-v1.1-zh"):
         # Imported here: from --lib, which main() has put on the import path.
         import importlib.util
         try:
@@ -144,15 +151,32 @@ class Kokoro:
                 symbol, _, index = line.rpartition(" ")
                 self.vocab[symbol] = int(index)
 
-        # misaki, as KPipeline sets it up for Kokoro v1.1-zh.
-        self.english = en.G2P(trf=False, british=False, fallback=espeak.EspeakFallback(british=False), unk="")
-        self.chinese = zh.ZHG2P(version="1.1", en_callable=lambda text: self.english(text)[0])
-        try:
-            self.japanese = ja.JAG2P()  # cutlet: fugashi, with unidic-lite's dictionary
-        except (ImportError, RuntimeError) as err:  # fugashi raises RuntimeError without a dictionary
-            raise SystemExit(f"error: misaki's Japanese G2P failed to load ({err}): Kokoro's packages "
-                             f"are missing or out of date (run install_api_servers.py)") from None
+        self.repo_id = repo_id
+        self.misaki = types.SimpleNamespace(en=en, espeak=espeak, ja=ja, zh=zh)
+        self.g2ps = {}
         self.lock = threading.Lock()
+
+    def phonemizer(self, lang_code):
+        """KPipeline's language-specific setup; cache one G2P per language."""
+        if lang_code not in self.g2ps:
+            if lang_code in "ab":
+                british = lang_code == "b"
+                try:
+                    fallback = self.misaki.espeak.EspeakFallback(british=british)
+                except Exception:
+                    log.warning("EspeakFallback not enabled: out-of-dictionary words will be skipped")
+                    fallback = None
+                g2p = self.misaki.en.G2P(trf=False, british=british, fallback=fallback, unk="")
+            elif lang_code == "j":
+                g2p = self.misaki.ja.JAG2P()
+            elif lang_code == "z":
+                g2p = self.misaki.zh.ZHG2P(
+                    version=None if self.repo_id.endswith("/Kokoro-82M") else "1.1",
+                    en_callable=lambda text: self.phonemizer("a")(text)[0])
+            else:
+                g2p = self.misaki.espeak.EspeakG2P(language=LANG_CODES[lang_code])
+            self.g2ps[lang_code] = g2p
+        return self.g2ps[lang_code]
 
     def voice_pack(self, voice):
         """A voice name, or its index ("3") -> its pack, or None if unknown."""
@@ -161,27 +185,30 @@ class Kokoro:
             return self.packs[voice]
         if voice.isdigit() and int(voice) < len(self.voices):
             return self.packs[self.voices[int(voice)]]
+        if "," in voice:
+            packs = [self.voice_pack(name) for name in voice.split(",")]
+            if all(pack is not None for pack in packs):
+                return self.np.mean(self.np.stack(packs), axis=0)
         return None
 
     # --- text -> phoneme chunks, as KPipeline does it
+    # Reference: hexgrad/kokoro@6d87f4ae7abc2d14dbc4b3ef2e5f19852e861ac2
 
-    def chunks(self, text):
-        """The phoneme strings to speak, in order: per line, Japanese (any
-        kana), Chinese (any Han characters) or English."""
+    def chunks(self, text, lang_code=None):
+        """KPipeline's phoneme chunks, with legacy script selection if omitted."""
         for line in re.split(r"\n+", text.strip()):
             if not line.strip():
                 continue
-            if JAPANESE.search(line):
-                yield from self.sentence_chunks(line, self.japanese)
-            elif CHINESE.search(line):
-                yield from self.sentence_chunks(line, self.chinese)
+            code = lang_code or ("j" if JAPANESE.search(line) else "z" if CHINESE.search(line) else "a")
+            g2p = self.phonemizer(code)
+            if code in "ab":
+                yield from self.english_chunks(line, g2p)
             else:
-                yield from self.english_chunks(line)
+                yield from self.sentence_chunks(line, g2p)
 
     def sentence_chunks(self, line, g2p):
-        """Sentences grouped into chunks of up to 400 characters (KPipeline's
-        non-English chunking; also split at 。！？), each to phonemes by g2p."""
-        parts = re.split(r"([.!?。！？]+)", line)
+        """KPipeline's non-English chunking, including its punctuation rules."""
+        parts = re.split(r"([.!?]+)", line)
         pieces, current = [], ""
         for i in range(0, len(parts), 2):
             sentence = parts[i] + (parts[i + 1] if i + 1 < len(parts) else "")
@@ -193,13 +220,15 @@ class Kokoro:
                 current = sentence
         if current:
             pieces.append(current.strip())
+        if not pieces:
+            pieces = [line[i:i+400] for i in range(0, len(line), 400)]
         for piece in pieces:
             if piece:
                 phonemes, _ = g2p(piece)
                 if phonemes:
                     yield phonemes[:MAX_PHONEMES]
 
-    def english_chunks(self, line):
+    def english_chunks(self, line, g2p):
         """misaki's tokens, gathered into chunks of up to 510 phonemes, split at
         the last sentence end (else clause, else comma) that fits:
         KPipeline.en_tokenize."""
@@ -218,7 +247,7 @@ class Kokoro:
                     return z
             return len(tokens)
 
-        _, tokens = self.english(line)
+        _, tokens = g2p(line)
         current, count = [], 0
         for token in tokens:
             token.phonemes = token.phonemes or ""
@@ -227,7 +256,7 @@ class Kokoro:
             if next_count > MAX_PHONEMES:
                 z = split_point(current, next_count)
                 if ps := to_ps(current[:z]):
-                    yield ps
+                    yield ps[:MAX_PHONEMES]
                 current = current[z:]
                 count = len(to_ps(current))
                 if not current:
@@ -239,12 +268,12 @@ class Kokoro:
 
     # --- speech
 
-    def generate(self, text, pack, speed, on_audio):
+    def generate(self, text, pack, speed, on_audio, lang_code=None):
         """Speak text; on_audio(pcm bytes) is called per chunk and returns False
         to stop early."""
         np = self.np
         with self.lock:
-            for phonemes in self.chunks(text):
+            for phonemes in self.chunks(text, lang_code):
                 ids = [self.vocab[p] for p in phonemes if p in self.vocab]
                 audio = self.session.run(None, {
                     "tokens": np.array([[0, *ids, 0]], dtype=np.int64),
@@ -278,6 +307,13 @@ def speech(req):
     if not isinstance(data, dict) or not isinstance(data.get("input"), str) or not data["input"].strip():
         raise HTTPError(400, 'expected JSON {"input": "...", "voice": "<name or index>"}')
     text = data["input"].strip()
+    lang_code = data.get("lang_code")
+    if lang_code is not None:
+        if not isinstance(lang_code, str):
+            raise HTTPError(400, "lang_code must be a supported Kokoro language code")
+        lang_code = LANG_ALIASES.get(lang_code.lower(), lang_code.lower())
+        if lang_code not in LANG_CODES:
+            raise HTTPError(400, "lang_code must be a supported Kokoro language code")
     voice = str(data.get("voice", tts.voices[0]))
     pack = tts.voice_pack(voice)
     if pack is None:
@@ -292,7 +328,7 @@ def speech(req):
 
     if fmt == "wav":
         pieces = []
-        tts.generate(text, pack, speed, lambda pcm: pieces.append(pcm) or True)
+        tts.generate(text, pack, speed, lambda pcm: pieces.append(pcm) or True, lang_code)
         return Stream([wav_bytes(b"".join(pieces))], "audio/wav")
 
     # Streamed: generate in a worker thread, relaying each chunk as it's done.
@@ -301,7 +337,7 @@ def speech(req):
 
     def work():
         try:
-            tts.generate(text, pack, speed, lambda pcm: chunks.put(pcm) or not stop.is_set())
+            tts.generate(text, pack, speed, lambda pcm: chunks.put(pcm) or not stop.is_set(), lang_code)
         except Exception:
             log.exception("speech failed: %r", text)
         finally:
@@ -330,6 +366,8 @@ def main():
     parser.add_argument("--voice", action="append", default=[], metavar="NAME=FILE",
                         help="an extra voicepack (.pt or raw .bin, [510, 1, 256]) spoken as NAME; repeatable")
     parser.add_argument("--lib", type=Path, help="folder of packages installed with pip install --target")
+    parser.add_argument("--repo-id", default="hexgrad/Kokoro-82M-v1.1-zh",
+                        help="original model package identity, as in KPipeline (v1.0: hexgrad/Kokoro-82M)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8083)
     parser.add_argument("--threads", type=int, default=0, help="CPU threads (0: ONNX Runtime automatic selection; default: 0)")
@@ -353,7 +391,7 @@ def main():
         sys.path.insert(0, str(args.lib))
 
     start = time.monotonic()
-    tts = Kokoro(args.kokoro, extra_voices, args.threads)
+    tts = Kokoro(args.kokoro, extra_voices, args.threads, args.repo_id)
     # Warm up (spaCy, jieba's and MeCab's dictionaries, the first inference) before answering /health.
     for text in ("Hello.", "你好。", "こんにちは。"):
         tts.generate(text, tts.packs[tts.voices[0]], 1.0, lambda pcm: True)

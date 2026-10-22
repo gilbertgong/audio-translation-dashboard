@@ -277,6 +277,9 @@ packages = [
 host = "127.0.0.1"
 port = 8083
 args = ["--lib", "{server_dir}/lib", "--threads", "0"]
+# --repo-id identifies the original model package as in Kokoro's reference pipeline.
+# The server defaults to hexgrad/Kokoro-82M-v1.1-zh; the v1.0 fragment selects
+# hexgrad/Kokoro-82M and its corresponding phonemizer/voice settings.
 # The voice used unless a better one is set (see [tts]): Beth, a voicepack
 # (below) that speaks both languages well.
 default_voice = "beth_thomas"
@@ -295,6 +298,7 @@ japanese = "beth_thomas"
 
 [api_servers.kokoro.voices]
 # Extra voicepacks for this Kokoro model (v1.1-zh): name = a [510, 1, 256]
+# Set voices = false in [api_servers.kokoro] to disable inherited extra packs.
 # voicepack (.pt, or raw float32 .bin), relative to the project folder, then
 # selected by name like a stock voice. See voices/beth_thomas/RC3/README.md.
 beth_thomas = "voices/beth_thomas/RC3/beth_thomas_rc3.pt"

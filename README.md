@@ -62,6 +62,11 @@ content logging, add this to `config_local.toml` and restart the app:
 save_session_data = true
 ```
 
+Kokoro v1.0 is available as `config/fragments/kokoro_v1.0.toml`. Replace `kokoro_v1.1`
+with `kokoro_v1.0` in a recipe's fragment list and regenerate configuration to use it. It
+uses the same ONNX engine with the original package's phonemizer and stock voices; existing
+recipes and the Beth voicepack remain on v1.1-zh.
+
 ## Use a remote desktop
 
 On the laptop, open **Generate config**, choose **remote-nvidia-24gb**, and enter the desktop's IP
@@ -102,4 +107,5 @@ works with ZIP installations and does not require Git.
 
 ## License
 
-BSD 2-Clause; see [LICENSE](LICENSE).
+BSD 2-Clause; see [LICENSE](LICENSE). Kokoro pipeline-derived portions are Apache-2.0;
+see [Kokoro license](src/licenses/Kokoro-LICENSE.txt).

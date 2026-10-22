@@ -513,6 +513,13 @@ def post_speak(req):
         return Stream(mock_speech_stream(text), TTS_PCM_TYPE)
 
     body = {"input": text, "voice": voice, "response_format": "pcm"}
+    if target and config["tts"]["server"] == "kokoro":
+        # KPipeline takes an explicit language; the dashboard already knows it.
+        code = {"english": "a", "chinese": "z", "japanese": "j", "spanish": "e",
+                "french": "f", "hindi": "h", "italian": "i", "portuguese": "p"}.get(
+                    config["languages"][target].lower())
+        if code:
+            body["lang_code"] = code
     start = time.monotonic()
     try:
         # Connect before returning the stream, so an unreachable server is a plain 502.

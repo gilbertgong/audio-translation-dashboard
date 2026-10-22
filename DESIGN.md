@@ -143,7 +143,32 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) v1.1 is an 82M-parameter model built on StyleTTS 2 (without its diffusion stage), with 103 voices: 3 English, 100 Chinese. It wasn't trained on Japanese, but given Japanese phonemes it speaks it, and well with a voicepack made for it (Beth). `kokoro_server.py` (ours, in `src/`) serves it: the model as [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) packages it (fp32 `model.onnx`, `voices.bin`, `tokens.txt`), run with ONNX Runtime, behind [misaki](https://github.com/hexgrad/misaki), Kokoro's own text front end:
 
-- **Front end:** text becomes phonemes exactly as in the official `kokoro` package (`KPipeline`): misaki's Japanese G2P for lines with kana (cutlet: fugashi with the unidic-lite dictionary, as `KPipeline` for `lang_code="j"`), its v1.1 Chinese G2P for other lines with Chinese characters (with its English G2P for English words inside them), its American English G2P with the espeak fallback otherwise; chunked the same way (English up to 510 phonemes, split at the last sentence end, clause or comma that fits; Chinese and Japanese in chunks of up to 400 characters, split at `.!?` and `。！？`), each chunk spoken with the voice's style vector for its phoneme count. The model was trained on misaki's phonemes, and sherpa-onnx's own front end (its word lists plus espeak) differs from them: words missing from its Chinese list, no tone sandhi (很好 stays hen3 hao3), one pronunciation per English word whatever the context. Stock voices mostly survive that; a voice found by a search on misaki's phonemes (Beth, `voices/beth_thomas/RC3`) does not: her Chinese through sherpa-onnx sounded bad, through misaki top tier, on the same ONNX model as with PyTorch.
+- **Front end:** Misaki setup and phoneme chunking follow the reference `KPipeline`, pinned for
+  equivalence tests at hexgrad/kokoro commit `6d87f4ae7abc2d14dbc4b3ef2e5f19852e861ac2`.
+  `--repo-id` identifies the original model package, as in KPipeline: `hexgrad/Kokoro-82M`
+  selects v1.0 Chinese G2P (`version=None`); `hexgrad/Kokoro-82M-v1.1-zh` selects v1.1.
+  This is model identity, not an independently chosen phonemizer. English uses Misaki with
+  the appropriate American/British setting and espeak fallback; Japanese uses `JAG2P`;
+  Spanish, French, Hindi, Italian and Brazilian Portuguese use reference `EspeakG2P` codes.
+  English waterfall chunking, non-English `.!?` boundaries, limits, truncation, vocabulary
+  mapping and voice style indexing follow the reference. Stock/local voices can be blended
+  with comma-separated names using the reference's equal-weight average.
+- **Deliberate adapter differences:** ONNX Runtime replaces PyTorch; voices and tokens come
+  from local sherpa bundles rather than runtime downloads. Our HTTP API streams PCM/WAV
+  audio and does not expose reference Python token/word-timestamp result objects. It accepts
+  an explicit reference `lang_code` (including reference aliases such as `en-gb`, `ja`, `zh`).
+  The dashboard supplies the configured target language for Kokoro. Requests without a code
+  retain the existing per-line script selection (kana → Japanese, Han → Chinese, otherwise
+  American English) for compatibility. Chinese receives the reference's optional English
+  callback for mixed text. The Japanese pyopenjtalk import stand-in remains: the selected
+  default Japanese G2P uses cutlet, not pyopenjtalk. These choices do not justify other
+  preprocessing changes. Pipeline-derived code is Apache-2.0; see `src/licenses/Kokoro-LICENSE.txt`.
+- **v1.0 package:** `config/fragments/kokoro_v1.0.toml` uses the same engine/packages with
+  `kokoro-multi-lang-v1_0` model/voices/tokens and its original repo identity. Stock defaults
+  are `af_heart`, `zf_xiaoxiao`, `jf_alpha` for English/Chinese/Japanese. `voices = false`
+  disables inherited extra voicepacks; Beth's existing searched pack belongs to v1.1-zh.
+  Existing recipes stay on v1.1. To use v1.0 in a recipe, replace its `kokoro_v1.1` fragment
+  name with `kokoro_v1.0` and regenerate configuration.
 - **Packages without a virtual environment:** misaki and its English, Chinese and Japanese dependencies (spaCy with its small English model, jieba, pypinyin, fugashi with unidic-lite, …), ONNX Runtime and NumPy, pinned in `[api_servers.kokoro] packages`, are installed by `install_api_servers.py` with `pip install --target api_servers/kokoro/lib` (about 790 MB, 250 MB of it Japanese); the server runs with the project's Python and puts that folder on its import path. misaki's `en` extra is left out on purpose: it brings `spacy-curated-transformers` and with it all of PyTorch, for a transformer model Kokoro's pipeline doesn't use. So is `pyopenjtalk`, which `misaki.ja` imports but only its non-default G2P calls: it has no Windows wheel, and its drop-in `pyopenjtalk-plus` brings about 370 MB more, so the server puts an empty module in its place (phonemes checked identical to having it installed).
 - **API:** OpenAI-style `POST /v1/audio/speech` (`"voice"` by name, e.g. `zf_001`, or index; `"speed"`; `pcm` streamed or `wav`), `GET /v1/audio/voices`, `GET /health` (once loaded and warmed up). The dashboard uses it as it would any OpenAI-style TTS server. Speech streams a chunk at a time, about 4–6× real time end to end on four CPU threads (more threads: about 9×). Because chunks follow `KPipeline`, a long English text is one chunk up to 510 phonemes: its first audio comes after the whole chunk (about 2.4 s for two sentences), not after its first sentence.
 - **Extra voices:** `[api_servers.kokoro.voices]` (name = a `[510, 1, 256]` voicepack, `.pt` or raw float32) are added to the 103 stock ones, passed at start as `--voice NAME=FILE`.
@@ -198,7 +223,7 @@ Sections:
 
 ### Fragments and recipes
 
-- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Voices don't depend on the model, so they stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.1; Qwen3-TTS 1.7B and 0.6B base. Each comment gives the download size.
+- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Default voice settings stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. A model fragment can override voices when its package differs. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.0 and v1.1; Qwen3-TTS 1.7B and 0.6B base. Each comment gives the download size.
 - **Recipes** (`config/recipes/<name>.json`, JSON so they aren't mistaken for config): `description`, `vram_gb` (the card size it's meant for), `fragments` (pasted in order) and `off` (servers given `start = false`). Anything in neither list keeps its default, so a recipe can deliberately leave an extra server running.
 
 | Recipe        | VRAM  | STT                       | Translation             | TTS                        |

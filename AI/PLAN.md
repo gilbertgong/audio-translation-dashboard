@@ -42,6 +42,11 @@ recipes good.
 
 ## Results so far
 
+- Kokoro v1.0 fragment uses the existing ONNX engine with package-specific reference
+  preprocessing and stock voices. Pipeline setup/chunking is checked against a pinned upstream
+  KPipeline; known target languages are passed explicitly. Deliberate differences are documented
+  in DESIGN.md. Existing recipes/configs stay on v1.1; v1.0 model audio has not been auditioned.
+
 - Session audio uses automatically deleted temporary files by default, retained as open handles
   only while needed for rechecks. `[diagnostics] save_session_data = true` restores saved WAVs
   and application content logging. Operational diagnostics and API-server logs are unchanged.

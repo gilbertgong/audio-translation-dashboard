@@ -99,6 +99,13 @@ The user tunes Kokoro voicepacks by hand and judges audio quality. When they say
 take it as established and look for what in the pipeline stops it.
 *Why:* documentation said Kokoro v1.1-zh couldn't speak Japanese; the user was right, and the gap was our front end.
 
+### Follow model reference implementations
+Keep model-package preprocessing, phonemization, chunking and other behavior aligned with the
+reference implementation unless a deliberate difference has been chosen and documented.
+ONNX execution and bundled ONNX voices are deliberate Kokoro choices; they are not reasons
+to simplify or change the reference front end. Pin the reference used for equivalence tests.
+*Why:* the user strongly prefers upstream behavior and wants differences to be explicit.
+
 ### Code and files
 - LF line endings everywhere (`.gitattributes` enforces it).
 - Standard-library Python only for the app and scripts; engine packages go into each server's own folder.

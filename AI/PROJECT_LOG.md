@@ -357,3 +357,22 @@ DESIGN.md).
 
 - Release metadata bumped to app 0.4.0 at user request; launcher stays 0.3.0.
   Release notes include the playback panel and targeted session retention defaults.
+
+## 2026-10-22: Kokoro v1.0 and reference alignment
+
+- User approved v1.0 support and strongly prefers reference model-package behavior everywhere
+  except deliberately chosen differences. Saved that principle in MEMORY.md.
+- Added kokoro_v1.0 fragment: existing ONNX/Misaki runtime, v1.0 bundle/repo identity and
+  stock voice defaults. voices=false disables the inherited v1.1 Beth pack with one small
+  voice-files helper change. Existing recipes, generated and local config files are unchanged.
+- --repo-id follows KPipeline's model-package identity rule for Chinese G2P. Matched reference
+  chunking, American/British and other language G2P setup, fallback handling and voice blending.
+  Dashboard passes known target language to Kokoro; old clients retain script selection.
+- Documented the intentional ONNX/local-voice/HTTP transport differences and compatibility
+  fallback/English callback. Included the reference license and pinned source for offline tests.
+- Thirty offline Python tests passed, including direct chunk-output comparisons with upstream,
+  fragment merging, language forwarding and blends. Actual installed Misaki phonemes for a/b/z/j
+  matched reference outputs for both package identities. Sandbox initially blocked espeak DLL
+  loading; repeating that CPU-only comparison outside the sandbox passed cleanly. No model
+  inference, GPU use, v1.0 model download, or running-service changes. Voice quality remains
+  for the user's audition.

@@ -163,7 +163,7 @@ def start_server(cfg, name, server, log, log_dir):
 
 def voice_files(cfg, server):
     """The server's [api_servers.<name>.voices] entries, as {voice name: WAV path}."""
-    return {voice: config_path(cfg, path) for voice, path in server.get("voices", {}).items()}
+    return {voice: config_path(cfg, path) for voice, path in (server.get("voices") or {}).items()}
 
 
 def register_voices(cfg, name, server, log):
