@@ -1,3 +1,4 @@
+# Model files: 0 GB locally (remote; model files live on the server).
 # Client for a desktop running the nvidia-24gb recipe. The generator fills {host}.
 # start = false skips local installation, model downloads and process startup;
 # the dashboard still uses the configured endpoints.

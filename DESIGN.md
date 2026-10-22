@@ -223,7 +223,7 @@ Sections:
 
 ### Fragments and recipes
 
-- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Default voice settings stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. A model fragment can override voices when its package differs. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.0 and v1.1; Qwen3-TTS 1.7B and 0.6B base. Each comment gives the download size.
+- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Default voice settings stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. A model fragment can override voices when its package differs. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.0 and v1.1; Qwen3-TTS 1.7B and 0.6B base. Each fragment has a model file size comment (decimal GB, including required codecs).
 - **Recipes** (`config/recipes/<name>.json`, JSON so they aren't mistaken for config): `description`, `vram_gb` (the card size it's meant for), `fragments` (pasted in order) and `off` (servers given `start = false`). Anything in neither list keeps its default, so a recipe can deliberately leave an extra server running.
 
 | Recipe        | VRAM  | STT                       | Translation             | TTS                        |
@@ -234,6 +234,35 @@ Sections:
 | `nvidia-6gb`  | 6 GB  | whisper large-v3-q5_0     | Qwen3.5-4B UD-IQ3_XXS (context 2048) | Kokoro (beth_thomas), CPU       |
 
 - **Generate config** (launcher): lists NVIDIA GPUs with `nvidia-smi`, showing a GPU dropdown only when more than one is detected (index, name and VRAM). It remembers the previously generated GPU when available, otherwise defaults to the card with the most memory; a missing driver just means choosing a recipe by hand. Selecting a card updates the preview GPU index and pre-selects the largest recipe that fits (cards report a little under their nominal size, hence a 0.5 GiB margin), takes the two languages from dropdowns of whisper's languages (starting from the current `config_generated.toml`), and previews the result: `[languages]`, then the fragments, then the `off` sections. Save writes `config_generated.toml` and immediately refreshes the launcher settings and server buttons, then closes the config window; the next Launch uses it. Existing services keep their current configuration. A recipe whose fragments are missing or don't fit together can't be saved.
+
+The generator's **Advanced mode** replaces the recipe dropdown with independent backend
+selectors, initialized from that recipe. Local choices are discovered from single-server,
+enabled fragments. Fragments with `[tts] server` identify speech backends, which share one
+selector. Other endpoint sections in the shipped defaults get their own selector. Remote choices
+are synthesized from backend `[api_servers.<name>]` sections with host/port; no remote fragment
+file is needed. Each reveals a separate host/IP (initially `127.0.0.1`) and editable default port.
+Remote output contains only `start = false`, host, port and, for speech, `[tts] server`; other
+fields retain defaults. Unselected backends receive `start = false`. GPU pinning is included only
+when a local fragment is selected. Language selection and Save behavior are shared with recipe mode.
+No compatibility, VRAM or endpoint checks are added. The read-only preview uses Tk text tags for
+muted gray comments, blue sections, green strings and purple numeric/boolean literals; this lexical
+coloring neither parses nor alters the generated text.
+
+Advanced choices list local fragments first and remote backends last. Each fragment documents
+approximate model weights/codec size using `# Model files: N GB ...` (decimal GB); CPU placement
+is marked in that comment. Advanced mode puts file sizes in parentheses in local dropdown choices,
+with estimated VRAM to the right. Hovering a CPU model's zero-VRAM label shows `Runs on CPU`.
+A separate column shows `Total Estimated VRAM: x.xx GB`, horizontally centered and top aligned.
+Hovering any part of this label (also keyboard focus) shows the explanation without a separate
+help icon. CPU models, remote and Off contribute no local VRAM. VRAM is model size plus 10%
+for llama with an explicit context of 1–2048 tokens,
+20% otherwise. It assumes GPU model loading for other local fragments and excludes voices,
+support files and other applications. When the size comment is missing, the generator uses the
+downloader's existing path mapping (including Whisper aliases and archive members) to sum the
+already-downloaded required model files, honoring `models.dir`. Every required file must exist
+and be nonempty; `.part` files do not count. This fallback makes no network requests. If any file
+is missing/unreadable, size remains unavailable with known subtotals. Comments take precedence;
+estimates never gate saving or attempt to check available memory or user model overrides.
 
 ## Running
 

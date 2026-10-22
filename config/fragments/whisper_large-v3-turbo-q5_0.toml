@@ -1,3 +1,4 @@
+# Model files: 0.57 GB (GPU).
 # Speech-to-text: whisper.cpp's whisper-server with whisper large-v3-turbo-q5_0 (0.57 GB).
 # large-v3-turbo (fewer decoder layers, faster), 5-bit quantized.
 

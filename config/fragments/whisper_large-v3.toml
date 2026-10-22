@@ -1,3 +1,4 @@
+# Model files: 3.10 GB (GPU).
 # Speech-to-text: whisper.cpp's whisper-server with whisper large-v3 (3.10 GB).
 
 [api_servers.whisper]

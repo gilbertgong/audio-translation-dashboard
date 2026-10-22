@@ -1,3 +1,4 @@
+# Model files: 0.33 GB (CPU; model.onnx, excludes bundled voices and support files).
 # Text-to-speech: Kokoro v1.1 (Chinese + English, 103 voices), served by this
 # project's kokoro_server.py on the CPU: misaki's phonemes on sherpa-onnx's
 # ONNX packaging of the model (0.36 GB download; model.onnx 0.33 GB, fp32 on

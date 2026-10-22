@@ -1,7 +1,7 @@
 {
   "_comment": "Inspired by Starsector Version Checker https://fractalsoftworks.com/forum/index.php?topic=8181.0",
-  "appVersion": "0.4.0",
-  "launcherVersion": "0.3.0",
-  "directDownloadURL": "https://github.com/gilbertgong/audio-translation-dashboard/archive/refs/tags/v0.4.0.zip",
+  "appVersion": "0.4.1",
+  "launcherVersion": "0.4.1",
+  "directDownloadURL": "https://github.com/gilbertgong/audio-translation-dashboard/archive/refs/tags/v0.4.1.zip",
   "masterVersionFile": "https://raw.githubusercontent.com/gilbertgong/audio-translation-dashboard/main/app.version"
 }

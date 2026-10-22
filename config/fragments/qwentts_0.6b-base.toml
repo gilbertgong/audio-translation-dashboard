@@ -1,3 +1,4 @@
+# Model files: 1.28 GB (GPU; talker 0.99 GB + codec 0.29 GB).
 # Text-to-speech: qwentts.cpp's tts-server (Zyeine fork, Vulkan build) with the
 # Qwen3-TTS 0.6b "base" talker (0.99 GB) and its codec (0.29 GB); clones voices.
 

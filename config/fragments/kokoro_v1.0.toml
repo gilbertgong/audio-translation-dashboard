@@ -1,0 +1,24 @@
+# Model files: 0.33 GB (CPU; model.onnx, excludes bundled voices and support files).
+# Kokoro v1.0: the same CPU ONNX engine with the original model package's
+# phonemizer setup, stock voices and vocabulary. Packages come from defaults.toml.
+
+[api_servers.kokoro]
+start = true
+script = "src/kokoro_server.py"
+host = "127.0.0.1"
+port = 8083
+args = ["--lib", "{server_dir}/lib", "--threads", "0", "--repo-id", "hexgrad/Kokoro-82M"]
+default_voice = "af_heart"
+# Do not inherit Beth's v1.1-specific voicepack. User overrides may add v1.0 packs.
+voices = false
+
+[api_servers.kokoro.language_voices]
+english = "af_heart"
+chinese = "zf_xiaoxiao"
+japanese = "jf_alpha"
+
+[models.kokoro]
+kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2#kokoro-multi-lang-v1_0/model.onnx"
+
+[tts]
+server = "kokoro"

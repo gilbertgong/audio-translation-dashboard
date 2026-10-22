@@ -33,6 +33,9 @@ servers use just that card) and saves it to config_generated.toml, which the
 next Launch uses: on top of the defaults, under config_local.toml. Saving
 also refreshes the server buttons for the new settings. Remote recipes show a
 host entry and skip local GPU pinning, engine installation and startup.
+Advanced mode replaces the recipe selector with per-backend local fragments,
+remote host/port entries or Off, grouping speech engines together. The preview
+colors TOML comments, sections, strings and literals without changing its text.
 
 Check for updates: compares app.version with its masterVersionFile. A newer
 app can be installed from its ZIP while this launcher remains running and
@@ -68,6 +71,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))  # the project's Python modules
 import configuration  # noqa: E402
 import app_updates  # noqa: E402
+from common import model_files  # noqa: E402
 
 # Run the steps with python.exe, not the pythonw.exe running this window: with
 # a (hidden) console of their own, the servers they start don't each pop up one.
@@ -296,6 +300,156 @@ def assemble(name, recipe, languages=None, gpu=None, host=None):
     return text
 
 
+def backend_choices():
+    """Discover local fragments and remote endpoints; TTS shares one selector."""
+    defaults = tomllib.loads(configuration.DEFAULTS_FILE.read_text(encoding="utf-8"))
+    fragments = {path.stem: tomllib.loads(path.read_text(encoding="utf-8"))
+                 for path in sorted(FRAGMENTS_DIR.glob("*.toml"))}
+    tts = {data["tts"]["server"] for data in fragments.values() if "tts" in data}
+    tts.add(defaults["tts"]["server"])
+    groups = {}
+    for server, settings in defaults["api_servers"].items():
+        if not isinstance(settings, dict) or "host" not in settings or "port" not in settings:
+            continue
+        group = "Speech" if server in tts else {"whisper": "Transcription", "llama": "Translation"}.get(server, server)
+        choices = groups.setdefault(group, {"Off": ("off", None, None)})
+        for name, data in fragments.items():
+            servers = data.get("api_servers", {})
+            if list(servers) == [server] and servers[server].get("start", True):
+                choices[name] = ("local", server, name)
+        choices[f"Remote {server}"] = ("remote", server, None)
+    order = {"Transcription": 0, "Translation": 1, "Speech": 2}
+    groups = dict(sorted(groups.items(), key=lambda item: order.get(item[0], 3)))
+    for group, choices in groups.items():
+        groups[group] = dict(sorted(choices.items(), key=lambda item: item[1][0] == "remote"))
+    return defaults, groups, fragments
+
+
+def downloaded_model_size(data):
+    """Size of complete local model files, using the downloader's path mapping."""
+    cfg = configuration.merge(tomllib.loads(configuration.DEFAULTS_FILE.read_text(encoding="utf-8")), data)
+    cfg["_config_dir"] = ROOT
+    cfg["models"]["dir"] = setting("models", "dir", "models")
+    paths = set()
+    try:
+        for server, settings in data.get("api_servers", {}).items():
+            if settings.get("start", True):
+                files = model_files(cfg, server)
+                if not files:
+                    return None
+                paths.update(path for _, _, path in files)
+        if not paths or any(not path.is_file() for path in paths):
+            return None
+        sizes = [path.stat().st_size for path in paths]
+        return sum(sizes) / 1_000_000_000 if all(sizes) else None
+    except (OSError, KeyError, TypeError, ValueError, SystemExit):
+        return None  # Missing/unreadable paths don't prevent choosing the fragment.
+
+
+def fragment_resources(name, data):
+    """Advisory model GB and VRAM GB from the fragment's size comment and args."""
+    text = (FRAGMENTS_DIR / f"{name}.toml").read_text(encoding="utf-8")
+    size = re.search(r"^# Model files: ([\d.]+) GB([^\n]*)", text, re.MULTILINE)
+    gb = float(size[1]) if size else downloaded_model_size(data)
+    if gb is None:
+        return None, None
+    cpu = "CPU" in size[2] if size else any(
+        server.get("script") == "src/kokoro_server.py" for server in data.get("api_servers", {}).values())
+    if cpu or gb == 0:
+        return gb, 0.0
+    args = data.get("api_servers", {}).get("llama", {}).get("args", [])
+    context = None
+    for index, arg in enumerate(args):
+        if arg in ("--ctx-size", "-c") and index + 1 < len(args):
+            try:
+                context = int(args[index + 1])
+            except ValueError:
+                pass
+    overhead = 0.10 if context is not None and 0 < context <= 2048 else 0.20
+    return gb, gb * (1 + overhead)
+
+
+def assemble_advanced(selections, languages=None, gpu=None):
+    """Selections are (kind, server, fragment, host, port); remote uses defaults."""
+    defaults, groups, _ = backend_choices()
+    selected = {server for kind, server, *_ in selections if kind != "off"}
+    recipe = {"description": "Advanced backend selections",
+              "fragments": [fragment for kind, server, fragment, *_ in selections if kind == "local"],
+              "off": [server for server, settings in defaults["api_servers"].items()
+                      if isinstance(settings, dict) and server not in selected]}
+    local = any(kind == "local" for kind, *_ in selections)
+    text = assemble("advanced", recipe, languages, gpu if local else None)
+    text = text.replace("from config/recipes/advanced.json:", "using advanced mode:", 1)
+    for kind, server, fragment, host, port in selections:
+        if kind == "remote":
+            text += (f"\n# --- remote {server}\n\n[api_servers.{server}]\nstart = false\n"
+                     f"host = {json.dumps(host)}\nport = {port}\n")
+    tts = {entry[1] for entry in groups.get("Speech", {}).values()}
+    speech = next((server for kind, server, *_ in selections if kind == "remote" and server in tts), None)
+    if speech:
+        text += f'\n[tts]\nserver = {json.dumps(speech)}\n'
+    return text
+
+
+# A lexical preview only: comments inside strings remain part of the string.
+TOML_TOKENS = re.compile(
+    r'(?P<string>"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:\\.|[^"\\\n])*"|\'[^\'\n]*\')'
+    r'|(?P<comment>\#[^\n]*)|(?P<section>^\s*\[\[?[^\n]*?\]\]?)'
+    r'|(?P<literal>\b(?:true|false|[+-]?\d[\w.+:-]*)\b)', re.MULTILINE)
+
+
+def colorize_toml(widget, text):
+    for tag, color in {"comment": "#6b7280", "section": "#2563eb",
+                       "string": "#15803d", "literal": "#7c3aed"}.items():
+        widget.tag_configure(tag, foreground=color)
+        widget.tag_remove(tag, "1.0", "end")
+    for match in TOML_TOKENS.finditer(text):
+        widget.tag_add(match.lastgroup, f"1.0+{match.start()}c", f"1.0+{match.end()}c")
+
+
+def tooltip(widget, text):
+    """Show help while hovering over the label or giving it keyboard focus."""
+    tip = None
+
+    def hide(event=None):
+        nonlocal tip
+        if tip is not None:
+            popup = tip
+            tip = None
+            popup.destroy()
+
+    def show(event=None):
+        nonlocal tip
+        if tip is not None:
+            return
+        content = text() if callable(text) else text
+        if not content:
+            return
+        tip = tk.Toplevel(widget)
+        # Don't map at Tk's initial location: it can steal the pointer and
+        # trigger Leave on the hovered label before we've positioned it.
+        tip.withdraw()
+        tip.overrideredirect(True)
+        tip.transient(widget.winfo_toplevel())
+        frame = tk.Frame(tip, background="white", highlightbackground="#d5dbe5", highlightthickness=1)
+        frame.pack()
+        tk.Label(frame, text=content, wraplength=400, padx=12, pady=8, background="white",
+                 foreground="#334155", justify="left", font=("Segoe UI", 10)).pack()
+        tip.update_idletasks()
+        x = max(0, min(widget.winfo_rootx(), widget.winfo_screenwidth() - tip.winfo_reqwidth() - 12))
+        tip.geometry(f"+{x}+{widget.winfo_rooty() + widget.winfo_height() + 5}")
+        tip.bind("<Escape>", hide)
+        tip.deiconify()
+        tip.lift()
+
+    widget.bind("<Enter>", show)
+    widget.bind("<FocusIn>", show)
+    widget.bind("<Leave>", hide)
+    widget.bind("<FocusOut>", hide)
+    widget.bind("<Escape>", hide)
+    widget.bind("<Destroy>", hide)
+
+
 class GenerateConfigWindow:
     """Detect the GPU, suggest a recipe, preview it, and save it to config_generated.toml."""
 
@@ -304,6 +458,13 @@ class GenerateConfigWindow:
         self.window.title("Generate config")
         self.on_save = on_save  # called after saving, so the launcher picks up the new settings
         self.recipes = load_recipes()
+        self.defaults, self.backend_groups, self.fragments = backend_choices()
+        self.resources = {name: fragment_resources(name, data) for name, data in self.fragments.items()}
+        self.backend_groups = {
+            group: {(f"{label} ({self.resources[fragment][0]:.2f} GB)"
+                     if kind == "local" and self.resources[fragment][0] is not None else label):
+                    (kind, server, fragment) for label, (kind, server, fragment) in choices.items()}
+            for group, choices in self.backend_groups.items()}
         self.text = ""
         self.gpu_index = None  # the detected card's nvidia-smi index, once known
         self.gpus = []
@@ -320,12 +481,55 @@ class GenerateConfigWindow:
         self.gpu_combo.bind("<<ComboboxSelected>>", lambda e: self.select_gpu())
         row = ttk.Frame(top)
         row.pack(fill="x", pady=(8, 0))
+        self.recipe_row = row
         ttk.Label(row, text="Recipe:").pack(side="left")
         self.choice = tk.StringVar()
         self.combo = ttk.Combobox(row, textvariable=self.choice, state="readonly", width=24,
                                   values=list(self.recipes))
         self.combo.pack(side="left", padx=(6, 0))
         self.combo.bind("<<ComboboxSelected>>", lambda e: self.show())
+        self.advanced = tk.BooleanVar(value=False)
+        self.mode_row = ttk.Frame(top)
+        self.mode_row.pack(fill="x", pady=(8, 0))
+        ttk.Checkbutton(self.mode_row, text="Advanced mode", variable=self.advanced,
+                        command=self.toggle_advanced).pack(side="left")
+        self.backend_frame = ttk.Frame(top)
+        totals = ttk.Frame(self.backend_frame)
+        totals.pack(side="right", anchor="n", fill="x", expand=True, padx=(24, 0), pady=3)
+        self.resource_totals = ttk.Label(totals, text="", justify="center", anchor="center", takefocus=True)
+        self.resource_totals.pack(fill="x", anchor="n")
+        tooltip(self.resource_totals,
+                "Approximate local VRAM usage. GB = decimal.\n\n"
+                "Estimated VRAM adds 10% for llama context ≤2048, or 20% otherwise. "
+                "CPU models, remote backends and Off use no local VRAM.\n\n"
+                "Excludes voices, support files and other apps. Actual usage varies. "
+                "These estimates do not check capacity or account for config_local.toml overrides. "
+                "An asterisk marks a known subtotal when a model size is unavailable.")
+        selectors = ttk.Frame(self.backend_frame)
+        selectors.pack(side="left", fill="x")
+        self.backends = {}
+        self.backend_sizes = {}
+        for group, choices in self.backend_groups.items():
+            row = ttk.Frame(selectors)
+            row.pack(fill="x", pady=3)
+            ttk.Label(row, text=f"{group}:", width=14).pack(side="left")
+            choice = tk.StringVar(value="Off")
+            combo = ttk.Combobox(row, textvariable=choice, values=list(choices), state="readonly", width=44)
+            combo.pack(side="left", padx=(0, 8))
+            size = ttk.Label(row, text="", width=23)
+            size.pack(side="left", padx=(0, 8))
+            self.backend_sizes[group] = size
+            remote = ttk.Frame(row)
+            host, port = tk.StringVar(value="127.0.0.1"), tk.StringVar()
+            ttk.Label(remote, text="Host / IP:").pack(side="left")
+            ttk.Entry(remote, textvariable=host, width=22).pack(side="left", padx=4)
+            ttk.Label(remote, text="Port:").pack(side="left")
+            ttk.Entry(remote, textvariable=port, width=6).pack(side="left", padx=4)
+            self.backends[group] = (choice, host, port, remote)
+            tooltip(size, lambda group=group: self.cpu_hint(group))
+            combo.bind("<<ComboboxSelected>>", lambda e, group=group: self.select_backend(group))
+            host.trace_add("write", lambda *args: self.show())
+            port.trace_add("write", lambda *args: self.show())
         self.details = ttk.Label(top, text="")  # the selected recipe's VRAM and description
         self.details.pack(anchor="w", pady=(6, 0))
 
@@ -362,6 +566,7 @@ class GenerateConfigWindow:
         set_enabled(self.save_button, False)
 
         self.preview = ScrolledText(self.window, font=("Consolas", 10), width=100, height=32, state="disabled")
+        self.preview.configure(background="white", foreground="#1d2125")
         self.preview.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         if not self.recipes:
@@ -420,21 +625,81 @@ class GenerateConfigWindow:
     def selected(self):
         return list(self.recipes)[self.combo.current()]
 
+    def toggle_advanced(self):
+        if self.advanced.get():
+            self.recipe_row.pack_forget()
+            self.backend_frame.pack(fill="x", after=self.mode_row)
+            recipe = self.recipes[self.selected()] if self.combo.current() >= 0 else {}
+            merged = self.defaults
+            for fragment in recipe.get("fragments", []):
+                merged = configuration.merge(merged, self.fragments[fragment])
+            for group, choices in self.backend_groups.items():
+                choice, host, port, _ = self.backends[group]
+                label = "Off"
+                for candidate, (kind, server, fragment) in choices.items():
+                    if kind == "local" and fragment in recipe.get("fragments", []):
+                        label = candidate
+                    elif kind == "remote" and "remote_host" in recipe and server not in recipe.get("off", []):
+                        if group != "Speech" or server == merged.get("tts", {}).get("server"):
+                            label = candidate
+                choice.set(label)
+                host.set(self.remote_host.get())
+                self.select_backend(group)
+        else:
+            self.backend_frame.pack_forget()
+            self.recipe_row.pack(fill="x", pady=(8, 0), before=self.mode_row)
+        self.show()
+
+    def cpu_hint(self, group):
+        choice = self.backends[group][0].get()
+        kind, server, fragment = self.backend_groups[group][choice]
+        if kind == "local" and self.resources[fragment][1] == 0:
+            return "Runs on CPU"
+        return None
+
+    def select_backend(self, group):
+        choice, host, port, remote = self.backends[group]
+        kind, server, _ = self.backend_groups[group][choice.get()]
+        if kind == "remote":
+            port.set(str(self.defaults["api_servers"][server]["port"]))
+            remote.pack(side="left")
+        else:
+            remote.pack_forget()
+        self.show()
+
     def show(self):
         if self.combo.current() < 0:
             return  # no recipe selected yet (the GPU check is still running)
         name = self.selected()
         recipe = self.recipes[name]
-        remote = "remote_host" in recipe
+        advanced = self.advanced.get()
+        selections = [(self.backend_groups[group][choice.get()] + (host.get().strip(), port.get().strip()))
+                      for group, (choice, host, port, _) in self.backends.items()]
+        remote = not any(kind == "local" for kind, *_ in selections) if advanced else "remote_host" in recipe
         self.gpu.configure(text="Remote servers: no local GPU required." if remote else self.gpu_description)
         if remote:
-            self.host_row.pack(fill="x", pady=(8, 0), after=self.details)
             self.gpu_row.pack_forget()
         else:
             self.host_row.pack_forget()
             if len(self.gpus) > 1:
                 self.gpu_row.pack(fill="x", pady=(8, 0), after=self.gpu)
-        self.details.configure(text=self.describe(name))
+        if remote and not advanced:
+            self.host_row.pack(fill="x", pady=(8, 0), after=self.details)
+        else:
+            self.host_row.pack_forget()
+        self.details.configure(text="Choose a local fragment, remote endpoint, or Off for each backend."
+                               if advanced else self.describe(name))
+        if advanced:
+            total_vram, unknown = 0.0, False
+            for group, (choice, *_rest) in self.backends.items():
+                kind, server, fragment = self.backend_groups[group][choice.get()]
+                size, vram = self.resources[fragment] if kind == "local" else (0.0, 0.0)
+                unknown |= size is None
+                total_vram += vram or 0
+                detail = "Est. VRAM: unavailable" if size is None else f"Est. VRAM: {vram:.2f} GB"
+                self.backend_sizes[group].configure(text=detail)
+            self.resource_totals.configure(text=(
+                f"Total Estimated VRAM: {total_vram:.2f} GB{'*' if unknown else ''}"))
         languages = [var.get().strip() for var in self.languages]
         known = {name.lower() for name in self.language_names}
         try:
@@ -443,8 +708,9 @@ class GenerateConfigWindow:
             unknown = [language for language in languages if language.lower() not in known]
             if unknown and known:  # e.g. a hand-written "Chinese-simplified" from an earlier file
                 raise ValueError(f"not a whisper language: {', '.join(unknown)}; choose one from the list")
-            self.text = assemble(name, recipe, languages, self.gpu_index,
-                                 self.remote_host.get().strip() if remote else None)
+            self.text = (assemble_advanced(selections, languages, self.gpu_index) if advanced else
+                         assemble(name, recipe, languages, self.gpu_index,
+                                  self.remote_host.get().strip() if remote else None))
             self.status.configure(text=f"Save writes {GENERATED_FILE.name}.")
             set_enabled(self.save_button, True)
         except (ValueError, tomllib.TOMLDecodeError) as err:
@@ -454,6 +720,7 @@ class GenerateConfigWindow:
         self.preview.configure(state="normal")
         self.preview.delete("1.0", "end")
         self.preview.insert("1.0", self.text)
+        colorize_toml(self.preview, self.text)
         self.preview.configure(state="disabled")
 
     def save(self):

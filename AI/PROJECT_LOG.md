@@ -376,3 +376,67 @@ DESIGN.md).
   loading; repeating that CPU-only comparison outside the sandbox passed cleanly. No model
   inference, GPU use, v1.0 model download, or running-service changes. Voice quality remains
   for the user's audition.
+
+## 2026-10-22: Advanced config generation and preview coloring
+
+- Added Advanced mode alongside recipes: seeds individual backend choices from the selected recipe,
+  groups Kokoro/Qwen under Speech, discovers local fragments and offers Off.
+- Remote endpoints are synthesized from backend host/port defaults, with per-server host and port
+  entries. No new remote fragment files. Generated remote sections only set connection/start fields
+  and the selected speech backend; voices and other fields inherit defaults. Local and remote can mix.
+- Added lexical TOML preview coloring without modifying output or introducing configuration checks.
+- Six generator checks passed: recipe equivalence, mixed/all-remote assembly, defaults inheritance,
+  quoting, syntax tags, actual hidden Tk mode switches and scratch-file Save/callback. No model
+  processes, GPU workloads, existing user config files or running services were touched.
+
+## 2026-10-22: Fragment sizes and advanced resource estimates
+
+- Moved both remote speech choices below all local fragments.
+- Recorded the requirement for model file sizes in fragment comments in MEMORY.md and supplied
+  consistent size comments for all fragments, including codec totals, CPU placement and remote-only
+  local size zero. Existing sizes are approximate decimal GB, not compressed archive sizes.
+- Advanced mode shows per-selection files/VRAM and local totals. Uses +10% for llama context up
+  to 2048 and +20% otherwise; CPU Kokoro adds disk size but zero VRAM. Remote/Off add neither.
+  Labels explain this is a rough guide, excludes auxiliary files and other apps, and does not check
+  capacity or change generated settings. No services or user config files changed.
+- Seven focused generator checks passed, including CPU exclusion, context-dependent overhead, codec
+  totals, local/remote totals in Tk widgets and remote choice ordering.
+
+- Layout follow-up: moved file sizes into dropdown labels, per-selection VRAM to their right,
+  and Files/VRAM totals into a separate column. Replaced the inline explanation with a `?` hover/
+  keyboard-focus tooltip. Updated existing test expectations for the labels; no tests run for this
+  layout-only follow-up, per user preference.
+
+- Styled the generator help trigger as an outlined circular `?`, matching the dashboard reference.
+  Help now opens/closes on click (also Enter/Space), stays open for reading and has Escape/close-button
+  dismissal. No tests run for this presentation change, per user preference.
+
+- User changed the help interaction to a tooltip on hover over the `Total` heading. Removed the
+  separate `?` and click popup controls; keyboard focus also shows the explanation. No tests run
+  for this layout-only change.
+
+- Replaced the Files/VRAM totals block with one centered, top-aligned `Total Estimated VRAM`
+  label; hovering anywhere on it shows the explanation. CPU models' zero-VRAM labels show
+  `Runs on CPU` on hover; remote/Off zeroes do not. Updated label expectations without running
+  tests for this presentation-only follow-up.
+
+- Investigated missing total/CPU hover help. Both handlers produced the expected popups in an
+  isolated Tk window, so the reported pointer behavior was not reproduced. Changed popup creation
+  to stay withdrawn until positioned, then raise it, avoiding an initial window mapping that could
+  interrupt hover on Windows. Added Enter/Leave coverage for both actual generator labels; all
+  seven focused generator checks passed. User-visible hover still needs confirmation in normal use.
+
+- User confirmed hover works. Added model-size fallback when a fragment has no size comment:
+  reuse common.model_files paths and configured models.dir, summing only when all required files
+  are present/nonempty. No HTTP requests or downloads; comments still take precedence, and
+  incomplete downloads remain unavailable. Eight generator checks passed, including scratch
+  multi-file totals, missing/.part files, archive members, Whisper aliases, comment precedence,
+  CPU exclusion and an assertion that no network call occurs. User files/services untouched.
+
+- At user request, bumped app 0.4.0 → 0.4.1 and launcher 0.3.0 → 0.4.1, including the
+  matching v0.4.1 ZIP URL. Preparing commit/push with the advanced generator, size estimates,
+  and remaining Kokoro fragment/reference/license files from the preceding work. All 38 Python
+  checks passed before publishing; existing services and user configuration were untouched.
+- User clarified launcher bumps use the current release version (0.4.1 here), rather than an
+  independent patch increment. Corrected the unpublished commit/tag after the initial push failed
+  to resolve GitHub from the sandbox.

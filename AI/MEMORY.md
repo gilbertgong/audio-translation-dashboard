@@ -107,6 +107,12 @@ to simplify or change the reference front end. Pin the reference used for equiva
 *Why:* the user strongly prefers upstream behavior and wants differences to be explicit.
 
 ### Code and files
+- When bumping the launcher version, set it to the current app release version, not an independent
+  increment (for example, this launcher update moves 0.3.0 to 0.4.1 alongside app 0.4.1).
+- Every fragment must document its approximate model file size in a `# Model files: N GB ...`
+  comment (decimal GB). Include required model components such as codecs in the total and explain
+  the breakdown; mark CPU models as CPU, and remote-only fragments as 0 GB locally. Keep these
+  comments current when changing models. This is a maintenance decision, not runtime config validation.
 - LF line endings everywhere (`.gitattributes` enforces it).
 - Standard-library Python only for the app and scripts; engine packages go into each server's own folder.
 - Match the surrounding code's style and comment density; keep `config/defaults.toml` comments as the settings'

@@ -52,6 +52,18 @@ The launcher's Generate config covers the usual choices. For anything else, put 
 `config_local.toml` in the project folder; `config/defaults.toml` lists every setting with comments.
 Launch rereads the config files, so edits are picked up on the next launch without restarting the launcher.
 
+Tick **Advanced mode** to choose individual local fragments for transcription, translation and
+speech, starting from the selected recipe. Speech groups Kokoro and Qwen together. Each selector
+also offers **Off** and remote backends with separate host/IP and port fields. Remote choices use
+the existing backend defaults for voices and other settings; `config_local.toml` can override them.
+The config preview colors TOML comments, section headings, strings, numbers and booleans.
+Advanced mode also shows each selection's model file size and a rough local VRAM
+estimate: model size plus 10% for llama with context up to 2048, or 20% otherwise. CPU Kokoro
+uses no VRAM; remote backends also contribute nothing to the local VRAM total.
+Sizes use decimal GB and exclude voices/support files. These are guides, not capacity checks.
+If a fragment has no size comment, already-downloaded model files supply the size when all
+required files are present; otherwise the estimate stays unavailable. No downloads are triggered.
+
 By default, session recordings use temporary files that are automatically deleted after transcription
 or any recheck. Application logs keep activity and diagnostics but omit transcript, translation and
 spoken-text fields. API-server logs are unchanged. To restore saved recordings and application
@@ -62,8 +74,8 @@ content logging, add this to `config_local.toml` and restart the app:
 save_session_data = true
 ```
 
-Kokoro v1.0 is available as `config/fragments/kokoro_v1.0.toml`. Replace `kokoro_v1.1`
-with `kokoro_v1.0` in a recipe's fragment list and regenerate configuration to use it. It
+Kokoro v1.0 is available as `config/fragments/kokoro_v1.0.toml`. Select `kokoro_v1.0` under
+Speech in Advanced mode, or replace `kokoro_v1.1` in a recipe's fragment list and regenerate. It
 uses the same ONNX engine with the original package's phonemizer and stock voices; existing
 recipes and the Beth voicepack remain on v1.1-zh.
 

@@ -42,6 +42,17 @@ recipes good.
 
 ## Results so far
 
+- Generate config has Advanced mode: individual local fragments, remote host/port or Off per
+  backend, with one grouped speech selector. Remote choices use defaults for other fields.
+  Remote choices appear last. Fragment size comments feed per-selection sizes and local totals,
+  with advisory +10%/+20% VRAM estimates (CPU/remote excluded from local VRAM).
+  File sizes appear in dropdown labels, VRAM alongside (CPU zero shows a `Runs on CPU` tooltip),
+  with a centered, top-aligned total VRAM label whose entire text reveals the estimate explanation.
+  Missing size comments fall back to the combined size of complete downloaded model files;
+  missing files remain unavailable, with no network access or downloads.
+  Preview colors TOML syntax. Six isolated generator checks passed, including actual Tk mode
+  switching and saving to a scratch file; existing services/config files were untouched.
+
 - Kokoro v1.0 fragment uses the existing ONNX engine with package-specific reference
   preprocessing and stock voices. Pipeline setup/chunking is checked against a pinned upstream
   KPipeline; known target languages are passed explicitly. Deliberate differences are documented

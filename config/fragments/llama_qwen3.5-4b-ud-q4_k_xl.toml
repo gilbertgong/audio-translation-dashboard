@@ -1,3 +1,4 @@
+# Model files: 2.91 GB (GPU).
 # Translation: llama.cpp's llama-server with Qwen3.5-4B UD-Q4_K_XL (2.91 GB).
 
 [api_servers.llama]
