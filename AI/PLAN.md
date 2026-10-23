@@ -83,9 +83,10 @@ recipes good.
 - Repository/download URLs use `audio-translation-dashboard`.
 
 - Launcher app updates: `app.version` tracks app/launcher versions independently. ZIP updates replace
-  app files while preserving the launcher/user data. New launcher versions only inform the user that
-  a full update is available; they do not gate app updates. Offline updater/lifecycle checks passed;
-  a matching version file and release must be published before live update checking can work.
+  app and launcher source files while preserving user data. The running launcher version is captured
+  separately; a newer installed version prompts for OK/Cancel to restart. OK uses the existing restart
+  action with no session restoration; Cancel resumes the old run and leaves a restart-needed label.
+  Small App/Launcher version lines sit in the upper right. Sixteen offline updater checks passed.
 
 - Generate config includes `remote-nvidia-24gb`: enter one desktop IP/hostname for Whisper, llama
   and Qwen3-TTS; all local engines are skipped using existing `start = false` behavior.
@@ -143,9 +144,11 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
   implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.
 - Remaining requests include investigation of a better llama model for the 6 GB recipe.
   Kokoro Chinese voice and app update/version checking are implemented; see `AI/TODO.md`.
-- Shell entry points live in `scripts/`. Work on `scripts/release.sh` is paused pending an
-  isolated test of a running Python launcher replacing its own source file and restarting.
-  Revisit launcher version/restart detection, including dependencies, after that test.
+- Shell entry points live in `scripts/`. `scripts/release.sh VERSION` now releases already committed
+  code: metadata commit, annotated tag, atomic branch/tag push, remote verification and gh release.
+  It bumps launcherVersion when launcher.pyw or its three imported project modules differ from the
+  recorded launcher tag. Keep that list synchronized with import/file changes (see MEMORY.md).
+  Isolated local-remote/fake-gh checks passed; no real release was performed.
 - Try the 4B recipes on real laptops (speed, memory, translation quality).
 - Try the Mac install on a real Mac.
 - Longer-term ideas: `DESIGN.md`, Extension points.

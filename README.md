@@ -107,17 +107,34 @@ at other speeds is experimental and may have audible artifacts.
 ## App updates
 
 The launcher shows separate app and launcher versions. **Check for updates** reads the published
-`app.version` file and offers an app update when its `appVersion` is newer. After confirmation it
-stages the ZIP, stops this launcher's app and local servers, installs the app, and resumes what was
-running. The launcher stays open and is not replaced.
+`app.version` file and offers an update when either version is newer. After confirmation it
+stages the ZIP, stops this launcher's app and local servers, and installs the app and launcher files.
+The current launcher stays open during installation.
 
 User files (`config_local.toml`, `config_generated.toml`), models, voices, installed engines and logs
 are kept. App code, shipped defaults/recipes, documentation and launch scripts are updated. A newer
-`launcherVersion` is informational: the launcher reports that a full installation is available and
-shows its download URL in the output. It does not prevent updating the app.
+installed `launcherVersion` prompts for an optional restart: **OK** performs the normal Restart launcher
+action, with no session restoration; **Cancel** continues running and resumes the previous app/server
+run. If no launcher restart is needed, that run resumes automatically. The small version display at
+the upper right shows when a restart is still needed.
 
 Checks require the master version file and the matching release ZIP to be published. This feature
 works with ZIP installations and does not require Git.
+
+### Publishing a release
+
+Commit your code changes first, then run from Git Bash or another Bash terminal:
+
+```bash
+bash scripts/release.sh 0.4.2
+```
+
+Requires Git, authenticated GitHub CLI (`gh auth login`), and Python (`PYTHON=python3` if needed).
+The script updates `app.version`, makes a release commit, pushes the current branch and version tag
+together, verifies their remote refs, and creates a GitHub release with generated notes. It sets
+`launcherVersion` to the new release version only when the launcher or its three imported project
+modules changed since the tag recorded by that field. Pending changes must be committed or stashed;
+the script doesn't include them automatically. Run on `main` for the normal published master version URL.
 
 ## More
 

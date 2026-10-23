@@ -1,6 +1,6 @@
 """ZIP app updates used by the launcher. Standard library only.
 
-The launcher stays running and is never replaced. Install only application-owned
+The launcher stays running while its source is replaced. Install only application-owned
 files; user configuration, voices, engines, models, logs and Git metadata stay put.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 VERSION_FILE = "app.version"
 APP_FOLDERS = {"src", "config", "scripts"}
-APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "LICENSE"}
+APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "LICENSE", "launcher.pyw"}
 
 
 def read_version(path):
@@ -122,13 +122,14 @@ def install_update(root, prepared):
     """Overlay staged app files, restoring replaced files if installation fails.
 
     Called only after the launcher's own app/server processes have stopped.
-    Never prune unrelated files or replace launcher.pyw. Record the installed
-    launcher version, rather than the launcher version advertised by the release.
+    Never prune unrelated files. The running launcher retains its loaded code;
+    record the installed launcher version so it can prompt for a restart.
     """
     root = Path(root).resolve()
     local = read_version(root / VERSION_FILE)
     installed = dict(prepared.remote)
-    installed["launcherVersion"] = local["launcherVersion"]
+    if Path("launcher.pyw") not in prepared.files:
+        installed["launcherVersion"] = local["launcherVersion"]
     (prepared.source / VERSION_FILE).write_text(
         json.dumps(installed, indent=2) + "\n", encoding="utf-8", newline="\n")
     backup = prepared.folder / "backup"

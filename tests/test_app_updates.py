@@ -42,7 +42,7 @@ class AppUpdateTests(unittest.TestCase):
                      "src/app.py": "new app", "src/new.py": "new module",
                      "config/defaults.toml": "new defaults",
                      "scripts/launch.sh": "new launch script",
-                     "launcher.pyw": "must not replace launcher",
+                     "launcher.pyw": "new launcher",
                      "config_local.toml": "must not replace local config",
                      "config_generated.toml": "must not replace generated config",
                      "voices/custom.bin": "must not replace voice",
@@ -73,12 +73,13 @@ class AppUpdateTests(unittest.TestCase):
         self.assertEqual(remote["directDownloadURL"], self.remote["directDownloadURL"])
         self.assertTrue(updates.newer(remote["launcherVersion"], local["launcherVersion"]))
 
-    def test_app_update_preserves_launcher_and_user_data(self):
-        preserved = ["launcher.pyw", "config_local.toml", "config_generated.toml",
+    def test_app_update_replaces_launcher_and_preserves_user_data(self):
+        preserved = ["config_local.toml", "config_generated.toml",
                      "voices/custom.bin", "models/model.bin", "api_servers/engine.exe", "AI/LOCAL.md"]
         for relative in preserved:
             self.write(relative, "keep " + relative)
         self.write("src/app.py", "old app")
+        self.write("launcher.pyw", "old launcher")
         self.write("config/custom.toml", "custom recipe")
         prepared = self.prepare()
         # Downloading/staging changes no installed app files.
@@ -86,13 +87,14 @@ class AppUpdateTests(unittest.TestCase):
         updates.install_update(self.root, prepared)
         self.assertEqual((self.root / "src/app.py").read_text(), "new app")
         self.assertEqual((self.root / "src/new.py").read_text(), "new module")
+        self.assertEqual((self.root / "launcher.pyw").read_text(), "new launcher")
         self.assertEqual((self.root / "scripts/launch.sh").read_text(), "new launch script")
         self.assertEqual((self.root / "config/custom.toml").read_text(), "custom recipe")
         for relative in preserved:
             self.assertEqual((self.root / relative).read_text(), "keep " + relative)
         installed = updates.read_version(self.root / "app.version")
         self.assertEqual(installed["appVersion"], "0.2.0")
-        self.assertEqual(installed["launcherVersion"], "0.1.0")
+        self.assertEqual(installed["launcherVersion"], "0.3.0")
         self.assertEqual(installed["directDownloadURL"], self.remote["directDownloadURL"])
 
     def test_failure_rolls_back_replaced_and_new_files(self):
@@ -118,6 +120,29 @@ class AppUpdateTests(unittest.TestCase):
             self.prepare(self.archive({"../escape.py": "bad"}))
         self.assertFalse((self.root / "escape.py").exists())
         self.assertEqual(updates.read_version(self.root / "app.version"), self.local)
+
+    def test_launcher_is_restored_when_manifest_install_fails(self):
+        self.write("launcher.pyw", "old launcher")
+        prepared = self.prepare()
+        replace = Path.replace
+
+        def locked(path, target):
+            if path.name == "app.version":
+                raise PermissionError("simulated manifest failure")
+            return replace(path, target)
+
+        with patch.object(Path, "replace", locked), self.assertRaisesRegex(RuntimeError, "previous files restored"):
+            updates.install_update(self.root, prepared)
+        self.assertEqual((self.root / "launcher.pyw").read_text(), "old launcher")
+        self.assertEqual(updates.read_version(self.root / "app.version"), self.local)
+
+    def test_archive_without_launcher_keeps_installed_launcher_version(self):
+        self.write("launcher.pyw", "old launcher")
+        prepared = self.prepare()
+        prepared.files.remove(Path("launcher.pyw"))
+        updates.install_update(self.root, prepared)
+        self.assertEqual((self.root / "launcher.pyw").read_text(), "old launcher")
+        self.assertEqual(updates.read_version(self.root / "app.version")["launcherVersion"], "0.1.0")
 
     def test_advertised_app_version_matches_archive(self):
         with self.assertRaisesRegex(ValueError, "does not match"):
@@ -146,9 +171,11 @@ class LauncherUpdateTests(unittest.TestCase):
         window.update_buttons = Mock()
         window.show_versions = Mock()
         window.write = Mock()
+        window.launcher_version = "0.1.0"
+        window.prompt_launcher_restart = Mock(return_value=False)
         return window
 
-    def test_new_launcher_is_informational_not_an_app_update_gate(self):
+    def test_combined_update_uses_standard_download(self):
         window = self.launcher()
         local = {"appVersion": "0.1.0", "launcherVersion": "0.1.0"}
         remote = {"appVersion": "0.2.0", "launcherVersion": "0.3.0", "directDownloadURL": "https://example.test/full.zip"}
@@ -156,20 +183,18 @@ class LauncherUpdateTests(unittest.TestCase):
                 patch.object(self.module.threading, "Thread") as thread:
             window.offer_update((local, remote, True, True))
         self.assertEqual(window.updating, "download")
-        window.show_versions.assert_called_once_with("0.3.0")
+        window.show_versions.assert_called_once_with()
         thread.return_value.start.assert_called_once()
 
-    def test_launcher_only_update_does_not_download_or_install(self):
+    def test_launcher_only_update_also_downloads(self):
         window = self.launcher()
         local = {"appVersion": "0.1.0", "launcherVersion": "0.1.0"}
-        remote = {"appVersion": "0.1.0", "launcherVersion": "0.2.0", "directDownloadURL": "https://example.test/full.zip"}
-        with patch.object(self.module.messagebox, "showinfo") as info, \
+        remote = {**local, "launcherVersion": "0.2.0"}
+        with patch.object(self.module.messagebox, "askyesno", return_value=True), \
                 patch.object(self.module.threading, "Thread") as thread:
             window.offer_update((local, remote, False, True))
-        thread.assert_not_called()
-        info.assert_called_once()
-        self.assertIsNone(window.updating)
-        window.show_versions.assert_called_once_with("0.2.0")
+        self.assertEqual(window.updating, "download")
+        thread.return_value.start.assert_called_once()
 
     def test_install_waits_until_owned_processes_have_exited(self):
         window = self.launcher()
@@ -187,7 +212,7 @@ class LauncherUpdateTests(unittest.TestCase):
             window.wait_for_update_stop()
         self.assertEqual(window.updating, "install")
 
-    def test_finish_resumes_launch_without_updating_launcher_version(self):
+    def test_finish_resumes_launch_when_restart_postponed(self):
         window = self.launcher()
         window.update_package = Mock()
         window.update_resume = "launch"
@@ -201,7 +226,48 @@ class LauncherUpdateTests(unittest.TestCase):
         window.start.assert_called_once_with("launch")
         window.start_solo.assert_not_called()
         self.assertIsNone(window.updating)
-        window.show_versions.assert_called_once_with("0.3.0")
+        window.show_versions.assert_called_once_with()
+
+    def test_accepted_restart_uses_existing_action_without_resuming_session(self):
+        window = self.launcher()
+        window.update_package = Mock()
+        window.update_resume = "launch"
+        window.update_resume_solo = ["kokoro"]
+        window.reload_config = Mock()
+        window.start = Mock()
+        window.start_solo = Mock()
+        window.prompt_launcher_restart.return_value = True
+        window.finish_update({"appVersion": "0.2.0", "launcherVersion": "0.2.0"})
+        window.start.assert_not_called()
+        window.start_solo.assert_not_called()
+        self.assertIsNone(window.updating)
+
+    def test_restart_prompt_accept_cancel_and_unchanged(self):
+        for installed, answer in (("0.2.0", True), ("0.2.0", False), ("0.1.0", True)):
+            with self.subTest(installed=installed, answer=answer):
+                window = self.launcher()
+                window.restart_launcher = Mock()
+                with patch.object(updates, "read_version", return_value={"launcherVersion": installed}), \
+                        patch.object(self.module.messagebox, "askokcancel", return_value=answer) as prompt:
+                    result = self.module.Launcher.prompt_launcher_restart(window)
+                self.assertEqual(result, installed == "0.2.0" and answer)
+                if result:
+                    window.root.after.assert_called_once_with(0, window.restart_launcher)
+                else:
+                    window.root.after.assert_not_called()
+                self.assertEqual(prompt.call_count, int(installed != "0.1.0"))
+
+    def test_version_display_keeps_running_version_until_restart(self):
+        window = self.launcher()
+        window.launcher_version = None
+        window.version_label = Mock()
+        with patch.object(updates, "read_version", side_effect=[
+                {"appVersion": "0.1.0", "launcherVersion": "0.1.0"},
+                {"appVersion": "0.2.0", "launcherVersion": "0.2.0"}]):
+            self.module.Launcher.show_versions(window)
+            self.module.Launcher.show_versions(window)
+        self.assertEqual(window.launcher_version, "0.1.0")
+        window.version_label.configure.assert_called_with(text="App 0.2.0\nLauncher 0.1.0 (restart needed)")
 
 
 if __name__ == "__main__":

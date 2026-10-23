@@ -507,6 +507,34 @@ DESIGN.md).
   or explicit Kokoro, plus preserving an existing config. The install was stubbed; no real
   downloads, model calls, user config changes or service restarts. Real Mac testing remains open.
 
+## 2026-10-23: Launcher source updates and optional restart
+
+- User verified on launcher-update-test that copying over the running Python launcher works.
+  On main, standard ZIP updates now include launcher.pyw in the existing staging/backup/rollback
+  flow and record its installed version. Archives without that file retain the previous launcher version.
+- The running launcher captures its version on startup; App and running Launcher versions appear
+  as two small lines in the upper right. A newer installed launcher leaves a restart-needed indication.
+- After installation, OK/Cancel offers the existing Restart launcher action. OK restarts with no
+  session restoration. Cancel resumes the previous app/server run using the existing update behavior;
+  updates without a launcher change also resume normally. A later check can offer a pending restart.
+- Sixteen offline checks passed: archive replacement, preservation, launcher rollback, missing-launcher
+  archive behavior, app/launcher update offers, restart acceptance/cancellation and running-version display.
+  No actual launcher/server restart or live update was performed. Release script remains paused.
+
+## 2026-10-23: Release helper with launcher dependency comparison
+
+- Added scripts/release.sh VERSION: requires committed changes, updates app.version and its archive URL,
+  commits that metadata, makes an annotated tag, atomically pushes branch/tag to origin, fetches remote
+  tracking refs, verifies the published branch/tag and creates a gh release with generated notes.
+- Compares launcher.pyw, src/configuration.py, src/common.py and src/app_updates.py against the tag
+  in launcherVersion. Changes set launcherVersion to the new release version; otherwise it stays put.
+  A missing comparison tag stops the release. Recorded in MEMORY.md that this list must track all
+  local launcher imports, including indirect imports and file moves.
+- Five isolated checks cover app-only releases and matching remote refs, changes to each of the four
+  launcher files, dirty-tree refusal, missing baseline tag and non-increasing version refusal. Real
+  Git commits/tags/pushes were confined to scratch repos with a local bare remote; gh was stubbed.
+  No actual release, version bump or publishing was performed in this repository.
+
 ## 2026-10-23: Script and TODO organization
 
 - Moved TODO.md into AI/ and marked the Kokoro Chinese voice item complete: stock zf_001 is

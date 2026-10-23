@@ -38,9 +38,10 @@ remote host/port entries or Off, grouping speech engines together. The preview
 colors TOML comments, sections, strings and literals without changing its text.
 
 Check for updates: compares app.version with its masterVersionFile. A newer
-app can be installed from its ZIP while this launcher remains running and
-unchanged; its own app/server processes are stopped and resumed. New launcher
-versions are informational and point to a full download.
+app and launcher can be installed from their ZIP while this launcher remains
+running; its own app/server processes are stopped. A newer launcher version
+prompts for an optional restart using Restart launcher's normal behavior.
+Declining the restart resumes the app/server processes as before.
 
 Kill servers: lists this project's running processes (servers from
 api_servers/, Python running src/ scripts), e.g. strays left by an earlier
@@ -779,14 +780,19 @@ class Launcher:
         self.update_resume = None
         self.update_resume_solo = []
         self.update_killed = set()
+        self.launcher_version = None  # running version, captured on first display
 
         root.title("Audio Translation Dashboard - Launcher")
         # Row 1: the dashboard itself, the thing to open once it's running.
         row = ttk.Frame(root, padding=(8, 10, 8, 4))
         row.pack(fill="x")
+        row.columnconfigure(0, weight=1, uniform="heading")
+        row.columnconfigure(2, weight=1, uniform="heading")
         self.open_button = color_button(row, "Open dashboard", BLUE, BLUE_FADED, self.open_dashboard, font_size=13)
         self.open_button.configure(padx=28, pady=6)
-        self.open_button.pack()
+        self.open_button.grid(row=0, column=1)
+        self.version_label = ttk.Label(row, text="", font=("TkDefaultFont", 9), justify="right")
+        self.version_label.grid(row=0, column=2, sticky="ne", padx=(12, 0))
 
         # Row 2: run controls and status; tools on the right.
         bar = ttk.Frame(root, padding=(8, 4, 8, 8))
@@ -821,8 +827,6 @@ class Launcher:
         row.pack(fill="x")
         self.update_button = tool_button(row, "Check for updates", self.check_updates)
         self.update_button.pack(side="right")
-        self.version_label = ttk.Label(row, text="")
-        self.version_label.pack(side="left")
         self.show_versions()
         self.update_buttons()
 
@@ -1060,17 +1064,32 @@ class Launcher:
                 stop_tree(proc)
         self.root.destroy()
 
-    # --- app updates (launcher version is informational, never an update prerequisite)
+    # --- app updates (launcher version tells the running process when to restart)
 
-    def show_versions(self, newer_launcher=None):
+    def show_versions(self):
         try:
             version = app_updates.read_version(ROOT / app_updates.VERSION_FILE)
-            text = f"App {version['appVersion']} · Launcher {version['launcherVersion']}"
-            if newer_launcher:
-                text += f" · Full update available: launcher {newer_launcher}"
+            if self.launcher_version is None:
+                self.launcher_version = version["launcherVersion"]
+            text = f"App {version['appVersion']}\nLauncher {self.launcher_version}"
+            if app_updates.newer(version["launcherVersion"], self.launcher_version):
+                text += " (restart needed)"
             self.version_label.configure(text=text)
         except (OSError, ValueError, KeyError):
             self.version_label.configure(text="Version information unavailable")
+
+    def prompt_launcher_restart(self):
+        installed = app_updates.read_version(ROOT / app_updates.VERSION_FILE)["launcherVersion"]
+        if not app_updates.newer(installed, self.launcher_version):
+            return False
+        if not messagebox.askokcancel("Restart launcher", f"Launcher {installed} is installed. "
+                "Restart now to load the changes?\n\n"
+                "OK restarts the launcher, just like Restart launcher. "
+                "Cancel keeps the current launcher running until you restart later.", parent=self.root):
+            return False
+        # Let the current UI event finish before the normal restart closes it.
+        self.root.after(0, self.restart_launcher)
+        return True
 
     def check_updates(self):
         if self.updating:
@@ -1093,21 +1112,19 @@ class Launcher:
         local, remote, app_new, launcher_new = result
         self.updating = None
         self.update_buttons()
-        self.show_versions(remote["launcherVersion"] if launcher_new else None)
+        self.show_versions()
         summary = (f"App: {local['appVersion']} → {remote['appVersion']}\n"
                    f"Launcher: {local['launcherVersion']} (latest {remote['launcherVersion']})")
-        if launcher_new:
-            summary += "\n\nA newer full installation is available. App updates leave your launcher unchanged."
-            self.write(f"== Full update available: launcher {remote['launcherVersion']}\n"
-                       f"   Download: {remote['directDownloadURL']}\n")
-        if not app_new:
+        if not (app_new or launcher_new):
             self.status.configure(text="App is up to date")
-            messagebox.showinfo("Version check", summary + "\n\nThe app is up to date.", parent=self.root)
+            if not self.prompt_launcher_restart():
+                messagebox.showinfo("Version check", summary + "\n\nThe app is up to date.", parent=self.root)
             return
         self.status.configure(text=f"App {remote['appVersion']} available")
         if not messagebox.askyesno("Update app", summary +
-                "\n\nDownload and update the app? Running app and launcher-managed servers will stop, "
-                "then resume. Your launcher, user configs, models and voices are kept.", parent=self.root):
+                "\n\nDownload and update the app and launcher? Running app and launcher-managed servers "
+                "will stop. You can accept or postpone a launcher restart if needed. "
+                "User configs, models and voices are kept.", parent=self.root):
             return
         self.updating = "download"
         self.status.configure(text="Downloading app update...")
@@ -1159,12 +1176,12 @@ class Launcher:
         mode, self.update_resume = self.update_resume, None
         solo, self.update_resume_solo = self.update_resume_solo, []
         self.updating = None
-        local = app_updates.read_version(ROOT / app_updates.VERSION_FILE)
-        self.show_versions(remote["launcherVersion"] if app_updates.newer(
-            remote["launcherVersion"], local["launcherVersion"]) else None)
+        self.show_versions()
         self.status.configure(text=f"Updated app to {remote['appVersion']}")
-        self.write(f"== Updated app to {remote['appVersion']}; launcher unchanged\n")
+        self.write(f"== Updated app to {remote['appVersion']}; installed launcher {remote['launcherVersion']}\n")
         self.reload_config()
+        if self.prompt_launcher_restart():
+            return
         if mode != "launch":
             for name in solo:
                 self.start_solo(name)

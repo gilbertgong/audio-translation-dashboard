@@ -339,25 +339,30 @@ On a Mac, `scripts/setup_mac.sh` comes first: whisper.cpp publishes no macOS ser
 
 The local file records the installed app and launcher. The file at `masterVersionFile` describes the
 latest published release, including its download URL. Versions are dotted numeric strings, compared
-numerically (0.10.0 is newer than 0.9.0). `launcherVersion` is informational, never a compatibility gate
-on app updates. App-only installation copies remote metadata but keeps the installed launcher version.
-A full manual installation supplies both new version values together with the new launcher.
+numerically (0.10.0 is newer than 0.9.0). `launcherVersion` identifies the launcher code installed on disk,
+never a compatibility gate on updates. The running launcher captures its startup version separately;
+the small upper-right label shows App and running Launcher versions on two lines, with a restart-needed
+indication when a newer launcher has been installed. An archive without launcher.pyw keeps the prior
+installed launcher version.
 
-The launcher's **Check for updates** does its network work in a thread. If a newer app is available,
+The launcher's **Check for updates** does its network work in a thread. If a newer app or launcher is available,
 it asks whether to update. `src/app_updates.py` downloads into a unique `tmp/app-update-*` folder and
 stages the ZIP before stopping anything. GitHub's single wrapper directory and flat release ZIPs are
 supported. The archive must include a matching `app.version` and `src/app.py`. Paths cannot escape the
 staging/installation folder, and application symlink entries are not installed.
 
-Only files under `src/`, `config/` and `scripts/`, plus README.md, DESIGN.md, INSTALL_MAC.md and LICENSE
-are replaced. `launcher.pyw`, user configs, voices, models, installed engines,
+Only files under `src/`, `config/` and `scripts/`, plus launcher.pyw, README.md, DESIGN.md, INSTALL_MAC.md and LICENSE
+are replaced. User configs, voices, models, installed engines,
 logs, AI notes and Git metadata are excluded. Additional files are not pruned. Existing files being
 replaced are backed up in staging; on installation failure they are restored and newly installed files
 are removed. If restoration itself fails, staging is retained and its backup path is reported.
 
 The launcher waits for its own app and locally managed server processes to stop before installation;
-remote or independently started servers are not stopped. It remains open throughout, then resumes the
-previous Launch/Mock mode (or standalone servers when no Launch was active). Failed installs report an
+remote or independently started servers are not stopped. It remains open throughout. If a newer launcher
+version was installed, an OK/Cancel dialog offers a restart. OK schedules the existing Restart launcher
+action, with no session restoration. Cancel (or an unchanged launcher version) resumes the previous
+Launch/Mock mode or standalone servers as before. The label retains the restart-needed indication after
+Cancel; another update check can offer the pending restart again. Failed installs report an
 error and leave restarting to the user. No configuration validation is added. Imported launcher helper
 modules remain loaded until the launcher is restarted; future app releases must preserve their callable
 interfaces while older launchers remain in use.
@@ -365,9 +370,18 @@ interfaces while older launchers remain in use.
 For a release, increment `appVersion` for app changes and `launcherVersion` for launcher changes. Set
 `directDownloadURL` to the new release/tag ZIP and include this metadata in that archive. Make the ZIP
 available before publishing its master metadata. Keep the master describing a published release,
-rather than unreleased development work. The current local tag predates this feature; publish a new
-release containing the manifest before exercising a real upgrade. Launcher self-updates are future
-work; a separate helper could later replace only the launcher while residing beside the app.
+rather than unreleased development work. No external helper is needed to replace the Python launcher
+source; its current process continues with already loaded code until restarted.
+
+`bash scripts/release.sh VERSION` automates release metadata, its commit, an annotated `vVERSION` tag,
+an atomic push of the current branch and tag to origin, remote-ref verification, and `gh release create`
+with generated notes and `--verify-tag`. It requires a clean working tree and a newer numeric app version;
+code changes must already be committed. It fetches tags and compares launcher.pyw, src/configuration.py,
+src/common.py and src/app_updates.py against the recorded launcherVersion tag. Any difference sets
+launcherVersion to the new app version; otherwise it is retained. A missing comparison tag stops the
+release rather than guessing. Keep that file list aligned with launcher imports, including indirect
+imports and file moves. The script preserves masterVersionFile and rewrites the tagged download URL
+for the GitHub repository identified by gh. Use main so the published master URL receives the metadata.
 
 Offline regression checks: `python -m unittest discover -s tests -v`. They use scratch installations
 and mocked network/processes; they never update the working checkout or contact model servers.

@@ -112,6 +112,13 @@ to simplify or change the reference front end. Pin the reference used for equiva
   voices and the configured hosted Qwen reference; downloaded/generated audio stays ignored by Git.
 - When bumping the launcher version, set it to the current app release version, not an independent
   increment (for example, this launcher update moves 0.3.0 to 0.4.1 alongside app 0.4.1).
+- Keep `scripts/release.sh`'s launcher file list synchronized with `launcher.pyw`'s project imports,
+  including indirect imports. Update the list whenever imports change or files move. Currently it
+  tracks `launcher.pyw`, `src/configuration.py`, `src/common.py` and `src/app_updates.py`, comparing
+  against the tag recorded by launcherVersion to decide whether a launcher version bump is needed.
+- Launcher updates can replace the running Python source file. Offer an optional restart when
+  the installed launcher version changes; use the existing Restart launcher action with no session
+  restoration or session-awareness added to that action.
 - Every fragment must document its approximate model file size in a `# Model files: N GB ...`
   comment (decimal GB). Include required model components such as codecs in the total and explain
   the breakdown; mark CPU models as CPU, and remote-only fragments as 0 GB locally. Keep these
