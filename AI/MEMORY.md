@@ -108,6 +108,11 @@ to simplify or change the reference front end. Pin the reference used for equiva
 *Why:* the user strongly prefers upstream behavior and wants differences to be explicit.
 
 ### Code and files
+- Use the pipeline terminology in DESIGN.md: session = browser tab; segment = one browser-submitted
+  audio or text input; request = one model task; attempt = one execution/retry of that task.
+  A forced-language recheck is a new request, not a retry. Reserve chunk for future app-side
+  subdivisions (for example VAD); the browser submission is still the parent segment.
+  Recorder state is not a separate session. Preserve existing wire/config names for compatibility.
 - Do not ship reference recordings, custom voicepacks or derived test audio, or reference removed speaker assets in code/docs. Use stock Kokoro
   voices and the configured hosted Qwen reference; downloaded/generated audio stays ignored by Git.
 - When bumping the launcher version, set it to the current app release version, not an independent

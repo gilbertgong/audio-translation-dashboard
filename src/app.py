@@ -549,7 +549,7 @@ def post_speak(req):
 
 @app.post("/api/recordings")
 def post_recording(req):
-    """Body: a WAV file. Saves and transcribes it; returns {"file", "bytes",
+    """Body: one audio segment as a WAV file. Saves and transcribes it; returns {"file", "bytes",
     "text", "language", "confidence", "recheck", "stt_seconds", "stt_raw"} with
     status 201. recheck is true when whisper heard neither of the two
     [languages]: the page then asks /api/recordings/recheck to try again."""
@@ -605,7 +605,8 @@ def post_recheck(req):
     heard neither of the two [languages] (e.g. Russian for quiet Chinese).
     Transcribes it again forced to each of the two and returns the one whisper
     is more confident in: {"text", "language", "confidence", "stt_seconds",
-    "stt_raw"}, where stt_raw has both attempts."""
+    "stt_raw"}. Each forced language is a separate transcription request;
+    the existing raw response groups their results under the legacy "attempts" key."""
     data = req.json()
     name = Path(data.get("file", "")).name if isinstance(data, dict) else ""
     if not re.fullmatch(r"recording_[\d_]+\.wav", name):
@@ -622,21 +623,21 @@ def post_recheck(req):
 
 def recheck_recording(wav, name):
     start = time.monotonic()
-    attempts = []
+    results = []
     for key in ("language1", "language2"):
         language = config["languages"][key].lower()
         try:
-            attempts.append(transcribe(config["whisper_url"], wav, name, language=language))
+            results.append(transcribe(config["whisper_url"], wav, name, language=language))
         except (OSError, RuntimeError, ValueError) as err:
             log.warning("recheck of %s as %s failed: %s", name, language, err)
-    if not attempts:
+    if not results:
         raise HTTPError(502, f"recheck failed (is whisper-server running at {config['whisper_url']}?)")
-    best = max(attempts, key=lambda a: a["confidence"] if a["confidence"] is not None else float("-inf"))
+    best = max(results, key=lambda a: a["confidence"] if a["confidence"] is not None else float("-inf"))
     seconds = round(time.monotonic() - start, 2)
     log.info("rechecked %s in %ss as %s: %r (confidence %s)", name, seconds, best["language"], logged_text(best["text"]),
-             ", ".join(f"{a['language']} {a['confidence']:.3f}" for a in attempts if a["confidence"] is not None))
+             ", ".join(f"{a['language']} {a['confidence']:.3f}" for a in results if a["confidence"] is not None))
     return {**best, "stt_seconds": seconds,
-            "stt_raw": {"attempts": [a["stt_raw"] for a in attempts], "chosen": best["language"]}}
+            "stt_raw": {"attempts": [a["stt_raw"] for a in results], "chosen": best["language"]}}
 
 
 def main():

@@ -1,6 +1,6 @@
 // Dashboard front end: microphone capture -> 16-bit mono WAV -> POST to backend,
 // which transcribes it; the text is then sent back for translation. Each
-// recording becomes a row in the translation window: the conversation text on
+// audio segment becomes a row in the translation window: the conversation text on
 // the left, its activity (timings first, then details) on the right.
 
 const recordBtn = document.getElementById("record-btn");
@@ -20,14 +20,14 @@ let language2 = ""; // entries detected in this language are right-aligned
 let languageChecks = true; // whether Whisper can recheck the configured pair (also used by smoke tests)
 // Active recording: { stream, ctx, source, node, chunks, splitter }. splitter is
 // set in auto-split mode (and chunks unused); otherwise all audio goes to chunks.
-let session = null;
+let micRecording = null;
 let capture = null; // a running audio capture (see Capture Audio, below)
-const pending = { mic: 0, capture: 0 }; // each source's phrases still being processed
+const pending = { mic: 0, capture: 0 }; // each source's segments still being processed
 
 // The status row: three independent, unlabeled indicators (kept short; the
 // tooltip names each and spells it out). Capture and Mic: each source's own
-// session (off, calibrating = measuring the background, listening, speech; or
-// for a manual recording, recording) and how many of its phrases are still
+// recording state (off, calibrating = measuring the background, listening, speech; or
+// for a manual recording, recording) and how many of its segments are still
 // being transcribed and translated. Playback: automatic playback's queue, which
 // waits for both to be quiet (see playNextSpeech), or what's playing.
 function setIndicator(key, text, state = "", tip = text) {
@@ -55,8 +55,8 @@ function sourceStatus(recording, key) {
 }
 
 function updateStatus() {
-  sourceStatus(capture?.session, "capture");
-  sourceStatus(session, "mic");
+  sourceStatus(capture?.recording, "capture");
+  sourceStatus(micRecording, "mic");
   const waiting = speechQueue.length;
   if (playbackPaused) setIndicator("playback", "paused", "waiting", "playback paused");
   else if (speech) setIndicator("playback", ...(speech.item
@@ -128,7 +128,7 @@ function drawMeter(now) {
     : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
 
   // Auto-split: show the current speech threshold and whether speech is detected.
-  const sp = session?.splitter;
+  const sp = micRecording?.splitter;
   meterEl.classList.toggle("auto", !!sp);
   meterEl.classList.toggle("speaking", !!sp?.speaking);
   if (sp) meterThreshold.style.left = `calc(${dbToPercent(sp.thresholdDb)}% - 1px)`;
@@ -155,7 +155,7 @@ function stopMeter() {
 // Auto-split on pauses. Every audio block updates a simple loudness-based
 // voice activity detector: "speech" is anything clearly above the background
 // noise level, which is tracked continuously (falling quickly, rising slowly).
-// A phrase starts at the first loud block (plus some pre-roll audio), and ends
+// A segment starts at the first loud block (plus some pre-roll audio), and ends
 // after split_pause_ms of quiet or at max_phrase_s; it is then sent like a
 // manual recording. Settings come from [auto_split] in the config.
 
@@ -166,12 +166,12 @@ const autoSplit = {
 };
 const CALIBRATION_MS = 400; // measure background noise only, at the start
 const NOISE_FALL_MS = 50; // background estimate follows quieter levels quickly...
-const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-phrase)
+const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-segment)
 
-// label: where the audio comes from, noted with each phrase ("continuous
+// label: where the audio comes from, noted with each segment ("continuous
 // mode" for the microphone, "captured audio").
 // source: "mic" or "capture", for the status row.
-function createSplitter(sampleRate, label = "continuous mode", source = "mic") {
+function createSegmentSplitter(sampleRate, label = "continuous mode", source = "mic") {
   return {
     sampleRate,
     label,
@@ -183,15 +183,15 @@ function createSplitter(sampleRate, label = "continuous mode", source = "mic") {
     speaking: false,
     preRoll: [], // recent blocks kept while waiting for speech
     preRollSamples: 0,
-    blocks: [], // the current phrase
-    phraseSamples: 0,
-    speechMs: 0, // loud time in the current phrase
+    blocks: [], // the current segment
+    segmentSamples: 0,
+    speechMs: 0, // loud time in the current segment
     silenceMs: 0, // quiet time since the last loud block
   };
 }
 
 // Feed one audio block (Float32Array) and its RMS level.
-function splitterBlock(sp, block, rms) {
+function segmentSplitterBlock(sp, block, rms) {
   const ms = (block.length / sp.sampleRate) * 1000;
   const db = toDb(rms);
   sp.elapsedMs += ms;
@@ -208,7 +208,7 @@ function splitterBlock(sp, block, rms) {
     updateStatus();
   }
   const loud = db > sp.thresholdDb;
-  // For automatic playback: speech now; sustained (past a cough) mid-phrase.
+  // For automatic playback: speech now; sustained (past a cough) mid-segment.
   // A muted captured tab isn't heard here, so the translations talk over it.
   if (loud && !(sp.source === "capture" && capture?.muted)) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms);
 
@@ -220,7 +220,7 @@ function splitterBlock(sp, block, rms) {
       sp.preRollSamples -= sp.preRoll.shift().length;
     }
     if (loud) {
-      Object.assign(sp, { speaking: true, blocks: sp.preRoll, phraseSamples: sp.preRollSamples,
+      Object.assign(sp, { speaking: true, blocks: sp.preRoll, segmentSamples: sp.preRollSamples,
                           speechMs: ms, silenceMs: 0, preRoll: [], preRollSamples: 0 });
       updateStatus();
     }
@@ -228,20 +228,20 @@ function splitterBlock(sp, block, rms) {
   }
 
   sp.blocks.push(block);
-  sp.phraseSamples += block.length;
+  sp.segmentSamples += block.length;
   if (loud) {
     sp.speechMs += ms;
     sp.silenceMs = 0;
   } else {
     sp.silenceMs += ms;
   }
-  if (sp.silenceMs >= autoSplit.split_pause_ms) endPhrase(sp, "pause");
-  else if (sp.phraseSamples / sp.sampleRate >= autoSplit.max_phrase_s) endPhrase(sp, "max length");
+  if (sp.silenceMs >= autoSplit.split_pause_ms) endSegment(sp, "pause");
+  else if (sp.segmentSamples / sp.sampleRate >= autoSplit.max_phrase_s) endSegment(sp, "max length");
 }
 
-// Finish the current phrase and send it (if it had enough speech).
-// reason: "pause", "max length" (speech continues into a new phrase) or "stop".
-function endPhrase(sp, reason) {
+// Finish the current segment and send it (if it had enough speech).
+// reason: "pause", "max length" (speech continues into a new segment) or "stop".
+function endSegment(sp, reason) {
   if (!sp.speaking) return;
   let samples = concat(sp.blocks);
   if (reason === "pause") {
@@ -252,17 +252,17 @@ function endPhrase(sp, reason) {
   }
   const speechMs = sp.speechMs;
   const continuing = reason === "max length";
-  Object.assign(sp, { speaking: continuing, blocks: [], phraseSamples: 0, speechMs: 0, silenceMs: 0 });
+  Object.assign(sp, { speaking: continuing, blocks: [], segmentSamples: 0, speechMs: 0, silenceMs: 0 });
   updateStatus();
 
   if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
-  sendPhrase(samples, sp.sampleRate, `${sp.label} (${reason})`, sp.source);
+  sendAudioSegment(samples, sp.sampleRate, `${sp.label} (${reason})`, sp.source);
 }
 
-async function sendPhrase(samples, sampleRate, note, source) {
+async function sendAudioSegment(samples, sampleRate, note, source) {
   try {
     const resampled = await resample(samples, sampleRate, targetSampleRate);
-    processRecording(encodeWav(resampled, targetSampleRate), note, source);
+    processAudioSegment(encodeWav(resampled, targetSampleRate), note, source);
   } catch (err) {
     console.error(err);
     addNote(`Error: ${err.message}`, true);
@@ -285,7 +285,7 @@ function gainDb() {
 function showGain() {
   const db = gainDb();
   gainValue.textContent = `${db > 0 ? "+" : ""}${db} dB`;
-  if (session) session.gain.gain.setTargetAtTime(10 ** (db / 20), session.ctx.currentTime, 0.02);
+  if (micRecording) micRecording.gain.gain.setTargetAtTime(10 ** (db / 20), micRecording.ctx.currentTime, 0.02);
   try {
     localStorage.setItem("gainDb", String(db));
   } catch {}
@@ -662,7 +662,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
 
 // Automatic translation playback: each finished translation is queued and
 // spoken, in order, once the speaker's turn has ended: every running source
-// quiet for turn_pause_ms ([tts]; longer than the pause that splits phrases).
+// quiet for turn_pause_ms ([tts]; longer than the pause that splits segments).
 // Each one's speech is fetched as soon as it's queued (see loadSpeech), so
 // it's ready, or nearly, when its turn comes. If someone starts speaking
 // during playback, it stops and that translation goes back to the front of
@@ -1075,7 +1075,7 @@ function showMockConversation(items) {
   }
 }
 
-// auto: split on pauses (each phrase is sent as it ends) instead of keeping
+// auto: split on pauses (each segment is sent as it ends) instead of keeping
 // all audio for one recording.
 async function startRecording(auto) {
   stopPlayback(); // speakers playing into the mic would end up in the recording
@@ -1099,10 +1099,10 @@ async function startRecording(auto) {
     const gain = new GainNode(ctx, { gain: 10 ** (gainDb() / 20) });
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
-    const splitter = auto ? createSplitter(ctx.sampleRate) : null;
+    const splitter = auto ? createSegmentSplitter(ctx.sampleRate) : null;
     node.port.onmessage = (e) => {
       const rms = meterSample(e.data);
-      if (splitter) splitterBlock(splitter, e.data, rms);
+      if (splitter) segmentSplitterBlock(splitter, e.data, rms);
       else {
         chunks.push(e.data);
         noteSpeech(false); // a manual recording is a turn in progress
@@ -1110,7 +1110,7 @@ async function startRecording(auto) {
     };
     source.connect(gain).connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    session = { stream, ctx, source, gain, node, chunks, splitter };
+    micRecording = { stream, ctx, source, gain, node, chunks, splitter };
     startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
@@ -1119,13 +1119,13 @@ async function startRecording(auto) {
   }
 }
 
-// Stops a recording session: the microphone's (session), or a capture's.
-// Returns the recording as a WAV Blob; in auto-split mode, sends any phrase in
+// Stops microphone or capture recording state (not the browser-tab session).
+// Returns the recording as a WAV Blob; in auto-split mode, sends any segment in
 // progress and returns null.
-async function stopRecording(recording = session) {
+async function stopRecording(recording = micRecording) {
   const { stream, ctx, source, gain, node, chunks, splitter } = recording;
-  if (recording === session) {
-    session = null;
+  if (recording === micRecording) {
+    micRecording = null;
     stopMeter(); // the microphone's meter (a capture has its own, per channel)
   }
   source.disconnect();
@@ -1136,7 +1136,7 @@ async function stopRecording(recording = session) {
   await ctx.close();
 
   if (splitter) {
-    endPhrase(splitter, "stop");
+    endSegment(splitter, "stop");
     return null;
   }
   const samples = concat(chunks);
@@ -1201,7 +1201,7 @@ function encodeWav(samples, sampleRate) {
 
 // Each server gets one request at a time from this page, in the order they're
 // asked for, and runs it with the whole machine; the stages still overlap
-// (the next phrase is transcribed while this one is translated). toWhisper(task),
+// (the next segment is transcribed while this one is translated). toWhisper(task),
 // toLlama(task) and toTts(task) (see loadSpeech) run task() once the ones
 // before it have finished (or failed) and return its result.
 function oneAtATime() {
@@ -1375,9 +1375,9 @@ async function recheck(row, stt, reason) {
 }
 
 // Transcribe, then translate, in the background so the next recording can start.
-// note: optional detail for the activity cell (e.g. how an auto-split phrase ended).
+// note: optional detail for the activity cell (e.g. how an auto-split segment ended).
 // source: "mic" or "capture" (for the status row's counts).
-async function processRecording(wav, note = "", source = "mic") {
+async function processAudioSegment(wav, note = "", source = "mic") {
   if (pageLifetime.signal.aborted) return;
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
@@ -1434,7 +1434,7 @@ recordBtn.addEventListener("click", async () => {
   // if (capture) return; // capturing instead (one source at a time: off for now)
   recordBtn.disabled = true;
   try {
-    if (!session) {
+    if (!micRecording) {
       const auto = autoSplitToggle.checked;
       autoSplitToggle.disabled = true; // no mode change mid-recording
       await startRecording(auto);
@@ -1447,24 +1447,24 @@ recordBtn.addEventListener("click", async () => {
       const wav = await stopRecording();
       autoSplitToggle.disabled = false;
       updateStatus();
-      if (wav) processRecording(wav); // not awaited: runs in the background
+      if (wav) processAudioSegment(wav); // not awaited: runs in the background
     }
   } catch (err) {
     console.error(err);
     addNote(`Error: ${err.message}`, true);
     setIndicator("mic", "error", "error");
     stopMeter();
-    if (session) {
-      session.stream.getTracks().forEach((t) => t.stop());
-      session.ctx.close();
-      session = null;
+    if (micRecording) {
+      micRecording.stream.getTracks().forEach((t) => t.stop());
+      micRecording.ctx.close();
+      micRecording = null;
     }
     autoSplitToggle.disabled = false;
     recordBtn.textContent = "Start Recording";
     recordBtn.classList.remove("recording");
   } finally {
     recordBtn.disabled = false;
-    // captureBtn.disabled = !!session; // one source at a time (off for now)
+    // captureBtn.disabled = !!micRecording; // one source at a time (off for now)
   }
 });
 
@@ -1473,7 +1473,7 @@ recordBtn.addEventListener("click", async () => {
 // screen sharing (getDisplayMedia) used in reverse. The captured sound goes
 // through the same pipeline as Continuous Audio Mode: one chosen channel, mono,
 // split at pauses. The microphone and a capture can run at the same time
-// (each with its own session and level meters).
+// (each with its own recording state and level meters, within the same tab session).
 
 const captureBtn = document.getElementById("capture-btn");
 const captureStatus = document.getElementById("capture-status");
@@ -1483,10 +1483,10 @@ const captureHelp = document.getElementById("capture-help");
 const CHANNEL_SOUND_DB = -50; // the first channel louder than this is chosen automatically
 const SURFACES = { browser: "a browser tab", window: "a window", monitor: "the entire screen" };
 
-// While capturing: { session (its own, like the microphone's: see
+// While capturing: { recording (its own, like the microphone's: see
 // startRecording), channels: [{ analyser, gate, fill, peak, db, row, shownDb,
 // maxDb }], selected (index, or null until a channel has sound), surface,
-// track, muted, buffer, frame }. (Declared at the top, with session.)
+// track, muted, buffer, frame }. (Declared at the top, with micRecording.)
 
 document.getElementById("capture-help-btn").addEventListener("click", () => captureHelp.showModal());
 document.getElementById("capture-help-close").addEventListener("click", () => captureHelp.close());
@@ -1607,13 +1607,13 @@ async function startCapture() {
       return { analyser, gate, ...makeChannelRow(name, i) };
     });
     const node = new AudioWorkletNode(ctx, "recorder");
-    const splitter = createSplitter(ctx.sampleRate, "captured audio", "capture");
-    // Its level goes to the phrase splitting only: the meter by Start Recording is
+    const splitter = createSegmentSplitter(ctx.sampleRate, "captured audio", "capture");
+    // Its level goes to the segment splitting only: the meter by Start Recording is
     // the microphone's (the sidebar has the capture's, per channel).
-    node.port.onmessage = (e) => splitterBlock(splitter, e.data, blockLevel(e.data).rms);
+    node.port.onmessage = (e) => segmentSplitterBlock(splitter, e.data, blockLevel(e.data).rms);
     mix.connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    capture = { session: { stream, ctx, source, gain: mix, node, chunks: [], splitter },
+    capture = { recording: { stream, ctx, source, gain: mix, node, chunks: [], splitter },
                 channels, selected: null, surface, track, muted: captureMuteBox.checked, buffer: new Float32Array(2048), frame: 0 };
     if (count === 1) selectChannel(0);
     else setCaptureStatus(describeCapture());
@@ -1631,9 +1631,9 @@ async function startCapture() {
 async function stopCapture() {
   if (!capture) return;
   cancelAnimationFrame(capture.frame);
-  const recording = capture.session;
+  const recording = capture.recording;
   capture = null;
-  await stopRecording(recording); // sends any phrase in progress, closes everything
+  await stopRecording(recording); // sends any segment in progress, closes everything
   captureChannelsEl.replaceChildren();
   setCaptureStatus("Not capturing");
   setCaptureUi(false);
@@ -1654,7 +1654,7 @@ captureBtn.addEventListener("click", async () => {
     stopCapture();
     return;
   }
-  // if (session) return; // recording from the microphone (one source at a time: off for now)
+  // if (micRecording) return; // recording from the microphone (one source at a time: off for now)
   captureBtn.disabled = true;
   try {
     await startCapture();
@@ -1693,7 +1693,7 @@ document.addEventListener("keyup", (e) => {
   if (isSpaceShortcut(e)) e.preventDefault();
 });
 
-// Discard unfinished audio on navigation; normal Stop still sends the final phrase.
+// Discard unfinished audio on navigation; normal Stop still sends the final segment.
 function discardRecording(recording) {
   if (!recording) return;
   recording.node.port.onmessage = null;
@@ -1709,16 +1709,16 @@ window.addEventListener("pagehide", () => {
   clearTimeout(healthTimer);
   clearTimeout(turnTimer);
   stopPlayback();
-  const microphone = session;
+  const microphone = micRecording;
   cancelAnimationFrame(playbackMeterFrame);
   recordingOutput?.ctx.close().catch(() => {});
   const captured = capture;
-  session = null;
+  micRecording = null;
   capture = null; // track-ended handlers must not flush abandoned recordings
   stopMeter();
   if (captured) cancelAnimationFrame(captured.frame);
   discardRecording(microphone);
-  discardRecording(captured?.session);
+  discardRecording(captured?.recording);
 });
 
 window.addEventListener("pageshow", (event) => {

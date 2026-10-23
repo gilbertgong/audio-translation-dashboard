@@ -548,3 +548,21 @@ DESIGN.md).
 - Release helper discussion paused at the user's request pending a launcher self-update test.
   The earlier claim that a running Python script cannot replace its own source was too broad;
   test that behavior before deciding update/restart detection and version tracking.
+
+## 2026-10-23: Pipeline terminology, without telemetry
+
+- Agreed session = one browser tab; segment = one browser-submitted audio/text input;
+  request = one model task; attempt = one backend execution/retry. Forced-language rechecks
+  are separate requests. Reserved chunk for future app-side subdivisions such as VAD output;
+  browser submissions remain parent segments. Recorded the definitions in DESIGN.md and MEMORY.md.
+- Renamed browser microphone state from session to micRecording and capture.session to
+  capture.recording; aligned splitter/processing and typed-submission names with segment.
+  Updated the smoke harness's recorder references. Recheck locals now say results instead
+  of attempts, retaining the existing raw-response attempts key for compatibility.
+- Updated app comments, README and config comments. No IDs, telemetry, session registration,
+  MessageProxy, persistence or chunk processing added. HTTP routes, payload fields, UI behavior,
+  recording names, config keys and values are unchanged.
+- Verified JS code equivalence after reversing the intended renames and removing comments;
+  Python AST equivalence after normalizing the local rename/docstrings; parsed TOML unchanged.
+  JS syntax, offline playback and ten existing retention/recheck tests passed. No live service
+  or model calls were made; the real capture smoke test was not run.

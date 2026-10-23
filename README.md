@@ -3,7 +3,7 @@
 A local, self-hosted live translator between two languages (English and Chinese by default). It listens to your
 microphone, or to the sound of a browser tab or your whole computer, then:
 
-1. transcribes each phrase with [whisper.cpp](https://github.com/ggml-org/whisper.cpp);
+1. transcribes each audio segment with [whisper.cpp](https://github.com/ggml-org/whisper.cpp);
 2. translates it with [llama.cpp](https://github.com/ggml-org/llama.cpp) and a Qwen model;
 3. shows the original and the translation side by side, with timings;
 4. speaks the translation with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) or Qwen3-TTS.
@@ -137,6 +137,11 @@ modules changed since the tag recorded by that field. Pending changes must be co
 the script doesn't include them automatically. Run on `main` for the normal published master version URL.
 
 ## More
+
+Pipeline terminology: a **session** is one browser tab; a **segment** is one audio or typed input it
+submits; a **request** is one model task; an **attempt** is one backend execution of that task.
+These definitions don't add tracking or telemetry. See [DESIGN.md](DESIGN.md#pipeline-terminology)
+for details and the reserved meaning of app-side chunks.
 
 - [DESIGN.md](DESIGN.md): how it works, in detail: architecture, configuration, scripts, running servers on another
   machine.

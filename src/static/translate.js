@@ -1,4 +1,4 @@
-// Each entry is translated independently; conversation history is display-only.
+// Each submitted text segment is translated independently; conversation history is display-only.
 const $ = (id) => document.getElementById(id);
 let languages = [];
 let sourceIndex = 0;
@@ -190,7 +190,7 @@ async function runTranslation(message) {
   }
 }
 
-function sendMessage() {
+function submitTextSegment() {
   if (translating) return;
   const text = $("source-text").value.trim();
   if (!text || languages.length !== 2) return;
@@ -217,12 +217,12 @@ function sendMessage() {
 
 $("translate").addEventListener("click", () => {
   if (translating) translating.abort();
-  else sendMessage();
+  else submitTextSegment();
 });
 $("source-text").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
-    sendMessage();
+    submitTextSegment();
   }
 });
 

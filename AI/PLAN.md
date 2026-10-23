@@ -42,6 +42,11 @@ recipes good.
 
 ## Results so far
 
+- Pipeline terms are documented in DESIGN.md: session (browser tab), segment (browser-submitted
+  audio/text), request (model task), attempt (backend execution/retry), and reserved app-side chunk.
+  App recorder/splitter names and comments follow those terms; compatibility fields/keys are unchanged.
+  No telemetry, correlation IDs, session registration or app-side chunk/VAD behavior added.
+
 - Mac setup defaults to the pinned native Qwen3-TTS Apple Silicon Metal release,
   with the existing 1.7B base model/codec and cached reference voice; `TTS=kokoro` selects CPU speech.
   Existing generated configs are preserved. Real Mac installation/audition remains untested.
@@ -139,6 +144,11 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 - More in `DESIGN.md`, Known limitations.
 
 ## Next steps
+
+- Future telemetry planning: token counts for every model are the top priority, with recheck/retry
+  attribution and performance timings. Consider MessageProxy routing/capacity and independent app/proxy
+  observations, Prometheus aggregates and separate detailed accounting/admin access. None is implemented;
+  this first pass only establishes terminology. Chunk IDs remain reserved for later app-side splitting.
 
 - User-requested work is tracked in `AI/TODO.md`. Language direction was the highest priority;
   implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.

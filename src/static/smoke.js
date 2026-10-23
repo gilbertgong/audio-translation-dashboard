@@ -61,7 +61,7 @@ function check(name, ok, detail = "") {
 
 // --- The dashboard in the frame
 
-// The dashboard's own top-level variables (session, capture, pending, speech,
+// The dashboard's own top-level variables (micRecording, capture, pending, speech,
 // ...), read inside the frame.
 const dash = (expr) => frame.contentWindow.eval(expr);
 const dashEl = (id) => frame.contentDocument.getElementById(id);
@@ -161,7 +161,7 @@ async function run() {
 
     setStatus("Starting the microphone and the capture…");
     dashEl("record-btn").click();
-    await waitFor("the microphone to start", () => dash("session"), 5000);
+    await waitFor("the microphone to start", () => dash("micRecording"), 5000);
     dashEl("capture-btn").click();
     await waitFor("the capture to start", () => dash("capture"), 5000);
     t0 = ctx.currentTime + 0.2;
@@ -213,7 +213,7 @@ async function run() {
     await waitFor("the translations to finish", () => dash("pending.mic + pending.capture") === 0, SETTLE_MS, 250)
       .catch(() => {});
     dashEl("record-btn").click();
-    await waitFor("the microphone to stop", () => !dash("session"), 5000).catch(() => {});
+    await waitFor("the microphone to stop", () => !dash("micRecording"), 5000).catch(() => {});
     dashEl("capture-btn").click();
     await waitFor("the capture to stop", () => !dash("capture"), 5000).catch(() => {});
     await sleep(300);
