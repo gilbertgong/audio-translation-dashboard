@@ -492,3 +492,31 @@ DESIGN.md).
 - Removed all remaining mentions of the former speaker assets from code/docs, including Mac
   install tables and historical log references. voices/ now ignores all local assets except the
   shipped README, so preserved local files stay ignored without a speaker-specific rule.
+
+## 2026-10-23: Qwen3-TTS Metal for Mac setup
+
+- Verified Zyeine/qwentts.cpp's pinned mellon-v0.1.0 release publishes the Apple Silicon
+  mellon-voice-engine-macos-metal.zip asset and its build workflow packages tts-server and dylibs.
+- Mac setup now defaults to the existing 1.7B base fragment with the Metal asset, disabling Kokoro;
+  TTS=kokoro retains the CPU alternative. Whisper/llama memory tiers are unchanged.
+  Existing generated configs and local overrides remain in force.
+- Setup installs enabled Qwen and restores its executable permission after ZIP extraction.
+  Updated INSTALL_MAC.md and DESIGN.md with selection, cached reference voice, memory notes,
+  release/workflow links and troubleshooting.
+- Bash syntax and seven isolated checks passed: each of three memory tiers with default Qwen
+  or explicit Kokoro, plus preserving an existing config. The install was stubbed; no real
+  downloads, model calls, user config changes or service restarts. Real Mac testing remains open.
+
+## 2026-10-23: Script and TODO organization
+
+- Moved TODO.md into AI/ and marked the Kokoro Chinese voice item complete: stock zf_001 is
+  the current v1.1 default. Updated the plan and context map.
+- Moved all three shell entry points into scripts/, fixing their working-directory setup and
+  documentation/launcher references. Added scripts/ to the app updater's owned folders and its
+  existing offline test, so ZIP updates continue to deliver the relocated scripts.
+- User requested discussion of scripts/release.sh before implementation; no release script written.
+- Eleven offline updater checks, Bash syntax checks, launch/mock from a different working directory
+  with stubbed Python, and the seven isolated Mac config checks passed. No user services started.
+- Release helper discussion paused at the user's request pending a launcher self-update test.
+  The earlier claim that a running Python script cannot replace its own source was too broad;
+  test that behavior before deciding update/restart detection and version tracking.

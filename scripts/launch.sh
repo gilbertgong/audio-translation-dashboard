@@ -5,12 +5,12 @@
 # Logs are in logs/.
 
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 PYTHON="${PYTHON:-python}"  # Python 3.11+
 
 if ! command -v "$PYTHON" >/dev/null; then
   echo "error: '$PYTHON' not found. Install Python 3.11 or newer, or set PYTHON to it," >&2
-  echo "e.g.: PYTHON=/c/msys64/ucrt64/bin/python ./launch.sh" >&2
+  echo "e.g.: PYTHON=/c/msys64/ucrt64/bin/python ./scripts/launch.sh" >&2
   exit 1
 fi
 

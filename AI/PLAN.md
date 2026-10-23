@@ -42,6 +42,10 @@ recipes good.
 
 ## Results so far
 
+- Mac setup defaults to the pinned native Qwen3-TTS Apple Silicon Metal release,
+  with the existing 1.7B base model/codec and cached reference voice; `TTS=kokoro` selects CPU speech.
+  Existing generated configs are preserved. Real Mac installation/audition remains untested.
+
 - Minimum detected speech per phrase is now 100 ms, to admit brief isolated words;
   pre-roll remains 300 ms. User audition will determine the effect on missed words and noise.
 
@@ -112,7 +116,7 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 
 ## Orientation
 
-- `launcher.pyw` (Windows) or `launch.sh`: install, download, run. `setup_mac.sh` first on a Mac.
+- `launcher.pyw` (Windows) or `scripts/launch.sh`: install, download, run. `scripts/setup_mac.sh` first on a Mac.
 - `src/app.py` (backend, endpoints), `src/microweb.py` (HTTP framework), `src/run_servers.py`,
   `src/install_api_servers.py`, `src/download_models.py`, `src/configuration.py`, `src/kokoro_server.py`.
 - `src/static/`: `index.html` + `app.js` (dashboard), `test.html` (component tests), `smoke.html` (end-to-end smoke
@@ -123,22 +127,25 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 
 ## Open questions
 
-- Should `setup_mac.sh`'s tiers under 32 GB also move from the 9B to the 4B fragments, like the laptop recipes?
+- Should `scripts/setup_mac.sh`'s tiers under 32 GB also move from the 9B to the 4B fragments, like the laptop recipes?
 
 ## Known issues
 
 - With a muted captured tab and a fast speaker, playback falls about 30 s behind and stays there (the backlog is
   full; the oldest are dropped). Workaround: none yet; see next steps.
 - The new 4B laptop recipes haven't been tested on an 8 GB or 6 GB laptop yet.
-- `setup_mac.sh` / `INSTALL_MAC.md` haven't been tried on a real Mac.
+- `scripts/setup_mac.sh` / `INSTALL_MAC.md` haven't been tried on a real Mac.
 - More in `DESIGN.md`, Known limitations.
 
 ## Next steps
 
-- User-requested work is tracked in `TODO.md`. Language direction was the highest priority;
+- User-requested work is tracked in `AI/TODO.md`. Language direction was the highest priority;
   implemented explicit source/target prompts from Whisper after rechecks, with no llama language tags.
-- Remaining requests include a new default Kokoro Chinese voice and investigation of a better llama
-  model for the 6 GB recipe. App update/version checking is implemented; see `TODO.md`.
+- Remaining requests include investigation of a better llama model for the 6 GB recipe.
+  Kokoro Chinese voice and app update/version checking are implemented; see `AI/TODO.md`.
+- Shell entry points live in `scripts/`. Work on `scripts/release.sh` is paused pending an
+  isolated test of a running Python launcher replacing its own source file and restarting.
+  Revisit launcher version/restart detection, including dependencies, after that test.
 - Try the 4B recipes on real laptops (speed, memory, translation quality).
 - Try the Mac install on a real Mac.
 - Longer-term ideas: `DESIGN.md`, Extension points.

@@ -13,9 +13,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 VERSION_FILE = "app.version"
-APP_FOLDERS = {"src", "config"}
-APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "LICENSE",
-             "launch.sh", "mock.sh", "setup_mac.sh"}
+APP_FOLDERS = {"src", "config", "scripts"}
+APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "LICENSE"}
 
 
 def read_version(path):

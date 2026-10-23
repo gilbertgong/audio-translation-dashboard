@@ -12,6 +12,6 @@
   `launcherVersion`, plus download/master URLs. ZIP app updates leave the launcher and user data
   intact; newer launcher versions are informational and point to a full download. Publish a matching
   manifest/release to use it. Automatic launcher replacement remains future work.
-- [ ] **Kokoro Chinese voice.** Change the default Chinese voice; replacement to be selected.
+- [x] **Kokoro Chinese voice.** Default Chinese voice is now the stock `zf_001` voice (Kokoro v1.1).
 - [ ] **6 GB recipe tuning.** Investigate translation quality and whether it needs a better llama
   model, considering the existing priority on Whisper transcription quality and the VRAM budget.

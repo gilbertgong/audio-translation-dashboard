@@ -17,6 +17,7 @@
 - `config/defaults.toml`: every setting, documented in its comments.
 - `voices/README.md`: stock voices, hosted Qwen reference audio and local test fixtures.
 - `AI/`: for assistants (this file, the plan, the log, the strategy, and the git-ignored `LOCAL.md`).
+- `AI/TODO.md`: user-requested work and its completion status.
 
 ## Rules that keep these docs working
 

@@ -28,7 +28,7 @@ Everything runs on your own machine; nothing is sent to the cloud.
 
 **Mac:** follow [INSTALL_MAC.md](INSTALL_MAC.md).
 
-**From a terminal:** `./launch.sh` does the same as Launch. Ctrl+C stops everything.
+**From a terminal:** `./scripts/launch.sh` does the same as Launch. Ctrl+C stops everything.
 
 ## Use it
 

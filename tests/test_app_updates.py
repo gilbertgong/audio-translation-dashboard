@@ -41,6 +41,7 @@ class AppUpdateTests(unittest.TestCase):
             files = {"app.version": json.dumps(version or self.remote),
                      "src/app.py": "new app", "src/new.py": "new module",
                      "config/defaults.toml": "new defaults",
+                     "scripts/launch.sh": "new launch script",
                      "launcher.pyw": "must not replace launcher",
                      "config_local.toml": "must not replace local config",
                      "config_generated.toml": "must not replace generated config",
@@ -85,6 +86,7 @@ class AppUpdateTests(unittest.TestCase):
         updates.install_update(self.root, prepared)
         self.assertEqual((self.root / "src/app.py").read_text(), "new app")
         self.assertEqual((self.root / "src/new.py").read_text(), "new module")
+        self.assertEqual((self.root / "scripts/launch.sh").read_text(), "new launch script")
         self.assertEqual((self.root / "config/custom.toml").read_text(), "custom recipe")
         for relative in preserved:
             self.assertEqual((self.root / relative).read_text(), "keep " + relative)

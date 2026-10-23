@@ -42,7 +42,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
                            +---------------------+  +---------------------+  +---------------------+
 ```
 
-The servers are started (and stopped) by `run_servers.py`, which the launcher or `launch.sh` runs; the dashboard only talks to them over HTTP, so any of them can run on another machine (see [Running](#running)).
+The servers are started (and stopped) by `run_servers.py`, which the launcher or `scripts/launch.sh` runs; the dashboard only talks to them over HTTP, so any of them can run on another machine (see [Running](#running)).
 
 ### Dashboard (`src/static/`)
 
@@ -223,7 +223,7 @@ Sections:
 
 ### Fragments and recipes
 
-- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Default voice settings stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. A model fragment can override voices when its package differs. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.0 and v1.1; Qwen3-TTS 1.7B and 0.6B base. Each fragment has a model file size comment (decimal GB, including required codecs).
+- **Fragments** (`config/fragments/<server>_<model>.toml`): one validated server + model pair each, as plain TOML — the server's `[api_servers.<name>]` section with `start = true` and its `[models.<name>]` table; TTS fragments also bring `[tts] server`. Default voice settings stay in `defaults.toml`, attached to their server (`default_voice`, `language_voices`, and the voices Qwen registers). A fragment only uses tables that belong to its server, so any combination pastes together into valid TOML. A model fragment can override voices when its package differs. Today: whisper large-v3, large-v3-q5_0 and large-v3-turbo-q5_0; llama with Qwen3.8-27B UD-IQ3_XXS, Qwen3.5-9B UD-Q3_K_XL and UD-IQ3_XXS (used by `scripts/setup_mac.sh`), and Qwen3.5-4B UD-Q4_K_XL and UD-IQ3_XXS (context 2048, for the laptop recipes); Kokoro v1.0 and v1.1; Qwen3-TTS 1.7B and 0.6B base. Each fragment has a model file size comment (decimal GB, including required codecs).
 - **Recipes** (`config/recipes/<name>.json`, JSON so they aren't mistaken for config): `description`, `vram_gb` (the card size it's meant for), `fragments` (pasted in order) and `off` (servers given `start = false`). Anything in neither list keeps its default, so a recipe can deliberately leave an extra server running.
 
 | Recipe        | VRAM  | STT                       | Translation             | TTS                        |
@@ -303,10 +303,10 @@ On Windows, double-click **`launcher.pyw`**, the only Python file in the project
 Elsewhere, or from a terminal:
 
 ```bash
-./launch.sh
+./scripts/launch.sh
 ```
 
-A development convenience that runs the three steps below in order; each can also be run by hand from the project root. All the logic is in the Python scripts, so `launch.sh` stays bare scaffolding:
+A development convenience that runs the three steps below in order; each can also be run by hand from the project root. All the logic is in the Python scripts, so `scripts/launch.sh` stays bare scaffolding:
 
 ```bash
 python src/install_api_servers.py               # the servers, if needed
@@ -320,9 +320,9 @@ The dashboard is at <http://localhost:8080/>; Ctrl+C stops everything.
 python src/app.py --mock
 ```
 
-(or `./mock.sh`): the dashboard alone with sample data, for working on the page without the servers. Translations are streamed in pieces like llama's, and speech is silence of about the right length.
+(or `./scripts/mock.sh`): the dashboard alone with sample data, for working on the page without the servers. Translations are streamed in pieces like llama's, and speech is silence of about the right length.
 
-On a Mac, `setup_mac.sh` comes first: whisper.cpp publishes no macOS server build, so it links Homebrew's `whisper-server` and `llama-server` (Metal) into `api_servers/` with a `VERSION` of `homebrew` (which the installer leaves alone), and writes `config_generated.toml` by the Mac's memory, since Generate config needs nvidia-smi. Steps and troubleshooting: `INSTALL_MAC.md` (not yet tried on a real Mac).
+On a Mac, `scripts/setup_mac.sh` comes first: whisper.cpp publishes no macOS server build, so it links Homebrew's `whisper-server` and `llama-server` (Metal) into `api_servers/` with a `VERSION` of `homebrew` (which the installer leaves alone), and writes `config_generated.toml` by the Mac's memory, since Generate config needs nvidia-smi. Speech defaults to Qwen3-TTS: the 1.7B base fragment with the pinned Apple Silicon Metal ZIP instead of the Windows Vulkan asset, with Kokoro disabled. `TTS=kokoro` selects CPU speech instead. Setup installs enabled Qwen and sets its executable permission (ZIP extraction doesn't preserve it). Existing generated configs are kept. Steps and troubleshooting: `INSTALL_MAC.md` (not yet tried on a real Mac).
 
 ### App updates and release versions
 
@@ -349,8 +349,8 @@ stages the ZIP before stopping anything. GitHub's single wrapper directory and f
 supported. The archive must include a matching `app.version` and `src/app.py`. Paths cannot escape the
 staging/installation folder, and application symlink entries are not installed.
 
-Only files under `src/` and `config/`, plus README.md, DESIGN.md, INSTALL_MAC.md, LICENSE, launch.sh,
-mock.sh and setup_mac.sh are replaced. `launcher.pyw`, user configs, voices, models, installed engines,
+Only files under `src/`, `config/` and `scripts/`, plus README.md, DESIGN.md, INSTALL_MAC.md and LICENSE
+are replaced. `launcher.pyw`, user configs, voices, models, installed engines,
 logs, AI notes and Git metadata are excluded. Additional files are not pruned. Existing files being
 replaced are backed up in staging; on installation failure they are restored and newly installed files
 are removed. If restoration itself fails, staging is retained and its backup path is reported.
@@ -395,8 +395,8 @@ The desktop runs its normal recipe with reachable listening addresses; no server
 launcher.pyw          the thing to run (Windows)
 README.md, DESIGN.md  for people: overview, and this document
 AI/, AGENTS.md, CLAUDE.md   for AI assistants: plan, history, working rules (start at AI/MEMORY.md)
-launch.sh, mock.sh    the same from a terminal
-setup_mac.sh, INSTALL_MAC.md   macOS: setup before launch.sh, and the steps
+scripts/launch.sh, scripts/mock.sh    the same from a terminal
+scripts/setup_mac.sh, INSTALL_MAC.md   macOS: setup before scripts/launch.sh, and the steps
 config/               defaults.toml, fragments/, recipes/
 config_generated.toml, config_local.toml   (yours, git-ignored)
 voices/               a folder per speaker: Qwen3-TTS reference recordings, Kokoro voicepacks, test audio
@@ -444,7 +444,7 @@ and logs are not removed by this setting.
 - **Phrase splitting:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the phrase (deliberate, so constant noise can't hold it open).
 - **Feedback:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new phrase. Headphones avoid it. (In practice the browser's echo cancellation has handled even a playing video well.)
 - **misaki:** English misreads some proper names; Japanese reads a decimal point as a sentence end and leaves Latin letters as they are, and a line of kanji only (東京駅) is read as Chinese.
-- **Mac:** `setup_mac.sh` and `INSTALL_MAC.md` haven't been tried on a real Mac.
+- **Mac:** `scripts/setup_mac.sh` and `INSTALL_MAC.md` haven't been tried on a real Mac.
 
 The project's history (milestones, measurements and the reasons behind decisions) is in `AI/PROJECT_LOG.md`.
 

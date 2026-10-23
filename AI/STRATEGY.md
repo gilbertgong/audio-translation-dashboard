@@ -59,6 +59,7 @@ CLAUDE.md            entry file for Claude Code: the same pointer (plus an impor
 AI/
   MEMORY.md          the entry point: what to read and when; how to work here (preferences, each with its reason)
   PLAN.md            the present, high level: goal, direction, approach, results so far, next steps, open questions
+  TODO.md            user-requested work, with completed and remaining items
   PROJECT_LOG.md     the past: dated history of what was tried, found and decided, and why; appended to
   STRATEGY.md        this file: how the structure works and how to replicate it
   LOCAL.md           this computer only, not in version control: local paths, related projects, services, rules

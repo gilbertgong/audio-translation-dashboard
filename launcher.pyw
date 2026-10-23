@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Audio Translation Dashboard - launcher.
 
-A window that does what launch.sh does: installs the servers and downloads
+A window that does what scripts/launch.sh does: installs the servers and downloads
 their models if needed, then starts the dashboard and the servers (the
 dashboard first, so its header shows them coming up), showing their output.
 Stop, or closing the window, stops everything.
 
 With [launcher] show_dev_controls = true in config_local.toml, more
-controls: Mock runs the dashboard alone with sample data instead (what mock.sh
+controls: Mock runs the dashboard alone with sample data instead (what scripts/mock.sh
 does); Launch and Mock each stop the other first, since both use the
 dashboard's port. Restart app restarts just the dashboard, to pick up changes
 to it, keeping the servers running (run_servers.py restarts it when told
@@ -79,8 +79,8 @@ _exe = Path(sys.executable)
 _console_exe = _exe.with_name("python.exe")
 PYTHON = str(_console_exe if _exe.name.lower() == "pythonw.exe" and _console_exe.is_file() else _exe)
 
-# What each button runs: a list of steps, in order. "launch": the launch.sh
-# steps; "mock": the dashboard alone with sample data (mock.sh).
+# What each button runs: a list of steps, in order. "launch": the scripts/launch.sh
+# steps; "mock": the dashboard alone with sample data (scripts/mock.sh).
 MODES = {
     "launch": [
         ("Installing servers", [PYTHON, "src/install_api_servers.py"]),
