@@ -162,7 +162,7 @@ function stopMeter() {
 const autoSplitToggle = document.getElementById("auto-split");
 const autoSplit = {
   split_pause_ms: 250, threshold_db: 12, min_threshold_db: -50, pre_roll_ms: 300,
-  tail_ms: 200, min_speech_ms: 300, max_phrase_s: 25,
+  tail_ms: 200, min_speech_ms: 100, max_phrase_s: 25,
 };
 const CALIBRATION_MS = 400; // measure background noise only, at the start
 const NOISE_FALL_MS = 50; // background estimate follows quieter levels quickly...

@@ -75,7 +75,7 @@ pre_roll_ms = 300
 # Silence (ms) kept at the end of each phrase.
 tail_ms = 200
 # Phrases with less speech than this (ms) are dropped (coughs, clicks).
-min_speech_ms = 300
+min_speech_ms = 100
 # Longest phrase (seconds); longer speech is cut here (whisper works on
 # 30-second windows).
 max_phrase_s = 25

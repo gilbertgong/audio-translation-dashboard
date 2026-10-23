@@ -42,6 +42,9 @@ recipes good.
 
 ## Results so far
 
+- Minimum detected speech per phrase is now 100 ms, to admit brief isolated words;
+  pre-roll remains 300 ms. User audition will determine the effect on missed words and noise.
+
 - Qwen voice config accepts HTTP(S) references cached under voices/cache/ before base64 registration.
   Custom voice assets are no longer tracked; Kokoro uses stock voices. Smoke clips are generated locally.
 
