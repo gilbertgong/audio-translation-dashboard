@@ -66,8 +66,9 @@ recipes good.
   and application content logging. Operational diagnostics and API-server logs are unchanged.
 
 - Playback panel opposite Capture audio: pause/resume, stop/clear, restart and next,
-  seek bar with elapsed/total clip time, output dB meter, queue status and persistent per-language 0.5×–2× speed controls.
-  Web Audio rate changes also affect pitch. Mock browser and offline transport checks passed.
+  seek bar with elapsed/total clip time, output dB meter, queue status and persistent per-language 0.75×–1.5× speed controls.
+  Browser-side PCM WSOLA prototype preserves pitch at non-unit speeds; 1× bypasses processing.
+  Offline signal/transport checks passed; actual voice quality remains for user audition.
 
 - Repository/download URLs use `audio-translation-dashboard`.
 

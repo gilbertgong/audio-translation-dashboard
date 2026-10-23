@@ -59,6 +59,7 @@ const sandbox = vm.createContext({
   setTimeout() { return 1; }, clearTimeout() {},
   fetch() { return new Promise(() => {}); },
 });
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/time-stretch.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/app.js"), "utf8"), sandbox);
 vm.runInContext(`
   language1 = "English"; language2 = "Chinese";
@@ -73,9 +74,10 @@ vm.runInContext(`
 const run = (code) => vm.runInContext(code, sandbox);
 const near = (value, expected) => assert.ok(Math.abs(value - expected) < 0.00001, `${value} != ${expected}`);
 
-run('speedInputs[1].value = "2"; const first = fixture(); speakTranslation(first.row, first.btn, first.text, first);');
-near(run("speech.ctx.sources[1].at"), 0.6); // first 1 s piece occupies 0.5 s
-run("speech.ctx.currentTime = 0.85;");
+run('speedInputs[1].value = "1.5"; const first = fixture(); speakTranslation(first.row, first.btn, first.text, first);');
+near(run("speech.ctx.sources[0].buffer.duration"), 2); // 3 source seconds become 2 output seconds
+assert.equal(run("speech.ctx.sources[0].playbackRate"), 1); // processed PCM retains its pitch
+run("speech.ctx.currentTime = 1.1;");
 near(run("speech.position()"), 1.5);
 element("playback-pause").click();
 assert.equal(run("speech.ctx.state"), "suspended");
@@ -95,18 +97,18 @@ element("playback-restart").click();
 assert.equal(run("speech.ctx.sources[0].offset"), 0);
 assert.equal(run("speech.ctx.state"), "suspended");
 element("playback-pause").click();
-run('speech.ctx.currentTime = 0.85; speedInputs[1].value = "1.5";');
+run('speech.ctx.currentTime = 1.1; speedInputs[1].value = "1.25";');
 element("speed2").events.input();
-near(run("speech.ctx.sources[0].offset"), 0.5); // skips first piece, resumes midway through second
-assert.equal(run("speech.speed"), 1.5);
+near(run("speech.position()"), 1.5); // changing tempo keeps the original source position
+assert.equal(run("speech.speed"), 1.25);
 run("speech.ctx.currentTime = 0.5; noteSpeech(true);");
 assert.equal(run("speech === null"), true);
-near(run("speechQueue[0].resumeSeconds"), 2);
+near(run("speechQueue[0].resumeSeconds"), 1.9);
 run("lastSpeechAt = 0; playNextSpeech();");
-near(run("speech.ctx.sources[0].offset"), 1);
+near(run("speech.position()"), 1.9);
 element("playback-restart").click();
 run("speech.ctx.currentTime = 0.3; noteSpeech(true);");
-near(run("speechQueue[0].resumeSeconds"), 0.2); // restart resets a prior interruption's resume floor
+near(run("speechQueue[0].resumeSeconds"), 0.15); // restart resets a prior interruption's resume floor
 run("lastSpeechAt = 0; playNextSpeech();");
 
 run('const second = fixture("chinese"); speechQueue.push(second); updateStatus();');
@@ -161,5 +163,29 @@ assert.equal(run("speech.ctx.sources.length"), 2);
 assert.equal(element("playback-duration").textContent, "/ 0:02");
 element("playback-pause").click();
 run("speech.ctx.sources[1].onended();");
+assert.equal(run("speech"), null);
+// Non-unit tempo keeps one overlap state across arriving PCM pieces and
+// holds its short lookahead until EOF, including a network underflow.
+run(`
+  speedInputs[1].value = "0.75";
+  const stretchedStream = fixture("english", false);
+  stretchedStream.audio.pieces = []; stretchedStream.audio.seconds = 0;
+  speakTranslation(stretchedStream.row, stretchedStream.btn, stretchedStream.text, stretchedStream);
+  stretchedStream.audio.pieces.push(new Float32Array(24000)); stretchedStream.audio.seconds = 1;
+  stretchedStream.audio.listeners.forEach(fn => fn());
+  speech.ctx.currentTime = 10;
+`);
+const beforeMore = run("speech.position()");
+run(`
+  stretchedStream.audio.pieces.push(new Float32Array(24000)); stretchedStream.audio.seconds = 2;
+  stretchedStream.audio.listeners.forEach(fn => fn());
+`);
+near(run("speech.position()"), beforeMore); // network waiting is not heard audio
+run(`
+  stretchedStream.audio.done = true; stretchedStream.audio.listeners.forEach(fn => fn());
+`);
+near(run("speech.ctx.sources.reduce((sum, source) => sum + source.buffer.duration, 0)"), 64000 / 24000);
+assert.equal(run("speech.ctx.sources.every(source => source.playbackRate === 1)"), true);
+run("speech.ctx.sources.at(-1).onended();");
 assert.equal(run("speech"), null);
 console.log("Playback checks passed: rate scheduling, position, pause/resume, restart, interruptions, next, stop/abort, independent language speeds, meter, recordings.");

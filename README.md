@@ -96,7 +96,9 @@ in the config, and `config_local.toml` still takes priority over generated setti
 
 The **Playback** panel, opposite Capture audio, has restart, pause/resume, stop/clear queue and
 next-clip controls, a seek bar with elapsed/total clip time, an output level meter and queue status. Separate language sliders adjust live
-translation speed from 0.5× to 2× and remember your choices. Speed changes also affect pitch.
+translation speed from 0.75× to 1.5× and remember your choices. A browser-side waveform-matching
+prototype preserves pitch while streaming PCM; at 1× audio passes through unchanged. Voice quality
+at other speeds is experimental and may have audible artifacts.
 
 ## App updates
 

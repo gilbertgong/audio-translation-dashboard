@@ -582,6 +582,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
   const audio = resume?.audio ?? item?.audio ?? loadSpeech(row, text);
   const resumeSeconds = resume?.position ?? item?.resumeSeconds ?? 0;
   const speed = playbackSpeed(row);
+  const stretch = speed === 1 ? null : new SpeechTimeStretch(audio.rate, speed);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.connect(ctx.destination);
@@ -590,7 +591,8 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     const now = ctx.currentTime;
     for (let i = scheduled.length - 1; i >= 0; i--) {
       const segment = scheduled[i];
-      if (now >= segment.start) return segment.offset + Math.min((now - segment.start) * speed, segment.duration);
+      if (now >= segment.start) return Math.min(audio.seconds,
+        segment.offset + Math.min((now - segment.start) * speed, segment.duration));
     }
     return resumeSeconds; // buffering, or the first piece has not started yet
   } };
@@ -602,6 +604,20 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
   let pieceOffset = 0;
   let playAt = 0;
   let last = null;
+  let stretchedSeconds = 0;
+  const schedule = (samples, skip, offset, duration) => {
+    if (!samples.length) return;
+    const buffer = ctx.createBuffer(1, samples.length, audio.rate);
+    buffer.copyToChannel(samples, 0);
+    const source = new AudioBufferSourceNode(ctx, { buffer, playbackRate: 1 });
+    source.connect(analyser);
+    if (!last) setSpeakButton(btn, "playing");
+    playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
+    source.start(playAt, skip);
+    scheduled.push({ start: playAt, offset, duration });
+    playAt += buffer.duration - skip;
+    last = source;
+  };
   const finished = () => {
     if (speech !== current) return;
     stopSpeech();
@@ -624,17 +640,14 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
       pieceOffset += samples.length / audio.rate;
       if (pieceOffset <= resumeSeconds) continue; // already heard this whole piece
       const skip = Math.max(0, resumeSeconds - offset);
-      const buffer = ctx.createBuffer(1, samples.length, audio.rate);
-      buffer.copyToChannel(samples, 0);
-      const source = new AudioBufferSourceNode(ctx, { buffer, playbackRate: speed });
-      source.connect(analyser);
-      if (!last) setSpeakButton(btn, "playing");
-      playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
-      source.start(playAt, skip);
-      const duration = buffer.duration - skip;
-      scheduled.push({ start: playAt, offset: offset + skip, duration });
-      playAt += duration / speed;
-      last = source;
+      if (stretch) stretch.append(samples.subarray(Math.round(skip * audio.rate)));
+      else schedule(samples, skip, offset + skip, samples.length / audio.rate - skip);
+    }
+    if (stretch) {
+      const samples = stretch.read(audio.done);
+      const duration = samples.length / audio.rate;
+      schedule(samples, 0, resumeSeconds + stretchedSeconds * speed, duration * speed);
+      stretchedSeconds += duration;
     }
     updateStatus();
     if (!audio.done) return;

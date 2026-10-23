@@ -449,3 +449,22 @@ DESIGN.md).
   No additional config schema or validation layer.
 - Nine generator checks passed, covering mixed/remote/Off round trips, startup before GPU detection,
   delayed GPU/no-GPU results and recipe-mode startup. Scratch files only; user config/services untouched.
+
+## 2026-10-22: Narrower playback speed range
+
+- Changed both per-language playback sliders from 0.5–2 to 0.75–1.5, retaining 0.05 steps.
+  Browser range controls clamp previously saved values to the new limits.
+- Pitch-preserving processing is discussion only; current Web Audio rate behavior is unchanged.
+  No tests run for this small range/markup change.
+
+## 2026-10-22: PCM pitch-preserving speed prototype
+
+- User approved a temporary waveform-matching implementation while retaining PCM streaming.
+  Added a dependency-free browser WSOLA-style processor: 40 ms windows, 20 ms hops, ±10 ms
+  normalized correlation search and crossfades. State spans network chunks and flushes at EOF.
+- Non-unit playback schedules processed PCM at original sample rate. 1× bypasses processing;
+  original-position mapping keeps seeking, rate changes, pause/resume and 100 ms interruption
+  rewind, using already-received audio without additional synthesis or network requests.
+- Both offline Node suites passed: preserved 220 Hz pitch and expected duration across speeds,
+  chunk-boundary invariance, silence/tiny clips/EOF, plus streaming underflow and transport controls.
+  No model inference, user-service restarts or real speech audition. Quality remains experimental.
