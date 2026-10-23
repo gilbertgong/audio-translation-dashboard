@@ -29,9 +29,9 @@ speech is Kokoro (on the CPU, which is quick on Apple Silicon). Everything else 
 
    | Memory | whisper | Translation | Speech |
    |---|---|---|---|
-   | 32 GB or more | large-v3 | Qwen3.8-27B IQ3_XXS | Kokoro (Beth) |
-   | 16-31 GB | large-v3 q5_0 | Qwen3.5-9B Q3_K_XL | Kokoro (Beth) |
-   | under 16 GB | large-v3-turbo q5_0 | Qwen3.5-9B IQ3_XXS | Kokoro (Beth) |
+   | 32 GB or more | large-v3 | Qwen3.8-27B IQ3_XXS | Kokoro (stock voices) |
+   | 16-31 GB | large-v3 q5_0 | Qwen3.5-9B Q3_K_XL | Kokoro (stock voices) |
+   | under 16 GB | large-v3-turbo q5_0 | Qwen3.5-9B IQ3_XXS | Kokoro (stock voices) |
 
    Languages are English and Chinese; for another pair, add to the top of `config_generated.toml`:
    ```toml

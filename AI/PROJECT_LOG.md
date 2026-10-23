@@ -51,7 +51,7 @@ DESIGN.md).
 ### Milestone 8 — Text-to-speech ✅
 
 - Surveyed current TTS models and servers; chose Qwen3-TTS via qwentts.cpp (good English and Chinese, voice cloning, streaming, a small C++ server). Compared the 0.6B and 1.7B base models on CUDA and Vulkan with a cloned voice; chose the 1.7B on Vulkan (see DESIGN.md, Engines). Measured first audio after about 0.03–0.05 s at the server; end to end through the dashboard, 3.4 s of Chinese speech took 0.84 s in total.
-- tts-server installed, its two model files downloaded, and its voices registered at start by the scripts; the default voice is cloned from Beth Thomas's LibriVox reading (see `voices/beth_thomas/README.md`).
+- tts-server installed, its two model files downloaded, and its voices registered at start by the scripts; the original default used a local reference recording (since removed from distribution).
 - `/api/speak`, the ▶ button after each translation, streamed playback, and Automatic Translation Playback with a queue.
 - Dashboard cleanup: Continuous Audio Mode on by default; time to first token on the translate line; split and file details moved behind the `ⓘ` button.
 - **Known limitation:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new phrase. Headphones avoid it.
@@ -60,7 +60,7 @@ DESIGN.md).
 
 - Qwen3-TTS works well but takes 2.2 GB of model files and 4 GB of GPU memory. Kokoro (a descendant of StyleTTS 2, 82M parameters) is a fraction of that; the only Windows binaries for it are sherpa-onnx's library, hence `sherpa_server_win.py`.
 - Benchmarked against a StyleTTS 2 baseline (same sentence, 10 runs): StyleTTS 2 0.75× real time on one CPU thread, 3–4× on eight, 24× on GPU; Kokoro fp32 3×, 8× and 26×. The first Kokoro test used the int8 model and looked slow (about 1.5×); the cause was int8 itself (above), not the model or the binding.
-- Listening: Kokoro's Chinese voices sound great in Chinese but poor in English; Qwen's cloned Beth sounds great in both. So the desktop keeps Qwen3-TTS, and Kokoro serves machines without GPU memory to spare.
+- Listening: Kokoro's Chinese voices sound great in Chinese but poor in English; Qwen's cloned reference voice sounds great in both. So the desktop keeps Qwen3-TTS, and Kokoro serves machines without GPU memory to spare.
 - The scripts gained `.tar.bz2` support, models inside archives, and servers that are project scripts; one `[api_servers]` section per engine, chosen by `[tts] server`.
 - The same server got SenseVoice STT and Silero VAD endpoints for later (above). Lessons there: sherpa-onnx's newest SenseVoice release (2025-09-09) is a Cantonese fine-tune, the general model is 2024-07-17; and for SenseVoice, unlike Kokoro, int8 is the fastest and smallest on CPU (an fp16 export saves disk but not RAM: the CPU converts it to fp32).
 
@@ -89,9 +89,9 @@ DESIGN.md).
 
 ### Milestone 14 — Kokoro with misaki ✅
 
-- A Kokoro voicepack for Beth (`voices/beth_thomas/RC3`), found by a search on the PyTorch `kokoro` pipeline, sounded bad through `sherpa_server_win.py`, Chinese most of all. Same model data (the pack's tensor checked: float32, `[510, 1, 256]`, contiguous), so the suspect was the text front end, as with StyleTTS 2, where swapping back the phonemizer it was trained with was a sudden great improvement.
+- A custom Kokoro voicepack (since removed from distribution), found by a search on the PyTorch `kokoro` pipeline, sounded bad through `sherpa_server_win.py`, Chinese most of all. Same model data (the pack's tensor checked: float32, `[510, 1, 256]`, contiguous), so the suspect was the text front end, as with StyleTTS 2, where swapping back the phonemizer it was trained with was a sudden great improvement.
 - Tested three ways on the same sentences: sherpa-onnx's front end; misaki on sherpa-onnx's ONNX model (a prototype); PyTorch `kokoro`. misaki on ONNX and PyTorch gave identical phonemes and identical durations, and her Chinese sounded top tier in both: the front end, not the ONNX export. sherpa-onnx's C API takes only text, so it can't be given misaki's phonemes; hence `kokoro_server.py`.
-- misaki's English still misreads some names (Beth as "bait"); PyTorch does the same.
+- misaki's English still misreads some proper names; PyTorch does the same.
 - Japanese added: lines with kana go to misaki's Japanese G2P (before, they were read as Chinese, or as "Japanese letter" over and over by the English G2P). All its phonemes are in v1.1-zh's vocabulary. misaki reads a decimal point as a sentence end (23.5度 as "nijūsan. go do") and leaves Latin letters as they are; the model mostly drops those. A line of kanji only (東京駅) is still read as Chinese.
 
 ## 2026-10-14: Japanese, playback, laptop recipes
@@ -99,7 +99,7 @@ DESIGN.md).
 - **Japanese in `kokoro_server.py`:** misaki's cutlet G2P (fugashi + unidic-lite, with jaconv and mojimoji). `pyopenjtalk`
   is replaced by an empty module: misaki.ja imports it but only its non-default G2P calls it, it has no Windows wheel,
   and `pyopenjtalk-plus` would add about 370 MB. Phonemes were checked identical with it installed.
-  `[api_servers.kokoro.language_voices] japanese = "beth_thomas"`.
+  Japanese originally used a custom voicepack, since removed from distribution.
   - Kokoro v1.1-zh isn't trained on Japanese, but the user's hands-on work showed it speaks it well from misaki's
     phonemes; the gap was our front end, not the model.
   - A first batch of test WAVs came out garbled because curl from Git Bash mangled the UTF-8 text; sending from Python
@@ -114,8 +114,8 @@ DESIGN.md).
 - **Backlog by time, not count:** `max_backlog_ms = 30000` replaced `max_backlog = 3`. It counts only waiting speech
   fetched in full, drops the oldest while over, and always keeps the newest. A count says nothing about how far
   behind playback is; seconds do. Wasted synthesis of dropped items was judged not to matter.
-- **`voices/` reorganized** into a folder per speaker (`voices/beth_thomas/`: the Qwen reference WAV, the Kokoro
-  voicepack `TB2BP2G80.pt` and its `RC3/` search notes, and `test_audio/`).
+- **`voices/` reorganized** into a folder per speaker (originally the Qwen reference WAV, a custom Kokoro
+  voicepack, search notes and test audio; those assets have since been removed from distribution).
 - **Launcher:** reloads the config (rebuilding the server buttons) after Generate config saves; a dev-only
   Restart launcher button.
 - **Mac:** `setup_mac.sh` and `INSTALL_MAC.md` (Homebrew's Metal builds of whisper-server and llama-server, since
@@ -363,7 +363,7 @@ DESIGN.md).
 - User approved v1.0 support and strongly prefers reference model-package behavior everywhere
   except deliberately chosen differences. Saved that principle in MEMORY.md.
 - Added kokoro_v1.0 fragment: existing ONNX/Misaki runtime, v1.0 bundle/repo identity and
-  stock voice defaults. voices=false disables the inherited v1.1 Beth pack with one small
+  stock voice defaults. voices=false disables the inherited custom v1.1 pack with one small
   voice-files helper change. Existing recipes, generated and local config files are unchanged.
 - --repo-id follows KPipeline's model-package identity rule for Chinese G2P. Matched reference
   chunking, American/British and other language G2P setup, fallback handling and voice blending.
@@ -468,3 +468,27 @@ DESIGN.md).
 - Both offline Node suites passed: preserved 220 Hz pitch and expected duration across speeds,
   chunk-boundary invariance, silence/tiny clips/EOF, plus streaming underflow and transport controls.
   No model inference, user-service restarts or real speech audition. Quality remains experimental.
+
+## 2026-10-22: Hosted Qwen reference and stock Kokoro voices
+
+- User requested the official Qwen tokenizer_demo_1.wav URL as Qwen's reference, and confirmed
+  removal of all custom speaker assets from tracking in favor of stock Kokoro voices. The Python Qwen
+  package accepts URLs, but the configured qwentts.cpp mellon-v0.1.0 voice endpoint only accepts
+  wav_b64 (or speaker/RVQ latent uploads), verified in upstream src/tts-server.h.
+- Added HTTP(S) voice config support: download once into ignored voices/cache/<URL hash>/, then
+  register cached WAV bytes through the existing API. Local paths still work; failed downloads
+  leave no completed cache entry. Startup --only skips unrelated servers' voice preparation.
+- Default Qwen voice is qwen_demo. Downloaded the selected reference and verified mono 24 kHz,
+  16-bit PCM, 10.53 seconds. Kokoro defaults now af_maple/English and zf_001/Chinese; v1.0 keeps
+  its existing stock af_heart/zf_xiaoxiao/jf_alpha choices.
+- Removed original reference WAVs, custom packs, derived recordings and voice-folder docs from Git's index; ignored
+  the old directory while retaining local copies. Existing Git history/releases are unchanged.
+  Updated smoke fixtures/tool to generic locally generated English/Chinese/Japanese clips; no
+  bundled replacements and no live model calls. Added voices/README.md with setup/source details.
+- All 43 Python checks passed, including URL caching, cache retry, local paths, exact base64 upload
+  and stock voice defaults. Real sample download/format checked; actual Qwen cloning/audition and
+  fixture generation were not run. User services and config_local/config_generated untouched.
+
+- Removed all remaining mentions of the former speaker assets from code/docs, including Mac
+  install tables and historical log references. voices/ now ignores all local assets except the
+  shipped README, so preserved local files stay ignored without a speaker-specific rule.

@@ -1,18 +1,13 @@
-"""Generate voices/beth_thomas/test_audio/: Beth's English sample in other languages, for
-testing the dashboard with known speech.
+"""Generate local English, Chinese and Japanese smoke-test clips under voices/test_audio/.
 
-Usage, from the project root, with the servers running (launch.sh):
-    python src/tools/generate_test_audio.py [--voice NAME] [config_local.toml]
+Usage, with the servers running:
+    python src/tools/generate_test_audio.py [--source WAV_OR_URL] [--voice NAME] [config_local.toml]
 
-voices/beth_thomas/beth_thomas.wav is transcribed by whisper (forced to English),
-translated by llama into Simplified Chinese and Japanese (one sentence per
-line, with its own short prompt, not the dashboard's), and each sentence is
-spoken by the TTS server ([tts] server) in the voice beth_thomas (Qwen3-TTS's
-clone of her; --voice for another). The sentences are joined with 0.6 s pauses,
-well over [auto_split] split_pause_ms, so the dashboard splits each clip into
-several phrases. Writes beth_chinese.wav and beth_japanese.wav (the TTS
-server's 24 kHz mono 16-bit) and transcripts.json (the English text and the
-translated sentences). Run again to regenerate them, e.g. after a model change.
+The source defaults to the configured Qwen reference voice (local path or HTTP(S) URL).
+Whisper transcribes it with automatic language detection, llama translates it into each
+fixture language, and the configured TTS server speaks the sentences with pauses. Uses
+that server's per-language/default voices unless --voice is supplied. Files are ignored
+by Git; run explicitly to create or regenerate the smoke fixtures.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -27,13 +22,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # src/, for common and configuration
 
-from common import CONFIG_LOCAL_FILE, load_config, run_script, setup_logging
+from common import CONFIG_LOCAL_FILE, load_config, run_script, setup_logging, voice_file
 from configuration import ROOT
 
 NAME = "generate_test_audio"
-SOURCE = ROOT / "voices" / "beth_thomas" / "beth_thomas.wav"
-OUT_DIR = ROOT / "voices" / "beth_thomas" / "test_audio"
-LANGUAGES = {"chinese": "Simplified Chinese", "japanese": "Japanese"}  # file name: language for llama
+OUT_DIR = ROOT / "voices" / "test_audio"
+LANGUAGES = {"english": "English", "chinese": "Simplified Chinese", "japanese": "Japanese"}  # file name: language for llama
 TTS_RATE = 24000  # the TTS server's raw PCM: 16-bit mono at this rate
 PAUSE = b"\0\0" * int(TTS_RATE * 0.6)  # between sentences
 TIMEOUT = 600  # seconds, for each server call
@@ -50,13 +44,13 @@ def post(url, body, content_type="application/json"):
         return response.read()
 
 
-def transcribe(whisper_url, wav):
-    """whisper-server's text for the WAV, forced to English."""
+def transcribe(whisper_url, wav, filename="reference.wav"):
+    """whisper-server's text for the WAV, in its detected language."""
     boundary = uuid.uuid4().hex
-    fields = {"response_format": "json", "temperature": "0.0", "language": "en"}
+    fields = {"response_format": "json", "temperature": "0.0", "language": "auto"}
     body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
                     for key, value in fields.items())
-    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{SOURCE.name}"\r\n'
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
              f'Content-Type: audio/wav\r\n\r\n').encode() + wav + f"\r\n--{boundary}--\r\n".encode()
     result = json.loads(post(f"{whisper_url}/inference", body, f"multipart/form-data; boundary={boundary}"))
     return result["text"].strip()
@@ -97,7 +91,8 @@ def main():
     parser.add_argument("config", nargs="?", default=CONFIG_LOCAL_FILE, type=Path,
                         help="settings on top of the defaults and config_generated.toml "
                              "(default: the project's config_local.toml)")
-    parser.add_argument("--voice", default="beth_thomas", help="the TTS voice (default: beth_thomas)")
+    parser.add_argument("--source", help="reference WAV path or HTTP(S) URL (default: configured Qwen voice)")
+    parser.add_argument("--voice", help="override the configured TTS per-language/default voice")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -107,16 +102,20 @@ def main():
                                        server_url(cfg, tts))
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    english = transcribe(whisper_url, SOURCE.read_bytes())
-    print(f"== {SOURCE.name}, transcribed:\n   {english}")
-    transcripts = {"english": english}
+    qwen = cfg["api_servers"]["qwentts"]
+    source = voice_file(cfg, args.source or qwen["voices"][qwen["default_voice"]])
+    original = transcribe(whisper_url, source.read_bytes(), source.name)
+    print(f"== {source.name}, transcribed:\n   {original}")
+    transcripts = {"source": original}
     for name, language in LANGUAGES.items():
-        sentences = translate(llama_url, english, language)
+        sentences = translate(llama_url, original, language)
         transcripts[name] = sentences
-        path = OUT_DIR / f"beth_{name}.wav"
-        seconds = speak(tts_url, args.voice, sentences, path)
+        path = OUT_DIR / f"{name}.wav"
+        server = cfg["api_servers"][tts]
+        voice = args.voice or server.get("language_voices", {}).get(name, server["default_voice"])
+        seconds = speak(tts_url, voice, sentences, path)
         print(f"== {language}:", *sentences, sep="\n   ")
-        print(f"   wrote {path.relative_to(ROOT).as_posix()} ({seconds:.1f} s, {tts} voice {args.voice})")
+        print(f"   wrote {path.relative_to(ROOT).as_posix()} ({seconds:.1f} s, {tts} voice {voice})")
         log.info("wrote %s: %d sentences, %.1f s", path, len(sentences), seconds)
     path = OUT_DIR / "transcripts.json"
     path.write_text(json.dumps(transcripts, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")

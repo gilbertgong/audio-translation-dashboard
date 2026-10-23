@@ -52,7 +52,7 @@ import urllib.request
 from pathlib import Path
 
 from common import (CONFIG_LOCAL_FILE, LOG_FILE, api_servers, config_path, load_config, model_files, run_script,
-                    setup_logging, starts)
+                    setup_logging, starts, voice_file)
 
 NAME = "run_servers"
 STARTUP_TIMEOUT = 300  # seconds to wait for each server to become ready
@@ -162,8 +162,8 @@ def start_server(cfg, name, server, log, log_dir):
 
 
 def voice_files(cfg, server):
-    """The server's [api_servers.<name>.voices] entries, as {voice name: WAV path}."""
-    return {voice: config_path(cfg, path) for voice, path in (server.get("voices") or {}).items()}
+    """Voice paths; HTTP(S) sources are downloaded once and then reused locally."""
+    return {voice: voice_file(cfg, path) for voice, path in (server.get("voices") or {}).items()}
 
 
 def register_voices(cfg, name, server, log):
@@ -369,6 +369,8 @@ def main():
 
     # Check the voice files up front, before anything is started.
     for name, server in api_servers(cfg).items():
+        if args.only and name not in args.only:
+            continue
         if starts(cfg, name):
             for voice, path in voice_files(cfg, server).items():
                 if not path.is_file():

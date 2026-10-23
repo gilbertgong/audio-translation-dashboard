@@ -119,7 +119,7 @@ server = "kokoro"
 # Kokoro's voices: af_maple, af_sol, bf_vale (American/British English
 # female), zf_001 ... zf_099 (Chinese female), zm_009 ... zm_100 (Chinese
 # male); the full list: GET /v1/audio/voices on the server. Qwen3-TTS: a name
-# from its voices table ([api_servers.qwentts.voices]), e.g. "beth_thomas".
+# from its voices table ([api_servers.qwentts.voices]), e.g. "qwen_demo".
 # voice = ""
 # voice_language1 = ""
 # voice_language2 = ""
@@ -187,7 +187,7 @@ model = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27
 [models.kokoro]
 kokoro = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2#kokoro-multi-lang-v1_1/model.onnx"
 
-# Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices (see voices/beth_thomas/),
+# Qwen3-TTS 1.7B "base" talker, which speaks in cloned voices (see voices/README.md),
 # about 4GB of GPU memory. Two files: the talker and its codec, passed to
 # tts-server as --model and --codec. Smaller: qwen-talker-0.6b-base-Q8_0.gguf
 # (about 3GB). Preset voices (serena, vivian, ryan, ...) instead of cloning: a
@@ -280,34 +280,29 @@ args = ["--lib", "{server_dir}/lib", "--threads", "0"]
 # --repo-id identifies the original model package as in Kokoro's reference pipeline.
 # The server defaults to hexgrad/Kokoro-82M-v1.1-zh; the v1.0 fragment selects
 # hexgrad/Kokoro-82M and its corresponding phonemizer/voice settings.
-# The voice used unless a better one is set (see [tts]): Beth, a voicepack
-# (below) that speaks both languages well.
-default_voice = "beth_thomas"
+# Stock English voice, unless a language-specific voice is selected below.
+default_voice = "af_maple"
 # The voicepacks below are loaded at start, as --voice NAME=FILE.
 voice_arg = "--voice"
 
 [api_servers.kokoro.language_voices]
 # A voice per language, by whisper's language name: used for translations
-# spoken in that language (see [tts] above). Beth for all three; the stock
-# voices speak only their own language well (native alternatives: english =
-# "af_maple", chinese = "zf_001"; none for Japanese, which v1.1-zh wasn't
-# trained on, though Beth speaks it well).
-english = "beth_thomas"
+# spoken in that language (see [tts] above). v1.1-zh has English and Chinese
+# stock voices. For Japanese, use the v1.0 fragment and its jf_alpha voice.
+english = "af_maple"
 chinese = "zf_001"
-japanese = "beth_thomas"
 
 [api_servers.kokoro.voices]
 # Extra voicepacks for this Kokoro model (v1.1-zh): name = a [510, 1, 256]
 # Set voices = false in [api_servers.kokoro] to disable inherited extra packs.
 # voicepack (.pt, or raw float32 .bin), relative to the project folder, then
-# selected by name like a stock voice. See voices/beth_thomas/RC3/README.md.
-beth_thomas = "voices/beth_thomas/RC3/beth_thomas_rc3.pt"
+# selected by name like a stock voice. No extra voicepacks are shipped.
 
 [api_servers.qwentts]
 # Qwen3-TTS, an alternative (off by default): tts-server from qwentts.cpp, with
 # voice cloning, on the GPU, as built by the public release workflow in the
 # Zyeine fork. The Vulkan build is small and runs on most GPUs without a CUDA
-# runtime. Tested with the voice "beth_thomas"; see [tts] for switching.
+# runtime. See [tts] for switching and voices/README.md for reference audio.
 start = false
 repo = "Zyeine/qwentts.cpp"
 release = "mellon-v0.1.0"
@@ -319,14 +314,16 @@ port = 8085
 # Language detected per text (it is set for the whole server in this build).
 args = ["--lang", "auto"]
 # The voice used unless a better one is set (see [tts]); from the table below.
-default_voice = "beth_thomas"
+default_voice = "qwen_demo"
 
 [api_servers.qwentts.voices]
 # Cloned voices, registered by src/run_servers.py every time tts-server
 # starts (it keeps them in memory only), then selected by name when speaking.
-# name = WAV file of one speaker, about 10-30 s (relative to the project
-# folder); no transcript needed. See voices/beth_thomas/README.md.
-beth_thomas = "voices/beth_thomas/beth_thomas.wav"
+# name = WAV path (relative to the project folder) or HTTP(S) URL.
+# URL references are downloaded once to voices/cache/ and reused offline.
+# The launcher uploads WAV bytes to qwentts.cpp; no transcript is needed.
+# This sample is linked by the official Qwen3-TTS README. See voices/README.md.
+qwen_demo = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/tokenizer_demo_1.wav"
 
 [api_servers.llama]
 # start, release and ensure_version: as for whisper above.

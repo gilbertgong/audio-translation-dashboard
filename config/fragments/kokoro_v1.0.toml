@@ -9,7 +9,7 @@ host = "127.0.0.1"
 port = 8083
 args = ["--lib", "{server_dir}/lib", "--threads", "0", "--repo-id", "hexgrad/Kokoro-82M"]
 default_voice = "af_heart"
-# Do not inherit Beth's v1.1-specific voicepack. User overrides may add v1.0 packs.
+# Do not inherit extra v1.1-specific voicepacks. User overrides may add v1.0 packs.
 voices = false
 
 [api_servers.kokoro.language_voices]

@@ -27,9 +27,9 @@ recipes good.
   llama gets an explicit source and target and returns no language tags.
   *Why:* translation depends on transcription accuracy; avoid making llama infer direction again.
 - **Kokoro through misaki** (`kokoro_server.py`), not sherpa-onnx's front end. *Why:* the model was trained on
-  misaki's phonemes; Beth's voicepack sounded bad any other way.
-- **Default voice Beth Thomas** for both languages: a Qwen3-TTS clone on the 24 GB desktop, a Kokoro voicepack found
-  by search elsewhere.
+  misaki's phonemes, matching the model reference front end.
+- **Default voices:** stock Kokoro af_maple (English) and zf_001 (Chinese); Qwen qwen_demo clones
+  the official hosted sample. Reference audio is downloaded/cached locally, not bundled in Git.
 - **Recipes:** 24 GB: whisper large-v3, Qwen3.8-27B, Qwen3-TTS 1.7B. 8 GB: whisper large-v3, Qwen3.5-4B UD-Q4_K_XL,
   Kokoro on CPU. 6 GB: whisper large-v3-q5_0, Qwen3.5-4B UD-IQ3_XXS, Kokoro on CPU. The laptop llama runs with
   `--ctx-size 2048`. *Why:* a smaller translation model leaves room for a better whisper; one phrase needs little
@@ -41,6 +41,9 @@ recipes good.
   results stay in order.
 
 ## Results so far
+
+- Qwen voice config accepts HTTP(S) references cached under voices/cache/ before base64 registration.
+  Custom voice assets are no longer tracked; Kokoro uses stock voices. Smoke clips are generated locally.
 
 - Reopening Generate config restores advanced selections and endpoints immediately, before GPU
   detection; later GPU suggestions preserve these backend choices. Nine generator checks passed.
@@ -112,7 +115,7 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 - `src/static/`: `index.html` + `app.js` (dashboard), `test.html` (component tests), `smoke.html` (end-to-end smoke
   test with recorded speech).
 - `config/defaults.toml` (every setting), `config/fragments/`, `config/recipes/`.
-- `voices/beth_thomas/`: the default voice and test audio.
+- `voices/README.md`: stock voices, URL references and generated local test audio.
 - Full detail: `DESIGN.md`.
 
 ## Open questions

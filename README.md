@@ -79,7 +79,11 @@ save_session_data = true
 Kokoro v1.0 is available as `config/fragments/kokoro_v1.0.toml`. Select `kokoro_v1.0` under
 Speech in Advanced mode, or replace `kokoro_v1.1` in a recipe's fragment list and regenerate. It
 uses the same ONNX engine with the original package's phonemizer and stock voices; existing
-recipes and the Beth voicepack remain on v1.1-zh.
+recipes remain on v1.1-zh with its stock English/Chinese voices.
+
+Qwen uses the official project’s hosted sample as its default reference voice (`qwen_demo`).
+HTTP(S) voice references are cached locally on first launch; local WAV paths still work. Kokoro
+uses bundled stock voices. No custom voice recordings or voicepacks are shipped.
 
 ## Use a remote desktop
 
@@ -119,7 +123,7 @@ works with ZIP installations and does not require Git.
 
 - [DESIGN.md](DESIGN.md): how it works, in detail: architecture, configuration, scripts, running servers on another
   machine.
-- [voices/beth_thomas/README.md](voices/beth_thomas/README.md): the default voice.
+- [voices/README.md](voices/README.md): stock voices, URL reference audio and local test fixtures.
 
 ## License
 

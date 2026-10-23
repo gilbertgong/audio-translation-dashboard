@@ -462,7 +462,7 @@ def get_voices(req):
 
 @app.get("/api/test-audio")
 def get_test_audio(req):
-    """?file=<a WAV under voices/>, e.g. beth_thomas/test_audio/beth_chinese.wav: known
+    """?file=<a WAV under voices/>, e.g. test_audio/chinese.wav: known
     speech for the smoke test page (smoke.html)."""
     voices = (ROOT / "voices").resolve()
     file = (voices / req.query.get("file", "")).resolve()

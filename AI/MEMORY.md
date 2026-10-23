@@ -15,7 +15,7 @@
   extension points. Kept current with the code.
 - `INSTALL_MAC.md`: step-by-step macOS install, for people.
 - `config/defaults.toml`: every setting, documented in its comments.
-- `voices/beth_thomas/README.md`: the default voice's source, attribution and voicepack notes.
+- `voices/README.md`: stock voices, hosted Qwen reference audio and local test fixtures.
 - `AI/`: for assistants (this file, the plan, the log, the strategy, and the git-ignored `LOCAL.md`).
 
 ## Rules that keep these docs working
@@ -107,6 +107,8 @@ to simplify or change the reference front end. Pin the reference used for equiva
 *Why:* the user strongly prefers upstream behavior and wants differences to be explicit.
 
 ### Code and files
+- Do not ship reference recordings, custom voicepacks or derived test audio, or reference removed speaker assets in code/docs. Use stock Kokoro
+  voices and the configured hosted Qwen reference; downloaded/generated audio stays ignored by Git.
 - When bumping the launcher version, set it to the current app release version, not an independent
   increment (for example, this launcher update moves 0.3.0 to 0.4.1 alongside app 0.4.1).
 - Every fragment must document its approximate model file size in a `# Model files: N GB ...`

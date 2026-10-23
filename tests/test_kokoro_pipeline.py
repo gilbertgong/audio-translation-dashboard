@@ -139,7 +139,9 @@ class KokoroPipelineTests(unittest.TestCase):
                 self.assertEqual(run_servers.voice_files(cfg, engine), {})
                 self.assertEqual(engine["language_voices"], {"english": "af_heart", "chinese": "zf_xiaoxiao", "japanese": "jf_alpha"})
             else:
-                self.assertIn("beth_thomas", run_servers.voice_files(cfg, engine))
+                self.assertEqual(run_servers.voice_files(cfg, engine), {})
+                self.assertEqual(engine["default_voice"], "af_maple")
+                self.assertEqual(engine["language_voices"], {"english": "af_maple", "chinese": "zf_001"})
 
     def test_http_adapter_passes_reference_language_alias(self):
         engine = Mock(voices=["af_heart"])

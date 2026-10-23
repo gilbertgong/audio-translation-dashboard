@@ -7,6 +7,7 @@ if sys.version_info < (3, 11):  # before configuration.py imports tomllib, which
     raise SystemExit(f"error: Python 3.11+ is required (this is {sys.version.split()[0]})")
 
 import logging
+import hashlib
 import shutil
 import tarfile
 import urllib.error
@@ -118,6 +119,20 @@ def model_files(cfg, name):
         parts = urllib.parse.urlsplit(url)
         files.append((f"--{key}", url, folder / (parts.fragment or Path(parts.path).name)))
     return files
+
+
+def voice_file(cfg, value):
+    """Local voice path, downloading HTTP(S) references once into an ignored cache."""
+    if urllib.parse.urlsplit(value).scheme.lower() not in ("http", "https"):
+        return config_path(cfg, value)
+    key = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    filename = Path(urllib.parse.urlsplit(value).path).name or "reference.wav"
+    path = config_path(cfg, f"voices/cache/{key}/{filename}")
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"== Downloading voice reference: {value}")
+        download(value, path)
+    return path
 
 
 def unpack(archive, dest):

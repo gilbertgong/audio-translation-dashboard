@@ -9,5 +9,9 @@ logs/*
 /config_local.toml
 /config_generated.toml
 
+# Keep reference audio, custom packs and generated fixtures local; ship only the guide.
+/voices/*
+!/voices/README.md
+
 # AI context for this computer only (see AI/STRATEGY.md)
 /AI/LOCAL.md
