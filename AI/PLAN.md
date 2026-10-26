@@ -1,5 +1,8 @@
 # Plan
 
+Scope: audio-translation-dashboard only. If embedded as a subtree, this plan does not define the
+containing repository's architecture, Git workflow or work scope; see MEMORY.md's scope boundary.
+
 The present state, rewritten when it changes. History is in `AI/PROJECT_LOG.md`; the detailed design in `DESIGN.md`.
 
 ## Goal

@@ -1,5 +1,13 @@
 # Strategy: a repo that any AI assistant can pick up
 
+## Scope boundary
+
+This AI/ directory documents audio-translation-dashboard. If the project is embedded as a subtree
+or subdirectory in another repository, these instructions remain scoped to this project and its
+contents. They are not host-repository policy. Do not extend its Git workflow, release process,
+architecture or working conventions to sibling projects or the containing repo without explicit
+host guidance. Keep this boundary clear when adding or reorganizing AI docs.
+
 This describes how this repo is organized so that an AI assistant can continue the work from the repo alone: on
 another computer, in a fresh session, or with a different assistant. It's written so an assistant can set up the
 same structure in another repo by following it.
@@ -26,7 +34,8 @@ to keep it current as part of the work itself.
 4. **Record the why.** Decisions are written down with their reasons, so a later session can tell a deliberate
    choice from an accident, and knows what to reconsider if the reason no longer holds.
 5. **Keep the present apart from the past.** `AI/PLAN.md` holds the current state and is rewritten so it's always
-   true; `AI/PROJECT_LOG.md` holds the history and is only appended to.
+   true; `AI/PROJECT_LOG.md` holds shared history and is only appended to, except when relocating
+   private material into `AI/PRIVATE.md`. That file keeps its own current context and dated history.
    *Why:* when one file mixes both, every change of direction means finding and correcting old statements, and the
    stale ones that slip through mislead the next session.
 6. **Docs are updated with the code, unasked.** Every change includes updating the docs it affects. A stale plan is
@@ -62,6 +71,7 @@ AI/
   TODO.md            user-requested work, with completed and remaining items
   PROJECT_LOG.md     the past: dated history of what was tried, found and decided, and why; appended to
   STRATEGY.md        this file: how the structure works and how to replicate it
+  PRIVATE.md         private branches only: private workflow, feature plans and history; absent from public
   LOCAL.md           this computer only, not in version control: local paths, related projects, services, rules
 ```
 
@@ -72,7 +82,8 @@ It opens with a **"Start here"** instruction:
 2. read `AI/LOCAL.md` if it exists;
 3. read `AI/PROJECT_LOG.md` when history matters (before trying something that may have been tried, or to understand
    how a decision came about);
-4. read `AI/STRATEGY.md` when changing how the docs are organized.
+4. read `AI/STRATEGY.md` when changing how the docs are organized;
+5. read `AI/PRIVATE.md` when present for private workflow and feature context.
 
 Then a short map of the repo's docs, then the user's lasting preferences about how the assistant should work:
 process, testing, communication, what to ask about and what to just do. Not facts about the project.
@@ -103,6 +114,15 @@ the project, not one computer or session: what's running or queued right now doe
 Dated entries, appended to: what changed and why, findings, approaches tried and dropped, decisions made and later
 replaced. Read when history matters, e.g. before trying something that may have been tried. Facts that are already
 plain from the code or version control don't need repeating; record what isn't.
+
+### `AI/PRIVATE.md`: private development only
+
+When present, this tracked file holds substantive private-branch workflow, plans, decisions and
+history, including feature branches feeding private. Shared docs may contain brief references, but
+keep the detailed private material here. Exclude this file from the public branch and public releases
+when selecting shared changes; it is intentionally absent from public checkouts. This is separate
+from machine-local `LOCAL.md`, and neither file should contain credentials. Relocating private history
+here is an exception to PROJECT_LOG.md's append-only convention: preserve the dated entries here.
 
 ### `AI/LOCAL.md`: this computer
 

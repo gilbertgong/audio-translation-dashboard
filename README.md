@@ -130,11 +130,14 @@ bash scripts/release.sh 0.4.2
 ```
 
 Requires Git, authenticated GitHub CLI (`gh auth login`), and Python (`PYTHON=python3` if needed).
-The script updates `app.version`, makes a release commit, pushes the current branch and version tag
-together, verifies their remote refs, and creates a GitHub release with generated notes. It sets
-`launcherVersion` to the new release version only when the launcher or its three imported project
-modules changed since the tag recorded by that field. Pending changes must be committed or stashed;
-the script doesn't include them automatically. Run on `main` for the normal published master version URL.
+The script updates `app.version`, commits release metadata, creates an annotated version tag,
+pushes the release refs, verifies them and creates a GitHub release with generated notes.
+`launcherVersion` changes only when the launcher or its three imported project modules differ
+from its recorded tag. Code changes must already be committed; pending changes are not included.
+
+Follow the branch and remote conventions in `AI/PRIVATE.md` when present. The published master
+version URL must receive the release metadata. Inspect any reported partial completion before
+retrying a failed release.
 
 ## More
 

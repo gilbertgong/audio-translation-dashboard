@@ -566,3 +566,9 @@ DESIGN.md).
   Python AST equivalence after normalizing the local rename/docstrings; parsed TOML unchanged.
   JS syntax, offline playback and ten existing retention/recheck tests passed. No live service
   or model calls were made; the real capture smoke test was not run.
+
+## 2026-10-26: Documentation scope and optional private context
+
+- Scoped AI guidance to audio-translation-dashboard, including when embedded as a subtree.
+- Added optional AI/PRIVATE.md discovery and documented that substantive private workflow, feature
+  plans and history belong there. The file is intentionally absent from public branches/releases.

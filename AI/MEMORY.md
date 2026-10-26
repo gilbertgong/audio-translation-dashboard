@@ -1,5 +1,14 @@
 # Memory: start here
 
+## Scope
+
+These AI docs and their working conventions apply to **audio-translation-dashboard** and its
+contents. If this project is included as a subtree or subdirectory of another repository, do not
+assume its guidance applies to the containing repository, sibling projects or other subtrees.
+In particular, its Git remotes, branch/release conventions and architecture decisions describe
+audio-translation-dashboard, not the host repository. Read the host's own instructions for work
+outside this project; do not reconfigure host-level Git settings based on these docs.
+
 ## Start here
 
 1. Read `AI/PLAN.md`: where the project stands now.
@@ -7,6 +16,7 @@
 3. Read `AI/PROJECT_LOG.md` when history matters: before trying something that may have been tried, or to understand
    how a decision came about.
 4. Read `AI/STRATEGY.md` when changing how these docs are organized.
+5. Read `AI/PRIVATE.md` if present: private workflow, feature plans and history.
 
 ## Map of the docs
 
@@ -18,12 +28,14 @@
 - `voices/README.md`: stock voices, hosted Qwen reference audio and local test fixtures.
 - `AI/`: for assistants (this file, the plan, the log, the strategy, and the git-ignored `LOCAL.md`).
 - `AI/TODO.md`: user-requested work and its completion status.
+- `AI/PRIVATE.md` (when present): private development context; excluded from the public branch.
 
 ## Rules that keep these docs working
 
 ### Remember in the repo
 Save the user's preferences here, the current state in `AI/PLAN.md`, history in `AI/PROJECT_LOG.md`, and anything
-about one computer in `AI/LOCAL.md`, not in an assistant's own memory.
+about one computer in `AI/LOCAL.md`, not in an assistant's own memory. Substantive private
+workflow, feature plans and history go in `AI/PRIVATE.md` when present.
 *Why:* the next session may be another assistant, account or computer; only the repo travels.
 
 ### Keep the docs current without asking
@@ -44,6 +56,12 @@ Nothing local or outside the repo in shared docs: no local paths, machine setup 
 ### The user commits
 Don't commit or push; leave changes in the working tree for the user to review and commit.
 *Why:* the user reviews and commits everything themselves.
+
+### Private development context
+
+When `AI/PRIVATE.md` is present, follow it for private workflow and feature work. Keep substantive
+private-branch material there and exclude that file when selecting changes for public. Brief
+pointers elsewhere are fine; absence of the file in a public checkout is expected.
 
 ### Discuss before building when asked
 When the user asks a question or says "let's discuss", answer and propose; build only once they choose.

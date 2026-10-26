@@ -399,15 +399,16 @@ available before publishing its master metadata. Keep the master describing a pu
 rather than unreleased development work. No external helper is needed to replace the Python launcher
 source; its current process continues with already loaded code until restarted.
 
-`bash scripts/release.sh VERSION` automates release metadata, its commit, an annotated `vVERSION` tag,
-an atomic push of the current branch and tag to origin, remote-ref verification, and `gh release create`
-with generated notes and `--verify-tag`. It requires a clean working tree and a newer numeric app version;
-code changes must already be committed. It fetches tags and compares launcher.pyw, src/configuration.py,
-src/common.py and src/app_updates.py against the recorded launcherVersion tag. Any difference sets
-launcherVersion to the new app version; otherwise it is retained. A missing comparison tag stops the
-release rather than guessing. Keep that file list aligned with launcher imports, including indirect
-imports and file moves. The script preserves masterVersionFile and rewrites the tagged download URL
-for the GitHub repository identified by gh. Use main so the published master URL receives the metadata.
+`bash scripts/release.sh VERSION` automates release metadata, its commit, an annotated `vVERSION`
+tag, pushing and verification of release refs, and `gh release create` with generated notes and
+`--verify-tag`. It requires a clean working tree and a newer numeric app version; code changes must
+already be committed. It compares launcher.pyw, src/configuration.py, src/common.py and
+src/app_updates.py against the recorded launcherVersion tag. Any difference sets launcherVersion
+to the new app version; otherwise it is retained. A missing comparison tag stops the release.
+Keep that file list aligned with launcher imports, including indirect imports and file moves.
+The script preserves masterVersionFile and rewrites the tagged download URL for the release repo.
+Branch and remote conventions are documented in `AI/PRIVATE.md` when present. Ensure the published
+master URL receives the metadata; inspect reported partial completion before retrying failures.
 
 Offline regression checks: `python -m unittest discover -s tests -v`. They use scratch installations
 and mocked network/processes; they never update the working checkout or contact model servers.
