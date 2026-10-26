@@ -62,12 +62,13 @@ def server_url(server):
     return f"http://{server['host']}:{server['port']}"
 
 
-def server_argv(cfg, name, server):
+def server_argv(cfg, name, server, files=None, check_files=True):
     """The server's command line: executable, model file(s), host, port and extra args.
 
     A server is either an executable from its install folder, or a Python
     script of this project (script = "..."), run with this Python; "{server_dir}"
     in args is replaced by its install folder (e.g. for the libraries it loads).
+    files can supply provisioned model paths; check_files=False is for command previews.
     """
     install_dir = config_path(cfg, cfg["api_servers"].get("install_dir", "api_servers"))
     server_dir = install_dir / name
@@ -80,9 +81,10 @@ def server_argv(cfg, name, server):
             exe = exe.with_suffix(".exe")
         program = [str(exe)]
         needed = [(exe, "install_api_servers.py")]
-    files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("--model", ..., model.gguf)
+    if files is None:
+        files = model_files(cfg, name)  # [(flag, url, path)], e.g. ("--model", ..., model.gguf)
     needed += [(path, "download_models.py") for _, _, path in files]
-    for path, hint in needed:
+    for path, hint in needed if check_files else []:
         if not path.is_file():
             raise SystemExit(f"error: {path} not found (run src/{hint})")
     model_args = [arg for flag, _, path in files for arg in (flag, str(path))]

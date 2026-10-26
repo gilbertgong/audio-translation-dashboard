@@ -14,6 +14,12 @@ if ! command -v "$PYTHON" >/dev/null; then
   exit 1
 fi
 
+# Linux service supervision (Docker/native); the dashboard can run separately.
+if [ "${1:-}" = "--instances" ]; then
+  shift
+  exec "$PYTHON" src/inference_instances.py "$@"
+fi
+
 # 1. Download the servers (whisper.cpp, llama.cpp, the TTS engine), if needed.
 "$PYTHON" src/install_api_servers.py
 

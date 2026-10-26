@@ -1,0 +1,22 @@
+# Docker llama.cpp example on GPU1; see linux-nvidia-24gb.toml for all engines.
+# Model files: 10.93 GB shared host file, mounted read-only into the container.
+# Replace the image tag with a verified release or digest for deployment.
+
+[supervisor]
+recipe = "nvidia-24gb"
+id = "inference-supervisor"
+restart_delay_s = 5
+stop_timeout_s = 10
+
+[api_servers.llama]
+host = "127.0.0.1"
+args = ["--ctx-size", "8192", "--n-gpu-layers", "99", "--parallel", "2"]
+
+[api_servers.llama.docker]
+image = "ghcr.io/ggml-org/llama.cpp:server-cuda"
+port = 8080
+
+[instances.llama_gpu1]
+service = "llama"
+gpu = "1"
+port = 8182

@@ -15,7 +15,8 @@ Everything runs on your own machine; nothing is sent to the cloud.
 - Python 3.11 or newer. The app itself needs nothing else; the speech servers' packages are installed into their own
   folder automatically.
 - A browser (Chrome or Edge for capturing tab audio).
-- An NVIDIA GPU with 6 GB or more (Windows), or a Mac with Apple silicon. Kokoro runs on the CPU.
+- An NVIDIA GPU with 6 GB or more (Windows), a Mac with Apple silicon, or Linux/NVIDIA with working
+  Docker/NVIDIA Container Toolkit and models sized for the GPU. Kokoro runs on the CPU.
 - Disk space for the servers and models: about 8–10 GB for the laptop setups, about 20 GB for the 24 GB setup.
 
 ## Run it
@@ -27,6 +28,9 @@ Everything runs on your own machine; nothing is sent to the cloud.
 3. **Open dashboard:** opens <http://localhost:8080/>.
 
 **Mac:** follow [INSTALL_MAC.md](INSTALL_MAC.md).
+
+**Linux/NVIDIA Docker:** see [INSTALL_LINUX.md](INSTALL_LINUX.md) for the service supervisor and
+local execution example. This extracted path still needs target-machine verification.
 
 **From a terminal:** `./scripts/launch.sh` does the same as Launch. Ctrl+C stops everything.
 

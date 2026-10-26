@@ -24,6 +24,7 @@ outside this project; do not reconfigure host-level Git settings based on these 
 - `DESIGN.md`: how it works, in detail: architecture, endpoints, flow, configuration, scripts, known limitations,
   extension points. Kept current with the code.
 - `INSTALL_MAC.md`: step-by-step macOS install, for people.
+- `INSTALL_LINUX.md`: Linux/NVIDIA service supervision, local/server lifecycle and machine configs.
 - `config/defaults.toml`: every setting, documented in its comments.
 - `voices/README.md`: stock voices, hosted Qwen reference audio and local test fixtures.
 - `AI/`: for assistants (this file, the plan, the log, the strategy, and the git-ignored `LOCAL.md`).
@@ -124,6 +125,15 @@ reference implementation unless a deliberate difference has been chosen and docu
 ONNX execution and bundled ONNX voices are deliberate Kokoro choices; they are not reasons
 to simplify or change the reference front end. Pin the reference used for equivalence tests.
 *Why:* the user strongly prefers upstream behavior and wants differences to be explicit.
+
+### Shared inference runtime
+
+Local mode stops only containers it created/started in that run and defaults Docker restart to no;
+server mode leaves containers running and defaults to unless-stopped. Existing independent services
+are left alone. Explicit settings are honored. Qwen examples use 8085/8185, matching the app.
+Keep native and container ownership protections, provisioning, readiness and voice reinitialization.
+Target-host testing is required before claiming end-to-end operation; mocked Docker tests are not
+that proof. Do not start real inference stacks or change a target host without user direction.
 
 ### Code and files
 - Use the pipeline terminology in DESIGN.md: session = browser tab; segment = one browser-submitted

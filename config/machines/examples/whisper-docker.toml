@@ -1,0 +1,21 @@
+# Docker whisper.cpp example on GPU1, independent of other services.
+# Model files: 3.10 GB (GPU), downloaded to models/whisper and mounted read-only.
+
+[supervisor]
+recipe = "nvidia-24gb"
+id = "inference-supervisor"
+restart_delay_s = 5
+stop_timeout_s = 10
+
+[api_servers.whisper]
+host = "127.0.0.1"
+
+[api_servers.whisper.docker]
+image = "ghcr.io/ggml-org/whisper.cpp:main-cuda"
+entrypoint = "whisper-server"
+port = 8080
+
+[instances.whisper_gpu1]
+service = "whisper"
+gpu = "1"
+port = 8181

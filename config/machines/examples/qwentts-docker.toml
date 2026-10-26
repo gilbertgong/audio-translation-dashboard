@@ -1,0 +1,23 @@
+# Docker Qwen-TTS example on GPU1; uses the dashboard Qwen port convention.
+# Model files: 2.37 GB (GPU; talker 2.08 GB + codec 0.29 GB).
+# Both files download to models/qwentts and mount read-only.
+
+[supervisor]
+recipe = "nvidia-24gb"
+id = "inference-supervisor"
+restart_delay_s = 5
+stop_timeout_s = 10
+
+[api_servers.qwentts]
+host = "127.0.0.1"
+
+[api_servers.qwentts.docker]
+image = "ghcr.io/serveurpersocom/qwentts.cpp:cuda12"
+# Run the official server directly; the supervisor initializes configured voices.
+entrypoint = "/app/tts-server"
+port = 8080
+
+[instances.qwentts_gpu1]
+service = "qwentts"
+gpu = "1"
+port = 8185

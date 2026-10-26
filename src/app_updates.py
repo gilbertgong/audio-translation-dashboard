@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 VERSION_FILE = "app.version"
 APP_FOLDERS = {"src", "config", "scripts"}
-APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "LICENSE", "launcher.pyw"}
+APP_FILES = {"README.md", "DESIGN.md", "INSTALL_MAC.md", "INSTALL_LINUX.md", "LICENSE", "launcher.pyw"}
 
 
 def read_version(path):

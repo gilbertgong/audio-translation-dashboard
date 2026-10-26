@@ -318,6 +318,39 @@ changes, interruption/resume, queue controls and the output meter. Real voice qu
 
 ## Running
 
+### Shared inference supervision (Linux/NVIDIA)
+
+`src/inference_instances.py` provides recipe/machine loading, per-instance native child supervision,
+readiness, startup ordering, retries and voice initialization. `src/docker_instances.py` provides
+the Docker lifecycle: image/model provisioning, NVIDIA selection, read-only model mounts, desired-spec
+hashes and owner/instance labels, create/reuse/start/replacement and restart detection. Both use the
+existing configuration/model/voice helpers; no third-party Python package is needed.
+
+`scripts/launch.sh --instances --config FILE` selects this path explicitly. It supervises services
+only; the dashboard runs separately. The ordinary launch path and desktop launcher remain unchanged.
+`[supervisor]` holds recipe, identity, timeouts/log folder and optional model-path overrides;
+`[instances.<name>]` selects a service with per-instance overrides. No desktop generated/local layers
+are loaded by this supervisor. See INSTALL_LINUX.md for the full example and app config interaction.
+
+Local mode defaults Docker restart to `no`, retries while supervision is active, and stops only
+containers it created or started in this run. It retains stopped containers/models/images. Matching
+already-running owned containers are reused and left running; unowned ones are not touched. Local
+mode refuses to reconfigure a running container it did not start. Native endpoints already answering
+health are reused in local mode without acquiring their process lifetime.
+
+Server mode defaults Docker restart to `unless-stopped` and leaves containers running after supervisor
+exit. Native children stop in both modes. Explicit `--stop` stops configured owned Docker containers;
+stop supervision first to avoid recovery starting them again. Explicit Docker restart settings are
+honored. Desired-spec changes replace owned containers according to the mode's rules. A Docker
+restart changes StartedAt and triggers readiness/voice initialization again, even if it happens
+between polls. Startup ordering does not cascade restarts across otherwise independent instances.
+
+Crashes can leave local containers running; a later launch can reuse them. No external cleanup daemon
+is introduced. Generic container label keys/name prefix can be overridden by a future host wrapper
+to preserve existing deployed identities. Private proxy registration, WireGuard and heartbeats are
+outside this runtime. The reference deployment worked, but the extracted code requires target Linux
+testing; offline tests do not establish GPU inference or actual Docker compatibility.
+
 On Windows, double-click **`launcher.pyw`**, the only Python file in the project folder. Its window:
 
 - **Open dashboard** (top): the dashboard in the browser.
@@ -438,6 +471,9 @@ README.md, DESIGN.md  for people: overview, and this document
 AI/, AGENTS.md, CLAUDE.md   for AI assistants: plan, history, working rules (start at AI/MEMORY.md)
 scripts/launch.sh, scripts/mock.sh    the same from a terminal
 scripts/setup_mac.sh, INSTALL_MAC.md   macOS: setup before scripts/launch.sh, and the steps
+INSTALL_LINUX.md      Linux/NVIDIA local service supervision and machine examples
+src/inference_instances.py, src/docker_instances.py   shared native/Docker supervision
+config/machines/      explicit machine files; examples/ are shared, *.local.toml are ignored
 config/               defaults.toml, fragments/, recipes/
 config_generated.toml, config_local.toml   (yours, git-ignored)
 voices/               a folder per speaker: Qwen3-TTS reference recordings, Kokoro voicepacks, test audio

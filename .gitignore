@@ -8,6 +8,7 @@ logs/*
 !logs/.gitkeep
 /config_local.toml
 /config_generated.toml
+/config/machines/*.local.toml
 
 # Keep reference audio, custom packs and generated fixtures local; ship only the guide.
 /voices/*

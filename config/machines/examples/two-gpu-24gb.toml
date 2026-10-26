@@ -1,0 +1,64 @@
+# Six native services: the existing 24 GB recipe on each GPU.
+# Model files: 16.40 GB shared on disk (Whisper 3.10 + llama 10.93 + Qwen 2.37 GB).
+# Prepare native Linux binaries/models separately. Voice references use the
+# existing download-once cache during voice initialization.
+# Use a copy of this file named *.local.toml for machine-specific overrides.
+# All relative paths are relative to the repository root.
+# Port convention: GPU0 uses 8081/8082/8085; GPU1 uses the base port + 100.
+
+[supervisor]
+recipe = "nvidia-24gb"
+restart_delay_s = 5
+stop_timeout_s = 10
+log_dir = "logs/inference-supervisor"
+
+# Installed files follow the existing api_servers/<service>/ layout.
+# Absolute executable paths may instead point at existing native builds.
+[api_servers.whisper]
+host = "127.0.0.1"
+
+[api_servers.qwentts]
+host = "127.0.0.1"
+
+[api_servers.llama]
+host = "127.0.0.1"
+
+[instances.whisper_gpu0]
+service = "whisper"
+gpu = "0"
+port = 8081
+
+[instances.qwentts_gpu0]
+service = "qwentts"
+gpu = "0"
+port = 8085
+
+# The desktop recipe uses Vulkan for Qwen-TTS; CUDA selection alone does not
+# select a Vulkan device. Confirm Vulkan device indices on the target machine.
+[instances.qwentts_gpu0.env]
+GGML_VK_VISIBLE_DEVICES = "0"
+
+[instances.llama_gpu0]
+service = "llama"
+gpu = "0"
+port = 8082
+after = ["whisper_gpu0", "qwentts_gpu0"]
+
+[instances.whisper_gpu1]
+service = "whisper"
+gpu = "1"
+port = 8181
+
+[instances.qwentts_gpu1]
+service = "qwentts"
+gpu = "1"
+port = 8185
+
+[instances.qwentts_gpu1.env]
+GGML_VK_VISIBLE_DEVICES = "1"
+
+[instances.llama_gpu1]
+service = "llama"
+gpu = "1"
+port = 8182
+after = ["whisper_gpu1", "qwentts_gpu1"]

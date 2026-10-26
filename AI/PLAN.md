@@ -45,6 +45,11 @@ recipes good.
 
 ## Results so far
 
+- Shared inference supervision supports Linux/NVIDIA local and server modes through --instances.
+  Local mode stops only containers started by that run; server mode leaves containers running.
+  Added machine examples and INSTALL_LINUX.md; Qwen uses 8085/8185. Offline lifecycle checks pass,
+  but Linux process-group cleanup and real Docker/GPU operation need target-host testing.
+
 - Pipeline terms are documented in DESIGN.md: session (browser tab), segment (browser-submitted
   audio/text), request (model task), attempt (backend execution/retry), and reserved app-side chunk.
   App recorder/splitter names and comments follow those terms; compatibility fields/keys are unchanged.
@@ -147,6 +152,9 @@ RTX 3060 Ti 8 GB (used to stand in for the 8 GB laptop recipe).
 - More in `DESIGN.md`, Known limitations.
 
 ## Next steps
+
+- Review and target-test the shared runtime extraction. Private integration planning is in
+  `AI/PRIVATE.md` when present.
 
 - Future telemetry planning: token counts for every model are the top priority, with recheck/retry
   attribution and performance timings. Consider MessageProxy routing/capacity and independent app/proxy

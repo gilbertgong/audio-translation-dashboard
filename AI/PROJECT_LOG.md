@@ -572,3 +572,12 @@ DESIGN.md).
 - Scoped AI guidance to audio-translation-dashboard, including when embedded as a subtree.
 - Added optional AI/PRIVATE.md discovery and documented that substantive private workflow, feature
   plans and history belong there. The file is intentionally absent from public branches/releases.
+
+## 2026-10-26: Shared Linux/NVIDIA inference supervision
+
+- Added native/Docker inference supervision, machine examples and INSTALL_LINUX.md. Local mode
+  stops containers started by that run; server mode leaves containers running. Existing endpoints
+  and independently running containers remain independent; ownership protections apply.
+- Added --instances service launching, separate from the dashboard. Qwen examples use 8085/8185.
+- Offline suite: 83 tests ran, one Linux-only test skipped on Windows; remaining checks passed.
+  Shell syntax and command preview passed. Real Linux/Docker/GPU verification remains outstanding.

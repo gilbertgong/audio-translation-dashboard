@@ -1,0 +1,55 @@
+# Linux/NVIDIA local services: the 24 GB recipe, one Docker container per engine.
+# Model files: 16.40 GB shared host files (Whisper 3.10 + llama 10.93 + Qwen 2.37 GB).
+# Copy to config/machines/<machine>.local.toml; choose the GPU explicitly.
+# Requires working Docker/NVIDIA Container Toolkit; no host packages are installed.
+# These image selections come from the working server reference. Pin a verified
+# digest for reproducible deployments; local target-machine testing is pending.
+
+[supervisor]
+recipe = "nvidia-24gb"
+id = "audio-translation-dashboard-local"
+restart_delay_s = 5
+stop_timeout_s = 10
+
+[api_servers.whisper]
+host = "127.0.0.1"
+port = 8081
+[api_servers.whisper.docker]
+image = "ghcr.io/ggml-org/whisper.cpp:main-cuda"
+entrypoint = "whisper-server"
+port = 8080
+
+[api_servers.qwentts]
+host = "127.0.0.1"
+port = 8085
+[api_servers.qwentts.docker]
+image = "ghcr.io/serveurpersocom/qwentts.cpp:cuda12"
+entrypoint = "/app/tts-server"
+port = 8080
+
+[api_servers.llama]
+host = "127.0.0.1"
+port = 8082
+args = ["--ctx-size", "8192", "--n-gpu-layers", "99", "--parallel", "2"]
+[api_servers.llama.docker]
+image = "ghcr.io/ggml-org/llama.cpp:server-cuda"
+port = 8080
+
+[instances.whisper]
+service = "whisper"
+gpu = "0"
+
+[instances.qwentts]
+service = "qwentts"
+gpu = "0"
+
+[instances.llama]
+service = "llama"
+gpu = "0"
+after = ["whisper", "qwentts"]
+
+# The app can use this same file for endpoints/voices in a separate terminal.
+[tts]
+server = "qwentts"
+[api_servers.kokoro]
+start = false
