@@ -581,3 +581,40 @@ DESIGN.md).
 - Added --instances service launching, separate from the dashboard. Qwen examples use 8085/8185.
 - Offline suite: 83 tests ran, one Linux-only test skipped on Windows; remaining checks passed.
   Shell syntax and command preview passed. Real Linux/Docker/GPU verification remains outstanding.
+
+## 2026-11-10: Simplified Chinese browser interface
+
+- Scoped to live, text and component-test views. Browser detection distinguishes Simplified and
+  Traditional Chinese; Traditional currently falls back to Simplified. A header selector persists
+  English/Simplified selection independently of the configured translation languages.
+- Added explicit static/dynamic message bindings and a Simplified catalog. UI switching updates
+  mounted views without reloading; transcript/translation data, drafts, identifiers and raw responses
+  remain literal. Operational playback/progress checks no longer depend on English display labels;
+  the smoke runner checks status state while retaining its English diagnostic prose.
+- Live/text conversation regions opt out of browser automatic translation with translate="no" and
+  notranslate. Raw diagnostic panels and component-test output also request exclusion.
+- Offline localization, playback (including Chinese labels), time-stretch, JS syntax and whitespace
+  checks passed. An isolated headless Edge check against the Python mock dashboard verified zh-TW
+  fallback, persisted override across reload, mounted/late-mounted views, preserved drafts, row identity,
+  timing details and streamed results/actions, and an active synthetic microphone recording surviving
+  a language switch. Test browser/server stopped; scratch settings/logs used throughout.
+- No real inference, GPU, screen capture, physical microphone or audio quality exercised. Browser
+  automatic translation was not triggered; the opt-out markup was checked. User wording/visual review
+  remains pending. Service/browser error details are shown as supplied, and launcher/setup and the
+  separate smoke runner's prose are outside initial scope.
+- UI review follow-up: replaced the language selector with an upper-right button showing the other
+  language (中文 in English UI, EN in Chinese UI). Persistence and in-place switching are retained.
+  Updated the existing localization check's expected control text; tests were not run for this UI-only
+  follow-up, per the user's instruction.
+- The user chose to retain the original English language identifiers beside conversation timestamps;
+  reverted the subsequent label-localization change and its language-name catalog additions.
+  No tests run for this UI-only revert.
+- Fixed playback speed labels reverting to localized "Language 1/2" after a UI-language toggle:
+  config loading now replaces their initial localization bindings with literal configured names.
+  No tests run for this UI-only fix, per user preference.
+- Final verification requested by the user: all three JS suites, syntax checks for every browser
+  script, whitespace checks and the isolated headless mock browser regression passed, including
+  repeated language-button clicks and literal configured playback labels. Python discovery ran 70
+  tests: 64 passed, one Linux-only test skipped, and five release tests failed in disposable Git-remote
+  setup. The user reserved releases for themselves; release tests were not retried. No release or
+  project-remote push was performed. User authorized a local implementation commit.

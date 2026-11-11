@@ -3,44 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Text Translation</title>
+  <title data-i18n="Text Translation">Text Translation</title>
   <script src="view-entry.js" data-view="text"></script>
+  <script src="i18n-zh.js"></script>
+  <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="translate.css">
 </head>
 <body>
   <header>
-    <h1>Text Translation</h1>
-    <a class="header-link" href="/">Live translation</a>
-    <a class="header-link" href="test.html">Component tests</a>
+    <h1 data-i18n="Text Translation">Text Translation</h1>
+    <a class="header-link" href="/" data-i18n="Live translation">Live translation</a>
+    <a class="header-link" href="test.html" data-i18n="Component tests">Component tests</a>
   </header>
   <main class="text-translator">
     <div class="chat-toolbar">
-      <button id="clear" type="button" disabled>New conversation</button>
-      <div class="direction" aria-label="Translation direction">
-        <span class="from-label">From</span>
+      <button id="clear" type="button" disabled data-i18n="New conversation">New conversation</button>
+      <div class="direction" aria-label="Translation direction" data-i18n-aria-label="Translation direction">
+        <span class="from-label" data-i18n="From">From</span>
         <strong id="source-language">…</strong>
-        <button id="swap" type="button" disabled title="Swap languages" aria-label="Swap languages">⇄</button>
-        <span class="to-label">To</span>
+        <button id="swap" type="button" disabled title="Swap languages" aria-label="Swap languages" data-i18n-title="Swap languages" data-i18n-aria-label="Swap languages">⇄</button>
+        <span class="to-label" data-i18n="To">To</span>
         <strong id="target-language">…</strong>
       </div>
     </div>
-    <section id="conversation" aria-label="Translation conversation" tabindex="0">
+    <section translate="no" class="notranslate" id="conversation" aria-label="Translation conversation" tabindex="0" data-i18n-aria-label="Translation conversation">
       <div id="empty-conversation" class="chat-empty">
-        <p>Type a message to translate.</p>
-        <span>Your text and its translation will appear here.</span>
+        <p data-i18n="Type a message to translate.">Type a message to translate.</p>
+        <span data-i18n="Your text and its translation will appear here.">Your text and its translation will appear here.</span>
       </div>
       <div id="messages"></div>
     </section>
     <div class="composer">
-      <label for="source-text" class="visually-hidden">Message to translate</label>
-      <textarea id="source-text" rows="2" placeholder="Type a message…" dir="auto" disabled></textarea>
+      <label for="source-text" class="visually-hidden" data-i18n="Message to translate">Message to translate</label>
+      <textarea id="source-text" rows="2" placeholder="Type a message…" dir="auto" disabled data-i18n-placeholder="Type a message…"></textarea>
       <div class="composer-footer">
-        <span class="shortcut-hint">Enter to translate · Shift+Enter for a new line</span>
-        <button id="translate" type="button" disabled>Translate</button>
+        <span class="shortcut-hint" data-i18n="Enter to translate · Shift+Enter for a new line">Enter to translate · Shift+Enter for a new line</span>
+        <button id="translate" type="button" disabled data-i18n="Translate">Translate</button>
       </div>
     </div>
-    <p id="translation-status" role="status" aria-live="polite">Loading languages…</p>
+    <p id="translation-status" role="status" aria-live="polite" data-i18n="Loading languages…">Loading languages…</p>
   </main>
   <script src="translation-actions.js"></script>
   <script src="translate.js"></script>

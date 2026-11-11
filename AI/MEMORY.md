@@ -136,6 +136,10 @@ Target-host testing is required before claiming end-to-end operation; mocked Doc
 that proof. Do not start real inference stacks or change a target host without user direction.
 
 ### Code and files
+- Browser UI copy is explicitly localized with `I18n.msg` and `I18n.text`/`I18n.attr`, or static
+  `data-i18n` markers; keep the Simplified Chinese catalog synchronized. Plain input/output strings
+  must stay literal even when they match an interface key. Bind text-only child spans when a label
+  also contains icons or dynamic content. Operational state must never depend on a translated label.
 - Use the pipeline terminology in DESIGN.md: session = browser tab; segment = one browser-submitted
   audio or text input; request = one model task; attempt = one execution/retry of that task.
   A forced-language recheck is a new request, not a retry. Reserve chunk for future app-side

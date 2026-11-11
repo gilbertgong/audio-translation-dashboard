@@ -3,53 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Audio Translation Dashboard</title>
+  <title data-i18n="Audio Translation Dashboard">Audio Translation Dashboard</title>
+  <script src="i18n-zh.js"></script>
+  <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="app-shell">
   <header>
-    <h1>Audio Translation Dashboard</h1>
+    <div class="app-heading">
+      <h1><span data-i18n="Audio Translation Dashboard">Audio Translation Dashboard</span></h1>
+      <button id="ui-language" class="ui-language header-link" type="button" lang="zh-Hans" translate="no">中文</button>
+    </div>
     <div class="app-toolbar">
-      <nav class="primary-views" aria-label="Translation views">
-        <a class="header-link" href="#live" data-view="live">Live translation</a>
-        <a class="header-link" href="#text" data-view="text">Text translation</a>
+      <nav class="primary-views" aria-label="Translation views" data-i18n-aria-label="Translation views">
+        <a class="header-link" href="#live" data-view="live" data-i18n="Live translation">Live translation</a>
+        <a class="header-link" href="#text" data-view="text" data-i18n="Text translation">Text translation</a>
       </nav>
       <!-- The three servers' status (filled in by app.js from /api/health). -->
       <div id="services" class="services" aria-live="polite"></div>
-      <a class="header-link" href="#tests" data-view="tests">Component tests</a>
-      <a id="smoke-link" class="header-link" href="smoke.html" target="_blank" rel="noopener" hidden>Smoke test ↗</a>
+      <a class="header-link" href="#tests" data-view="tests" data-i18n="Component tests">Component tests</a>
+      <a id="smoke-link" class="header-link" href="smoke.html" target="_blank" rel="noopener" hidden data-i18n="Smoke test ↗">Smoke test ↗</a>
     </div>
   </header>
 
   <!-- The page: the capture sidebar to the left of the main area, in what was
        empty space (the main area keeps its size, centered, when there's room). -->
   <div id="live-view" class="layout">
-  <aside id="capture" class="capture-panel" aria-label="Capture Audio">
+  <aside id="capture" class="capture-panel" aria-label="Capture Audio" data-i18n-aria-label="Capture Audio">
     <div class="capture-head">
-      <h2>Capture Audio</h2>
+      <h2 data-i18n="Capture Audio">Capture Audio</h2>
       <button id="capture-help-btn" class="help-btn" type="button" aria-label="How capturing works"
-              title="How capturing works">?</button>
+              title="How capturing works" data-i18n-aria-label="How capturing works" data-i18n-title="How capturing works">?</button>
     </div>
-    <button id="capture-btn" type="button" title="Capture the sound of a tab, a window or the whole system">Capture Audio</button>
-    <div id="capture-status" class="capture-status">Not capturing</div>
+    <button id="capture-btn" type="button" title="Capture the sound of a tab, a window or the whole system" data-i18n-title="Capture the sound of a tab, a window or the whole system" data-i18n="Capture Audio">Capture Audio</button>
+    <div id="capture-status" class="capture-status" data-i18n="Not capturing">Not capturing</div>
     <!-- One meter per channel of the captured sound; click one to choose
          which is translated (filled in by app.js). -->
     <div id="capture-channels" class="capture-channels"></div>
-    <label class="capture-mute" title="Silence the captured tab here while still capturing it (browser tabs only; set before capturing)">
-      <input type="checkbox" id="capture-mute"> Mute captured tab</label>
+    <label class="capture-mute" title="Silence the captured tab here while still capturing it (browser tabs only; set before capturing)" data-i18n-title="Silence the captured tab here while still capturing it (browser tabs only; set before capturing)">
+      <input type="checkbox" id="capture-mute"> <span data-i18n="Mute captured tab">Mute captured tab</span></label>
   </aside>
 
   <main>
     <!-- One grid: each recording is a row with its text on the left and its
          activity (timings, details) on the right, so the two always align. -->
-    <section id="translation-window" aria-live="polite">
-      <div class="col-head conversation-head">Conversation</div>
+    <section translate="no" class="notranslate" id="translation-window" aria-live="polite">
+      <div class="col-head conversation-head" data-i18n="Conversation">Conversation</div>
       <div class="col-head activity-head">
-        <span class="col-title">Activity</span>
+        <span class="col-title" data-i18n="Activity">Activity</span>
         <!-- Sidebar toggle: window outline, panel on the right, chevron that
              points right to collapse and left (flipped by CSS) to expand. -->
         <button id="activity-toggle" type="button" aria-expanded="true"
-                aria-label="Hide activity" title="Hide activity">
+                aria-label="Hide activity" title="Hide activity" data-i18n-aria-label="Hide activity" data-i18n-title="Hide activity">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
                fill="none" stroke="currentColor" stroke-width="1.8"
                stroke-linecap="round" stroke-linejoin="round">
@@ -59,41 +64,35 @@
           </svg>
         </button>
       </div>
-      <p class="placeholder">Translations will appear here.</p>
+      <p class="placeholder" data-i18n="Translations will appear here.">Translations will appear here.</p>
     </section>
 
     <!-- Two-row grid. Top row: hints/indicators, each above the control it
          belongs to (the Space hint above the button, the status above the
          level). Bottom row: button, mode switch, gain, level. -->
     <div class="controls">
-      <span class="shortcut-hint"><kbd>Space</kbd> to start/stop</span>
+      <span class="shortcut-hint"><kbd data-i18n="Space">Space</kbd> <span data-i18n="to start/stop">to start/stop</span></span>
       <!-- Three independent indicators, left to right (filled in by app.js):
            the capture and the microphone (each with its own recording state), and
            playback, which waits for both to be quiet. Unlabeled: the position
            says which is which (and the tooltip). -->
       <div id="status" class="statuses" aria-live="polite">
-        <span class="status-item" id="status-capture" data-name="Capture">off</span>
-        <span class="status-item" id="status-mic" data-name="Mic">off</span>
-        <span class="status-item" id="status-playback" data-name="Playback">off</span>
+        <span class="status-item" id="status-capture" data-name="Capture" data-i18n="off">off</span>
+        <span class="status-item" id="status-mic" data-name="Mic" data-i18n="off">off</span>
+        <span class="status-item" id="status-playback" data-name="Playback" data-i18n="off">off</span>
       </div>
 
-      <button id="record-btn" type="button" title="Start/stop recording (Space)">Start Recording</button>
+      <button id="record-btn" type="button" title="Start/stop recording (Space)" data-i18n-title="Start/stop recording (Space)" data-i18n="Start Recording">Start Recording</button>
       <!-- "Continuous Audio Mode" in the UI; called auto-split in the code and config. -->
-      <label class="switch" title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop.">
+      <label class="switch" title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop." data-i18n-title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop.">
         <input type="checkbox" id="auto-split" role="switch">
-        <span class="switch-track"></span>
-        Continuous Audio Mode
-      </label>
-      <label class="switch" title="On: speak each translation as soon as it's done. Off: use the ▶ button after a translation.">
+        <span class="switch-track"></span><span data-i18n="Continuous Audio Mode">Continuous Audio Mode</span></label>
+      <label class="switch" title="On: speak each translation as soon as it's done. Off: use the ▶ button after a translation." data-i18n-title="On: speak each translation as soon as it&#x27;s done. Off: use the ▶ button after a translation.">
         <input type="checkbox" id="auto-play" role="switch">
-        <span class="switch-track"></span>
-        Automatic Translation Playback
-      </label>
+        <span class="switch-track"></span><span data-i18n="Automatic Translation Playback">Automatic Translation Playback</span></label>
       <!-- Software gain applied before the meter and the recording. Fine
            adjustment only: set the main level in Windows sound settings. -->
-      <label class="gain" title="Software gain (double-click to reset to 0 dB). For larger changes, adjust the microphone level in Windows sound settings.">
-        Gain
-        <span class="gain-slider">
+      <label class="gain" title="Software gain (double-click to reset to 0 dB). For larger changes, adjust the microphone level in Windows sound settings." data-i18n-title="Software gain (double-click to reset to 0 dB). For larger changes, adjust the microphone level in Windows sound settings."><span data-i18n="Gain">Gain</span><span class="gain-slider">
           <input type="range" id="gain" min="-12" max="6" step="1" value="0" list="gain-ticks">
           <!-- Scale labels, positioned along the thumb's travel (0 dB is at 2/3). -->
           <span class="gain-scale" aria-hidden="true">
@@ -118,67 +117,58 @@
       <div class="level">
         <div id="level-meter" class="meter" role="meter" aria-label="Microphone level"
              aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60"
-             title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording's highest peak.">
+             title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording's highest peak." data-i18n-aria-label="Microphone level" data-i18n-title="Microphone level: gray = too quiet, green = good, amber = very loud, red = clipping. The marker shows this recording&#x27;s highest peak.">
           <div class="meter-fill"></div>
           <div class="meter-peak"></div>
-          <div class="meter-threshold" title="Speech threshold (Continuous Audio Mode)"></div>
+          <div class="meter-threshold" title="Speech threshold (Continuous Audio Mode)" data-i18n-title="Speech threshold (Continuous Audio Mode)"></div>
         </div>
         <span id="level-db" class="meter-db">-∞ dB</span>
       </div>
     </div>
   </main>
-  <aside id="playback" class="capture-panel playback-panel" aria-label="Playback">
-    <div class="capture-head"><h2>Playback</h2></div>
+  <aside id="playback" class="capture-panel playback-panel" aria-label="Playback" data-i18n-aria-label="Playback">
+    <div class="capture-head"><h2 data-i18n="Playback">Playback</h2></div>
     <div class="playback-timeline">
-      <input id="playback-position" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in current clip" disabled>
-      <div class="playback-times"><span id="playback-elapsed">0:00</span><span id="playback-duration">/ 0:00</span><span id="playback-status" class="capture-status" role="status">Idle</span></div>
+      <input id="playback-position" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in current clip" disabled data-i18n-aria-label="Position in current clip">
+      <div class="playback-times"><span id="playback-elapsed">0:00</span><span id="playback-duration">/ 0:00</span><span id="playback-status" class="capture-status" role="status" data-i18n="Idle">Idle</span></div>
     </div>
-    <div class="playback-controls translation-actions" role="group" aria-label="Playback controls">
-      <button id="playback-restart" class="row-btn" type="button" title="Restart clip" aria-label="Restart clip" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5 4h3v16H5zm14 0v16L8 12z"/></svg></button>
-      <button id="playback-pause" class="row-btn" type="button" title="Pause playback" aria-label="Pause playback" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg></button>
-      <button id="playback-stop" class="row-btn" type="button" title="Stop and clear queue" aria-label="Stop and clear queue" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
-      <button id="playback-next" class="row-btn" type="button" title="Next queued clip" aria-label="Next queued clip" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M16 4h3v16h-3zM5 4l11 8-11 8z"/></svg></button>
+    <div class="playback-controls translation-actions" role="group" aria-label="Playback controls" data-i18n-aria-label="Playback controls">
+      <button id="playback-restart" class="row-btn" type="button" title="Restart clip" aria-label="Restart clip" disabled data-i18n-title="Restart clip" data-i18n-aria-label="Restart clip"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5 4h3v16H5zm14 0v16L8 12z"/></svg></button>
+      <button id="playback-pause" class="row-btn" type="button" title="Pause playback" aria-label="Pause playback" disabled data-i18n-title="Pause playback" data-i18n-aria-label="Pause playback"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg></button>
+      <button id="playback-stop" class="row-btn" type="button" title="Stop and clear queue" aria-label="Stop and clear queue" disabled data-i18n-title="Stop and clear queue" data-i18n-aria-label="Stop and clear queue"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+      <button id="playback-next" class="row-btn" type="button" title="Next queued clip" aria-label="Next queued clip" disabled data-i18n-title="Next queued clip" data-i18n-aria-label="Next queued clip"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M16 4h3v16h-3zM5 4l11 8-11 8z"/></svg></button>
     </div>
-    <div id="playback-queue" class="capture-status">0 queued</div>
+    <div id="playback-queue" class="capture-status" data-i18n="0 queued">0 queued</div>
     <div class="level">
-      <div id="playback-meter" class="meter" role="meter" aria-label="Playback level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" title="Playback output level (dBFS)"><div class="meter-fill"></div></div>
+      <div id="playback-meter" class="meter" role="meter" aria-label="Playback level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" title="Playback output level (dBFS)" data-i18n-aria-label="Playback level" data-i18n-title="Playback output level (dBFS)"><div class="meter-fill"></div></div>
       <span id="playback-db" class="meter-db">-∞ dB</span>
     </div>
-    <div class="playback-speeds" role="group" aria-label="Translation playback speed">
-      <label class="playback-speed"><span id="speed-language1">Language 1</span><output for="speed1">1.00×</output><input id="speed1" type="range" min="0.75" max="1.5" step="0.05" value="1" aria-labelledby="speed-language1"></label>
-      <label class="playback-speed"><span id="speed-language2">Language 2</span><output for="speed2">1.00×</output><input id="speed2" type="range" min="0.75" max="1.5" step="0.05" value="1" aria-labelledby="speed-language2"></label>
+    <div class="playback-speeds" role="group" aria-label="Translation playback speed" data-i18n-aria-label="Translation playback speed">
+      <label class="playback-speed"><span id="speed-language1" data-i18n="Language 1">Language 1</span><output for="speed1">1.00×</output><input id="speed1" type="range" min="0.75" max="1.5" step="0.05" value="1" aria-labelledby="speed-language1"></label>
+      <label class="playback-speed"><span id="speed-language2" data-i18n="Language 2">Language 2</span><output for="speed2">1.00×</output><input id="speed2" type="range" min="0.75" max="1.5" step="0.05" value="1" aria-labelledby="speed-language2"></label>
     </div>
   </aside>
   </div>
 
   <!-- Loaded once, then kept mounted so switching views preserves their state. -->
-  <iframe id="text-view" class="app-view-frame" title="Text translation" data-src="translate.html" hidden></iframe>
-  <iframe id="tests-view" class="app-view-frame" title="Component tests" data-src="test.html" allow="microphone" hidden></iframe>
+  <iframe id="text-view" class="app-view-frame" title="Text translation" data-src="translate.html" hidden data-i18n-title="Text translation"></iframe>
+  <iframe id="tests-view" class="app-view-frame" title="Component tests" data-src="test.html" allow="microphone" hidden data-i18n-title="Component tests"></iframe>
 
   <!-- How capturing works (the ? in the capture sidebar). -->
   <dialog id="capture-help" class="help-dialog" aria-labelledby="capture-help-title">
     <div class="raw-head">
-      <h2 id="capture-help-title">Capture Audio</h2>
-      <button id="capture-help-close" type="button" aria-label="Close" title="Close (Esc)">&#x2715;</button>
+      <h2 id="capture-help-title" data-i18n="Capture Audio">Capture Audio</h2>
+      <button id="capture-help-close" type="button" aria-label="Close" title="Close (Esc)" data-i18n-aria-label="Close" data-i18n-title="Close (Esc)">&#x2715;</button>
     </div>
     <div class="help-body">
-      <p>Capture translates sound from your computer instead of the microphone: a video, a
-        meeting, anything that's playing.</p>
-      <p>It uses the browser's screen sharing, the same one meeting apps use to share a tab or
-        your screen, in reverse: you share with this page, and it listens to the sound. In the
-        browser's picker, choose:</p>
+      <p data-i18n="Capture translates sound from your computer instead of the microphone: a video, a meeting, anything that&#x27;s playing.">Capture translates sound from your computer instead of the microphone: a video, a meeting, anything that's playing.</p>
+      <p data-i18n="It uses the browser&#x27;s screen sharing, the same one meeting apps use to share a tab or your screen, in reverse: you share with this page, and it listens to the sound. In the browser&#x27;s picker, choose:">It uses the browser's screen sharing, the same one meeting apps use to share a tab or your screen, in reverse: you share with this page, and it listens to the sound. In the browser's picker, choose:</p>
       <ul>
-        <li><b>A browser tab</b> (best), with <i>Also share tab audio</i> on: just that tab's
-          sound, e.g. a YouTube video or a meeting in the browser. <b>Mute captured tab</b> (tick it before capturing) silences
-          it for you while it's still captured, so you hear only the translations.</li>
-        <li><b>Entire screen</b>, with <i>Also share system audio</i> on: everything your
-          computer plays (Windows), e.g. a meeting app. This includes the spoken translations.</li>
-        <li>A <b>window</b> shares no sound in most browsers.</li>
+      <li data-i18n="A browser tab (best), with Also share tab audio on: just that tab&#x27;s sound, e.g. a YouTube video or a meeting in the browser. Mute captured tab (tick it before capturing) silences it for you while it&#x27;s still captured, so you hear only the translations.">A browser tab (best), with Also share tab audio on: just that tab's sound, e.g. a YouTube video or a meeting in the browser. Mute captured tab (tick it before capturing) silences it for you while it's still captured, so you hear only the translations.</li>
+      <li data-i18n="Entire screen, with Also share system audio on: everything your computer plays (Windows), e.g. a meeting app. This includes the spoken translations.">Entire screen, with Also share system audio on: everything your computer plays (Windows), e.g. a meeting app. This includes the spoken translations.</li>
+      <li data-i18n="A window shares no sound in most browsers.">A window shares no sound in most browsers.</li>
       </ul>
-      <p>The picture isn't used (it's kept tiny). Phrases are split at pauses, as in Continuous
-        Audio Mode. If the sound is stereo, translation starts with the first channel that has
-        sound; click a channel's meter to choose the other. Stop with the button, or with the
-        browser's own "Stop sharing".</p>
+      <p data-i18n="The picture isn&#x27;t used (it&#x27;s kept tiny). Phrases are split at pauses, as in Continuous Audio Mode. If the sound is stereo, translation starts with the first channel that has sound; click a channel&#x27;s meter to choose the other. Stop with the button, or with the browser&#x27;s own &quot;Stop sharing&quot;.">The picture isn't used (it's kept tiny). Phrases are split at pauses, as in Continuous Audio Mode. If the sound is stereo, translation starts with the first channel that has sound; click a channel's meter to choose the other. Stop with the button, or with the browser's own "Stop sharing".</p>
     </div>
   </dialog>
 
@@ -186,10 +176,10 @@
   <dialog id="raw-dialog" aria-labelledby="raw-title">
     <div class="raw-head">
       <h2 id="raw-title"></h2>
-      <button id="raw-copy" type="button">Copy</button>
-      <button id="raw-close" type="button" aria-label="Close" title="Close (Esc)">&#x2715;</button>
+      <button id="raw-copy" type="button" data-i18n="Copy">Copy</button>
+      <button id="raw-close" type="button" aria-label="Close" title="Close (Esc)" data-i18n-aria-label="Close" data-i18n-title="Close (Esc)">&#x2715;</button>
     </div>
-    <pre id="raw-body"></pre>
+    <pre translate="no" id="raw-body"></pre>
   </dialog>
 
   <script src="translation-actions.js"></script>

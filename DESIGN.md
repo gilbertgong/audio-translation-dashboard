@@ -98,6 +98,41 @@ Actual page exit cancels live requests/queued jobs, timers, capture and playback
 audio rather than uploading it. A full-document cache restore reloads those closed resources. These
 exit handlers do not run when switching views. Refreshing or closing the app still ends the session.
 
+#### Interface language
+
+The shell, text view and component tests share `i18n.js` and the Simplified Chinese catalog
+`i18n-zh.js`. English source messages are the fallback keys. Static interface copy uses explicit
+`data-i18n` markers (with separate title, aria-label and placeholder markers); dynamic interface
+messages use `I18n.msg(key, values)` with `I18n.text` or `I18n.attr`. Plain strings passed to those
+helpers remain literal data. Named substitutions are rendered as text, never HTML. Localize only
+text-only nodes, or dedicated child spans when a control also contains icons or other live content.
+Playback state and translation progress are tracked independently of their displayed labels.
+
+The first `navigator.languages` preference (or `navigator.language`) determines the initial UI
+language. Explicit `zh-Hans`/`zh-Hant` scripts take precedence over region; `zh-TW`, `zh-HK` and
+`zh-MO` detect as Traditional, with other Chinese tags detecting as Simplified. Traditional currently
+falls back to the Simplified catalog; other languages fall back to English. An upper-right button shows
+the other language (中文 in English UI, EN in Chinese UI) and switches to it, storing an explicit override
+in `localStorage.uiLanguage`. If storage
+is unavailable, detection and manual switching still work for the current page. No server setting or
+change to the configured translation pair is involved.
+
+Switching updates bound UI messages in place, including mounted same-origin views. Newly mounted views
+inherit the shell's choice. Storage events synchronize other open tabs; switching never reloads a view
+or resets recording, playback, queues, drafts or conversation results. Transcripts, translations,
+sample text, configured language/voice identifiers and raw service responses are not catalog lookups.
+Service/browser error details remain as supplied. The separate smoke-test runner and desktop launcher
+are outside this initial localization scope.
+
+The live translation window and text conversation use `translate="no"` and `notranslate` to request
+exclusion from browser automatic translation, including Chrome's. Component-test output and raw
+response panels also use `translate="no"`. Application localization still updates their own controls.
+
+Offline checks: `node tests/test_i18n.cjs` covers locale detection, fallbacks, persistence, storage
+denial, in-place message updates, mounted-view inheritance, literal data preservation, catalog
+substitutions and conversation opt-out markers. `node tests/test_playback.cjs` includes playback
+with Chinese UI labels. Use a separate mock dashboard to check real browser behavior without engines.
+
 #### Text translation (`translate.html`)
 
 An everyday text translation page, linked from the dashboard and component tests. `translate.css`

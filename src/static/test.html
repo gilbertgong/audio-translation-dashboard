@@ -3,75 +3,76 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Component Tests</title>
+  <title data-i18n="Component Tests">Component Tests</title>
   <script src="view-entry.js" data-view="tests"></script>
+  <script src="i18n-zh.js"></script>
+  <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="test.css">
 </head>
 <body>
   <header>
-    <h1>Component Tests</h1>
-    <a class="header-link" href="smoke.html">Smoke test</a>
-    <a class="header-link" href="translate.html">Text translation</a>
-    <a class="header-link" href="/">Dashboard</a>
+    <h1><span data-i18n="Component Tests">Component Tests</span></h1>
+    <a class="header-link" href="smoke.html" data-i18n="Smoke test">Smoke test</a>
+    <a class="header-link" href="translate.html" data-i18n="Text translation">Text translation</a>
+    <a class="header-link" href="/" data-i18n="Dashboard">Dashboard</a>
   </header>
 
   <!-- Each panel tests one stage through the dashboard's own endpoints, so a
        result here is what the dashboard would get. -->
   <main class="tests">
     <section class="test" id="stt">
-      <h2>Transcribe <span class="via">whisper · /api/recordings</span></h2>
+      <h2><span data-i18n="Transcribe">Transcribe</span> <span class="via">whisper · /api/recordings</span></h2>
       <div class="row">
-        <button type="button" id="stt-record">Record</button>
-        <label class="file-btn">Upload audio file…<input type="file" id="stt-file" accept="audio/*"></label>
+        <button type="button" id="stt-record" data-i18n="Record">Record</button>
+        <label class="file-btn"><span data-i18n="Upload audio file…">Upload audio file…</span><input type="file" id="stt-file" accept="audio/*"></label>
         <span class="status" id="stt-status"></span>
       </div>
       <div class="result" id="stt-result" hidden>
-        <div class="text" id="stt-text"></div>
+        <div class="text" translate="no" id="stt-text"></div>
         <div class="meta" id="stt-meta"></div>
         <div class="row">
-          <button type="button" id="stt-play">▶ Play what was sent</button>
-          <button type="button" id="stt-to-llm">Translate this ↓</button>
+          <button type="button" id="stt-play" data-i18n="▶ Play what was sent">▶ Play what was sent</button>
+          <button type="button" id="stt-to-llm" data-i18n="Translate this ↓">Translate this ↓</button>
         </div>
-        <details><summary>Raw response</summary><pre id="stt-raw"></pre></details>
+        <details><summary data-i18n="Raw response">Raw response</summary><pre translate="no" id="stt-raw"></pre></details>
       </div>
     </section>
 
     <section class="test" id="llm">
-      <h2>Translate <span class="via">llama · /api/translate</span></h2>
-      <textarea id="llm-input" rows="3" placeholder="Text in either language"></textarea>
+      <h2><span data-i18n="Translate">Translate</span> <span class="via">llama · /api/translate</span></h2>
+      <textarea id="llm-input" rows="3" placeholder="Text in either language" data-i18n-placeholder="Text in either language"></textarea>
       <div class="row">
-        <label>From <select id="llm-source"></select></label>
-        <button type="button" id="llm-go">Translate</button>
+        <label><span data-i18n="From">From</span> <select id="llm-source"></select></label>
+        <button type="button" id="llm-go" data-i18n="Translate">Translate</button>
         <span class="samples" data-target="llm-input"></span>
         <span class="status" id="llm-status"></span>
       </div>
       <div class="result" id="llm-result" hidden>
-        <div class="text" id="llm-text"></div>
+        <div class="text" translate="no" id="llm-text"></div>
         <div class="meta" id="llm-meta"></div>
         <div class="row">
-          <button type="button" id="llm-to-tts">Speak this ↓</button>
+          <button type="button" id="llm-to-tts" data-i18n="Speak this ↓">Speak this ↓</button>
         </div>
-        <details><summary>Raw request and streamed response</summary><pre id="llm-raw"></pre></details>
+        <details><summary data-i18n="Raw request and streamed response">Raw request and streamed response</summary><pre translate="no" id="llm-raw"></pre></details>
       </div>
     </section>
 
     <section class="test" id="tts">
-      <h2>Speak <span class="via">TTS server · /api/speak</span></h2>
-      <textarea id="tts-input" rows="3" placeholder="Text to speak"></textarea>
+      <h2><span data-i18n="Speak">Speak</span> <span class="via">TTS server · /api/speak</span></h2>
+      <textarea id="tts-input" rows="3" placeholder="Text to speak" data-i18n-placeholder="Text to speak"></textarea>
       <div class="row">
-        <label>Voice <select id="tts-voice"></select></label>
-        <label title="Audio buffered before playback starts ([tts] playback_buffer_ms)">Buffer
-          <input type="number" id="tts-buffer" min="0" max="60" step="0.1" value="0.8"> s</label>
-        <button type="button" id="tts-go">Speak</button>
+        <label><span data-i18n="Voice">Voice</span> <select id="tts-voice"></select></label>
+        <label title="Audio buffered before playback starts ([tts] playback_buffer_ms)" data-i18n-title="Audio buffered before playback starts ([tts] playback_buffer_ms)"><span data-i18n="Buffer">Buffer</span><input type="number" id="tts-buffer" min="0" max="60" step="0.1" value="0.8"> s</label>
+        <button type="button" id="tts-go" data-i18n="Speak">Speak</button>
         <span class="samples" data-target="tts-input"></span>
         <span class="status" id="tts-status"></span>
       </div>
       <div class="result" id="tts-result" hidden>
         <div class="meta" id="tts-meta"></div>
         <div class="row">
-          <button type="button" id="tts-replay">▶ Play again</button>
-          <a id="tts-download" download="speech.wav">Download WAV</a>
+          <button type="button" id="tts-replay" data-i18n="▶ Play again">▶ Play again</button>
+          <a id="tts-download" download="speech.wav" data-i18n="Download WAV">Download WAV</a>
         </div>
       </div>
     </section>

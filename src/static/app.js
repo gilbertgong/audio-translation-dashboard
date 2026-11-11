@@ -32,8 +32,8 @@ const pending = { mic: 0, capture: 0 }; // each source's segments still being pr
 // waits for both to be quiet (see playNextSpeech), or what's playing.
 function setIndicator(key, text, state = "", tip = text) {
   const item = document.getElementById(`status-${key}`);
-  item.textContent = text;
-  item.title = `${item.dataset.name}: ${tip}`;
+  I18n.text(item, typeof text === "string" ? I18n.msg(text) : text);
+  I18n.attr(item, "title", I18n.msg("{name}: {tip}", { name: I18n.msg(item.dataset.name), tip: typeof tip === "string" ? I18n.msg(tip) : tip }));
   item.dataset.state = state;
 }
 
@@ -48,8 +48,8 @@ function sourceStatus(recording, key) {
   else if (sp) [text, state] = sp.speaking ? ["speech", "active"] : ["listening", ""];
   tip ??= text;
   if (pending[key]) {
-    text += `/${pending[key]}`;
-    tip += ` · ${pending[key]} being translated`;
+    text = I18n.msg("{text}/{count}", { text: I18n.msg(text), count: pending[key] });
+    tip = I18n.msg("{tip} · {count} being translated", { tip: I18n.msg(tip), count: pending[key] });
   }
   setIndicator(key, text, state, tip);
 }
@@ -62,7 +62,7 @@ function updateStatus() {
   else if (speech) setIndicator("playback", ...(speech.item
     ? ["speaking", "active"] : ["speaking ▶", "active", "speaking (played with ▶)"]));
   else if (playingBtn) setIndicator("playback", "playing", "active", "playing a recording");
-  else if (waiting) setIndicator("playback", `${waiting} queued`, "waiting", `${waiting} waiting for a pause in the speech`);
+  else if (waiting) setIndicator("playback", I18n.msg("{count} queued", { count: waiting }), "waiting", I18n.msg("{count} waiting for a pause in the speech", { count: waiting }));
   else setIndicator("playback", ...(autoPlayToggle.checked
     ? ["auto", "", "automatic playback, idle"] : ["▶ only", "", "plays only with ▶ (automatic playback is off)"]));
   updatePlaybackPanel();
@@ -124,7 +124,7 @@ function drawMeter(now) {
   meterEl.classList.toggle("quiet", meter.shownDb < METER_QUIET_DB);
   meterEl.setAttribute("aria-valuenow", String(Math.round(meter.shownDb)));
   meterDb.classList.toggle("clip", clipping);
-  meterDb.textContent = clipping ? "CLIP"
+  meterDb.textContent = clipping ? I18n.t("CLIP")
     : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
 
   // Auto-split: show the current speech threshold and whether speech is detected.
@@ -256,7 +256,7 @@ function endSegment(sp, reason) {
   updateStatus();
 
   if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
-  sendAudioSegment(samples, sp.sampleRate, `${sp.label} (${reason})`, sp.source);
+  sendAudioSegment(samples, sp.sampleRate, I18n.msg("{label} ({reason})", { label: I18n.msg(sp.label), reason: I18n.msg(reason) }), sp.source);
 }
 
 async function sendAudioSegment(samples, sampleRate, note, source) {
@@ -265,7 +265,7 @@ async function sendAudioSegment(samples, sampleRate, note, source) {
     processAudioSegment(encodeWav(resampled, targetSampleRate), note, source);
   } catch (err) {
     console.error(err);
-    addNote(`Error: ${err.message}`, true);
+    addNote(I18n.msg("Error: {error}", { error: err.message }), true);
   }
 }
 
@@ -306,7 +306,7 @@ showGain();
 function el(tag, className, text = "") {
   const node = document.createElement(tag);
   node.className = className;
-  node.textContent = text;
+  I18n.text(node, text);
   return node;
 }
 
@@ -334,7 +334,7 @@ function addRow() {
 // state: "pending", "error", or "" for normal text.
 function setLine(row, selector, text, state = "") {
   const line = row.querySelector(selector);
-  line.textContent = text;
+  I18n.text(line, text);
   line.classList.toggle("pending", state === "pending");
   line.classList.toggle("error", state === "error");
   windowEl.scrollTop = windowEl.scrollHeight;
@@ -370,15 +370,17 @@ function setTiming(row, kind, seconds) {
   if (!timing) {
     timing = el("div", "timing");
     timing.dataset.kind = kind;
-    timing.append(el("span", "secs"), el("span", "label", TIMING_LABELS[kind]));
+    const label = el("span", "label");
+    label.append(el("span", "", I18n.msg(TIMING_LABELS[kind])));
+    timing.append(el("span", "secs"), label);
     timings.appendChild(timing);
   }
   const secs = timing.querySelector(".secs");
   timing.classList.toggle("pending", seconds === null);
   timing.classList.toggle("error", seconds === "failed");
-  if (seconds === null) secs.textContent = "…";
-  else if (seconds === "failed") secs.textContent = "failed";
-  else secs.textContent = `${Number(seconds).toFixed(TIMING_DECIMALS[kind])}s`;
+  if (seconds === null) I18n.text(secs, "…");
+  else if (seconds === "failed") I18n.text(secs, I18n.msg("failed"));
+  else I18n.text(secs, `${Number(seconds).toFixed(TIMING_DECIMALS[kind])}s`);
 }
 
 // A small second line under a timing's label, e.g. time to first token.
@@ -387,7 +389,7 @@ function setTimingSub(row, kind, text, title = "") {
   let sub = label.querySelector(".sub");
   if (!sub) sub = label.appendChild(el("span", "sub"));
   sub.textContent = text;
-  sub.title = title;
+  I18n.attr(sub, "title", I18n.msg(title));
 }
 
 // Playback of a row's recording: the exact audio sent to whisper, kept in the
@@ -401,7 +403,7 @@ function stopRecordingPlayback() {
   player.pause();
   if (playingBtn) {
     playingBtn.textContent = "▶";
-    playingBtn.title = "Play this recording";
+    I18n.attr(playingBtn, "title", I18n.msg("Play this recording"));
     playingBtn = null;
     updateStatus();
   }
@@ -428,7 +430,7 @@ function addPlayButton(row, wav) {
   const url = URL.createObjectURL(wav);
   const btn = el("button", "row-btn", "▶");
   btn.type = "button";
-  btn.title = "Play this recording";
+  I18n.attr(btn, "title", I18n.msg("Play this recording"));
   btn.addEventListener("click", () => {
     const wasPlaying = playingBtn === btn;
     stopPlayback();
@@ -442,7 +444,7 @@ function addPlayButton(row, wav) {
     playingBtn = btn;
     updateStatus();
     btn.textContent = "■";
-    btn.title = "Stop playback";
+    I18n.attr(btn, "title", I18n.msg("Stop playback"));
   });
   row.querySelector('.timing[data-kind="audio"]').appendChild(btn);
 }
@@ -473,8 +475,11 @@ function setSpeakButton(btn, state) {
     waiting: ["…", "Generating speech (click to cancel)"],
     playing: ["■", "Stop speaking"],
   };
-  [btn.textContent, btn.title] = looks[state];
-  btn.setAttribute("aria-label", btn.title);
+  const [icon, label] = looks[state];
+  btn.dataset.speakState = state;
+  btn.textContent = icon;
+  I18n.attr(btn, "title", I18n.msg(label));
+  I18n.attr(btn, "aria-label", I18n.msg(label));
 }
 
 // Stop the speech playing (its audio is kept: see cancelSpeech).
@@ -627,7 +632,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     console.error(err);
     stopSpeech();
     setTiming(row, "tts", "failed");
-    addDetail(row, `Speech error: ${err.message}`, true);
+    addDetail(row, I18n.msg("Speech error: {error}", { error: err.message }), true);
     playNextSpeech();
   };
   current.update = () => {
@@ -652,7 +657,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     updateStatus();
     if (!audio.done) return;
     audio.listeners.delete(current.update);
-    if (!last) return audio.seconds ? finished() : fail(new Error("no audio received"));
+    if (!last) return audio.seconds ? finished() : fail(new Error(I18n.t("no audio received")));
     if (ctx.currentTime >= playAt) finished(); // already played out
     else last.onended = finished;
   };
@@ -720,7 +725,7 @@ function trimBacklog() {
   while (speechQueue.length > 1 && backlogSeconds() > maxBacklogS) {
     const oldest = speechQueue.shift();
     cancelSpeech(oldest.audio);
-    addDetail(oldest.row, `Not spoken automatically: over ${maxBacklogS} s of speech waiting`);
+    addDetail(oldest.row, I18n.msg("Not spoken automatically: over {seconds} s of speech waiting", { seconds: maxBacklogS }));
     dropped = true;
   }
   if (dropped) updateStatus();
@@ -765,8 +770,8 @@ function updatePlaybackTimeline() {
   const length = `${playbackTime(Math.ceil(duration - 0.000001))}${growing ? "+" : ""}`;
   document.getElementById("playback-elapsed").textContent = elapsed;
   document.getElementById("playback-duration").textContent = `/ ${length}`;
-  playbackPosition.setAttribute("aria-valuetext", `${elapsed} of ${length}${growing ? ", still generating" : ""}`);
-  playbackPosition.title = growing ? "Seek within received audio; total duration is still growing" : "Seek within current clip";
+  I18n.attr(playbackPosition, "aria-valuetext", I18n.msg("{elapsed} of {length}{growing}", { elapsed, length, growing: growing ? I18n.msg(", still generating") : "" }));
+  I18n.attr(playbackPosition, "title", I18n.msg(growing ? "Seek within received audio; total duration is still growing" : "Seek within current clip"));
 }
 
 playbackPosition.addEventListener("input", () => {
@@ -789,14 +794,15 @@ function updatePlaybackPanel() {
   const active = !!(speech || playingBtn);
   const waiting = speechQueue.length;
   const label = playbackPaused ? "Paused" : speech
-    ? (speech.btn.title === "Stop speaking" ? "Speaking" : "Buffering")
+    ? (speech.btn.dataset.speakState === "playing" ? "Speaking" : "Buffering")
     : playingBtn ? "Playing recording" : waiting ? "Waiting for speaker to pause" : "Idle";
-  document.getElementById("playback-status").textContent = speech
-    ? `${label} · ${speechTarget(speech.row) === "language2" ? language2 : language1}` : label;
-  document.getElementById("playback-queue").textContent = `${waiting} queued · ${Math.ceil(backlogSeconds())} s waiting`;
+  I18n.text(document.getElementById("playback-status"), speech
+    ? I18n.msg("{label} · {language}", { label: I18n.msg(label), language: speechTarget(speech.row) === "language2" ? language2 : language1 }) : I18n.msg(label));
+  I18n.text(document.getElementById("playback-queue"), I18n.msg("{count} queued · {seconds} s waiting", { count: waiting, seconds: Math.ceil(backlogSeconds()) }));
   pausePlaybackBtn.disabled = !active && !waiting && !playbackPaused;
-  pausePlaybackBtn.title = playbackPaused ? "Resume playback" : "Pause playback";
-  pausePlaybackBtn.setAttribute("aria-label", pausePlaybackBtn.title);
+  const pauseLabel = I18n.msg(playbackPaused ? "Resume playback" : "Pause playback");
+  I18n.attr(pausePlaybackBtn, "title", pauseLabel);
+  I18n.attr(pausePlaybackBtn, "aria-label", pauseLabel);
   pausePlaybackBtn.setAttribute("aria-pressed", String(playbackPaused));
   pausePlaybackBtn.querySelector("path").setAttribute("d", playbackPaused ? "M6 3l15 9-15 9z" : "M6 4h4v16H6zm8 0h4v16h-4z");
   stopPlaybackBtn.disabled = !active && !waiting && !playbackPaused;
@@ -908,9 +914,9 @@ const rawCopy = document.getElementById("raw-copy");
 
 // raw: shown as formatted JSON, or as is if it's a string.
 function showRaw(title, raw) {
-  rawTitle.textContent = title;
+  I18n.text(rawTitle, title);
   rawBody.textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
-  rawCopy.textContent = "Copy";
+  I18n.text(rawCopy, I18n.msg("Copy"));
   rawDialog.showModal();
   rawBody.scrollTop = 0;
 }
@@ -919,7 +925,7 @@ function showRaw(title, raw) {
 function addRawButton(row, kind, title, raw) {
   const btn = el("button", "row-btn", "{ }");
   btn.type = "button";
-  btn.title = `Show ${title}`;
+  I18n.attr(btn, "title", I18n.msg("Show {title}", { title }));
   btn.addEventListener("click", () => showRaw(title, raw));
   row.querySelector(`.timing[data-kind="${kind}"]`).appendChild(btn);
 }
@@ -931,10 +937,10 @@ rawDialog.addEventListener("click", (e) => {
 rawCopy.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(rawBody.textContent);
-    rawCopy.textContent = "Copied";
+    I18n.text(rawCopy, I18n.msg("Copied"));
   } catch (err) {
     console.error(err);
-    rawCopy.textContent = "Copy failed";
+    I18n.text(rawCopy, I18n.msg("Copy failed"));
   }
 });
 
@@ -953,8 +959,8 @@ function addInfo(row, text) {
     row.info = [];
     const btn = el("button", "row-btn", "ⓘ");
     btn.type = "button";
-    btn.title = "Show recording details";
-    btn.addEventListener("click", () => showRaw("Recording details", row.info.join("\n")));
+    I18n.attr(btn, "title", I18n.msg("Show recording details"));
+    btn.addEventListener("click", () => showRaw(I18n.msg("Recording details"), row.info.map((value) => value?.key ? I18n.t(value.key, value.values) : value).join("\n")));
     const line = row.querySelector('.timing[data-kind="audio"]');
     line.insertBefore(btn, line.querySelector(".row-btn"));
   }
@@ -974,8 +980,8 @@ function setActivityHidden(hidden) {
   document.body.classList.toggle("activity-hidden", hidden);
   activityToggle.setAttribute("aria-expanded", String(!hidden));
   const label = hidden ? "Show activity" : "Hide activity";
-  activityToggle.setAttribute("aria-label", label);
-  activityToggle.title = label;
+  I18n.attr(activityToggle, "aria-label", I18n.msg(label));
+  I18n.attr(activityToggle, "title", I18n.msg(label));
   try {
     localStorage.setItem("activityHidden", hidden ? "1" : "0");
   } catch {}
@@ -1006,7 +1012,7 @@ async function checkServices() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { services } = await res.json();
     servicesEl.replaceChildren(...services.map((s) => {
-      const item = el("span", `service ${s.state}`, SERVICE_LABELS[s.role] || s.role);
+      const item = el("span", `service ${s.state}`, SERVICE_LABELS[s.role] ? I18n.msg(SERVICE_LABELS[s.role]) : s.role);
       item.title = `${s.name} at ${s.url}: ${s.state} (${s.detail})`;
       return item;
     }));
@@ -1015,7 +1021,7 @@ async function checkServices() {
     // The dashboard itself didn't answer (e.g. stopped): mark everything unknown.
     for (const item of servicesEl.children) {
       item.className = "service";
-      item.title = `Dashboard not reachable: ${err.message}`;
+      I18n.attr(item, "title", I18n.msg("Dashboard not reachable: {error}", { error: err.message }));
     }
   }
   if (!pageLifetime.signal.aborted) {
@@ -1033,8 +1039,8 @@ async function loadConfig() {
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
-    document.getElementById("speed-language1").textContent = language1;
-    document.getElementById("speed-language2").textContent = language2;
+    I18n.text(document.getElementById("speed-language1"), language1);
+    I18n.text(document.getElementById("speed-language2"), language2);
     languageChecks = config.language_checks !== false;
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
@@ -1069,9 +1075,9 @@ function showMockConversation(items) {
     addPlayButton(row, encodeWav(silence, targetSampleRate));
     setTiming(row, "stt", item.stt_seconds);
     setTiming(row, "llm", item.llm_seconds);
-    addRawButton(row, "stt", "whisper response (mock)", { mock: true, text: item.text, language: item.language });
-    addRawButton(row, "llm", "llama response (mock)", { mock: true, text: item.text, translation: item.translation });
-    addInfo(row, "Mock sample (not a real recording)");
+    addRawButton(row, "stt", I18n.msg("whisper response (mock)"), { mock: true, text: item.text, language: item.language });
+    addRawButton(row, "llm", I18n.msg("llama response (mock)"), { mock: true, text: item.text, translation: item.translation });
+    addInfo(row, I18n.msg("Mock sample (not a real recording)"));
   }
 }
 
@@ -1140,7 +1146,7 @@ async function stopRecording(recording = micRecording) {
     return null;
   }
   const samples = concat(chunks);
-  if (samples.length === 0) throw new Error("No audio captured");
+  if (samples.length === 0) throw new Error(I18n.t("No audio captured"));
   const resampled = await resample(samples, inputRate, targetSampleRate);
   return encodeWav(resampled, targetSampleRate);
 }
@@ -1314,14 +1320,14 @@ async function requestTranslation(text, source, onText) {
 }
 
 function addFileInfo(row, path, temporary = false) {
-  addInfo(row, temporary ? "Temporary recording (automatically deleted)" : `Saved as: ${path}`);
+  addInfo(row, temporary ? I18n.msg("Temporary recording (automatically deleted)") : I18n.msg("Saved as: {path}", { path }));
 }
 
 // Translate a row's text into its translation line (streamed), with its
 // timing and raw viewer; throws (after showing the error) if it fails. Run
 // again after a recheck, it replaces the earlier translation.
 async function translateRow(row, text, source) {
-  setLine(row, ".translation", "Translating...", "pending");
+  setLine(row, ".translation", I18n.msg("Translating..."), "pending");
   setTiming(row, "llm", null);
   row.querySelector('.timing[data-kind="llm"] .row-btn')?.remove(); // an earlier attempt's raw viewer
   try {
@@ -1331,13 +1337,13 @@ async function translateRow(row, text, source) {
     if (result.firstSeconds !== null) {
       setTimingSub(row, "llm", `${result.firstSeconds.toFixed(2)}s TTFT`, "time to first token");
     }
-    addRawButton(row, "llm", "llama request and streamed response", result.raw);
+    addRawButton(row, "llm", I18n.msg("llama request and streamed response"), result.raw);
     if (result.translation) setLine(row, ".translation", result.translation);
     return result;
   } catch (err) {
     setTiming(row, "llm", "failed");
-    if (err.raw) addRawButton(row, "llm", "llama request and streamed response", err.raw);
-    setLine(row, ".translation", `Error: ${err.message}`, "error");
+    if (err.raw) addRawButton(row, "llm", I18n.msg("llama request and streamed response"), err.raw);
+    setLine(row, ".translation", I18n.msg("Error: {error}", { error: err.message }), "error");
     throw err;
   }
 }
@@ -1347,7 +1353,7 @@ async function translateRow(row, text, source) {
 // transcribes it again forced to each of the two, then swap in the more
 // confident result. Returns the result to use (the original if this fails).
 async function recheck(row, stt, reason) {
-  setLine(row, ".original", `${stt.text} (${reason}; rechecking…)`, "pending");
+  setLine(row, ".original", I18n.msg("{text} ({reason}; rechecking…)", { text: stt.text, reason }), "pending");
   setTiming(row, "recheck", null);
   try {
     const { res, result } = await toWhisper(async () => {
@@ -1360,16 +1366,16 @@ async function recheck(row, stt, reason) {
     });
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
     setTiming(row, "recheck", result.stt_seconds);
-    addRawButton(row, "recheck", "whisper recheck: both languages", result.stt_raw);
+    addRawButton(row, "recheck", I18n.msg("whisper recheck: both languages"), result.stt_raw);
     setLanguage(row, result.language);
     setLine(row, ".original", result.text);
-    addDetail(row, `re-transcribed as ${result.language} (${reason})`);
+    addDetail(row, I18n.msg("re-transcribed as {language} ({reason})", { language: result.language, reason }));
     return { ...stt, ...result };
   } catch (err) {
     console.error(err);
     setTiming(row, "recheck", "failed");
     setLine(row, ".original", stt.text);
-    addDetail(row, `Recheck failed: ${err.message}`, true);
+    addDetail(row, I18n.msg("Recheck failed: {error}", { error: err.message }), true);
     return stt;
   }
 }
@@ -1382,11 +1388,11 @@ async function processAudioSegment(wav, note = "", source = "mic") {
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
   setMeta(row, new Date().toLocaleTimeString());
-  setLine(row, ".original", "Transcribing...", "pending");
+  setLine(row, ".original", I18n.msg("Transcribing..."), "pending");
   setTiming(row, "audio", audioSeconds);
   addPlayButton(row, wav);
   setTiming(row, "stt", null);
-  if (note) addInfo(row, `Split by: ${note}`);
+  if (note) addInfo(row, I18n.msg("Split by: {note}", { note }));
   pending[source]++;
   updateStatus();
   try {
@@ -1395,22 +1401,22 @@ async function processAudioSegment(wav, note = "", source = "mic") {
       stt = await uploadWav(wav);
     } catch (err) {
       setTiming(row, "stt", "failed");
-      setLine(row, ".original", `Error: ${err.message}`, "error");
+      setLine(row, ".original", I18n.msg("Error: {error}", { error: err.message }), "error");
       if (err.body?.file) addFileInfo(row, err.body.file, err.body.temporary);
       throw err;
     }
     setTiming(row, "stt", stt.stt_seconds);
-    if (stt.stt_raw) addRawButton(row, "stt", "whisper request and response", stt.stt_raw);
+    if (stt.stt_raw) addRawButton(row, "stt", I18n.msg("whisper request and response"), stt.stt_raw);
     addFileInfo(row, stt.file, stt.temporary);
     setLanguage(row, stt.language);
     if (!stt.text) {
-      setLine(row, ".original", "(no speech detected)", "pending");
+      setLine(row, ".original", I18n.msg("(no speech detected)"), "pending");
       return;
     }
     setLine(row, ".original", stt.text);
-    if (stt.recheck) stt = await recheck(row, stt, `whisper heard ${stt.language}`);
+    if (stt.recheck) stt = await recheck(row, stt, I18n.msg("whisper heard {language}", { language: stt.language }));
     if (!stt.text) {
-      setLine(row, ".original", "(no speech detected)", "pending");
+      setLine(row, ".original", I18n.msg("(no speech detected)"), "pending");
       return;
     }
 
@@ -1420,7 +1426,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
       const speakBtn = addSpeakButton(row, result.translation);
       if (autoPlayToggle.checked) queueSpeech(row, speakBtn, result.translation);
     } else {
-      setLine(row, ".translation", "(empty translation)", "pending");
+      setLine(row, ".translation", I18n.msg("(empty translation)"), "pending");
     }
   } catch (err) {
     console.error(err);
@@ -1438,11 +1444,11 @@ recordBtn.addEventListener("click", async () => {
       const auto = autoSplitToggle.checked;
       autoSplitToggle.disabled = true; // no mode change mid-recording
       await startRecording(auto);
-      recordBtn.textContent = auto ? "Stop Listening" : "Stop Recording";
+      I18n.text(recordBtn, I18n.msg(auto ? "Stop Listening" : "Stop Recording"));
       recordBtn.classList.add("recording");
       updateStatus();
     } else {
-      recordBtn.textContent = "Start Recording";
+      I18n.text(recordBtn, I18n.msg("Start Recording"));
       recordBtn.classList.remove("recording");
       const wav = await stopRecording();
       autoSplitToggle.disabled = false;
@@ -1451,7 +1457,7 @@ recordBtn.addEventListener("click", async () => {
     }
   } catch (err) {
     console.error(err);
-    addNote(`Error: ${err.message}`, true);
+    addNote(I18n.msg("Error: {error}", { error: err.message }), true);
     setIndicator("mic", "error", "error");
     stopMeter();
     if (micRecording) {
@@ -1460,7 +1466,7 @@ recordBtn.addEventListener("click", async () => {
       micRecording = null;
     }
     autoSplitToggle.disabled = false;
-    recordBtn.textContent = "Start Recording";
+    I18n.text(recordBtn, I18n.msg("Start Recording"));
     recordBtn.classList.remove("recording");
   } finally {
     recordBtn.disabled = false;
@@ -1495,25 +1501,25 @@ captureHelp.addEventListener("click", (e) => {
 });
 
 function setCaptureStatus(text, isError = false) {
-  captureStatus.textContent = text;
+  I18n.text(captureStatus, text);
   captureStatus.classList.toggle("error", isError);
 }
 
 function describeCapture() {
-  const what = `Capturing ${SURFACES[capture.surface] || "audio"}`;
-  if (capture.selected === null) return `${what} · waiting for sound`;
-  const name = capture.channels.length > 1 ? ["left", "right"][capture.selected] + " channel" : "mono";
-  return `${what} · translating the ${name}`;
+  const what = I18n.msg("Capturing {surface}", { surface: I18n.msg(SURFACES[capture.surface] || "audio") });
+  if (capture.selected === null) return I18n.msg("{what} · waiting for sound", { what });
+  const name = capture.channels.length > 1 ? ["left channel", "right channel"][capture.selected] : "mono";
+  return I18n.msg("{what} · translating the {channel}", { what, channel: I18n.msg(name) });
 }
 
 // One meter per channel; clicking one translates that channel.
 function makeChannelRow(name, index) {
   const row = el("button", "channel");
   row.type = "button";
-  row.title = `Translate the ${name.toLowerCase()} channel`;
+  I18n.attr(row, "title", I18n.msg("Translate the {name} channel", { name: I18n.msg(name === "Mono" ? name : name.toLowerCase()) }));
   const bar = el("span", "meter active");
   bar.setAttribute("role", "meter");
-  bar.setAttribute("aria-label", `${name} channel level`);
+  I18n.attr(bar, "aria-label", I18n.msg("{name} channel level", { name: I18n.msg(name) }));
   bar.setAttribute("aria-valuemin", String(METER_FLOOR_DB));
   bar.setAttribute("aria-valuemax", "0");
   bar.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
@@ -1521,7 +1527,7 @@ function makeChannelRow(name, index) {
   const peak = el("span", "meter-peak");
   bar.append(fill, peak);
   const db = el("span", "meter-db", "-∞ dB");
-  row.append(el("span", "ch-name", name[0]), bar, db);
+  row.append(el("span", "ch-name", I18n.msg(name[0])), bar, db);
   row.addEventListener("click", () => selectChannel(index));
   captureChannelsEl.append(row);
   return { row, bar, fill, peak, db, shownDb: METER_FLOOR_DB, maxDb: METER_FLOOR_DB };
@@ -1584,8 +1590,8 @@ async function startCapture() {
   const track = stream.getAudioTracks()[0];
   if (!track) {
     stream.getTracks().forEach((t) => t.stop());
-    throw new Error(surface === "window" ? "A window shares no sound; choose a tab or the entire screen."
-      : 'No sound was shared: turn on "Also share tab audio" (or "system audio") in the picker.');
+    throw new Error(I18n.t(surface === "window" ? "A window shares no sound; choose a tab or the entire screen."
+      : 'No sound was shared: turn on "Also share tab audio" (or "system audio") in the picker.'));
   }
   const ctx = new AudioContext();
   try {
@@ -1635,13 +1641,13 @@ async function stopCapture() {
   capture = null;
   await stopRecording(recording); // sends any segment in progress, closes everything
   captureChannelsEl.replaceChildren();
-  setCaptureStatus("Not capturing");
+  setCaptureStatus(I18n.msg("Not capturing"));
   setCaptureUi(false);
   updateStatus();
 }
 
 function setCaptureUi(capturing) {
-  captureBtn.textContent = capturing ? "Stop Capture" : "Capture Audio";
+  I18n.text(captureBtn, I18n.msg(capturing ? "Stop Capture" : "Capture Audio"));
   captureBtn.classList.toggle("capturing", capturing);
   // One source at a time (switched off for now, to try both at once):
   // recordBtn.disabled = capturing; // (Space does nothing either)
@@ -1663,7 +1669,7 @@ captureBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     // Closing the picker without sharing isn't an error worth showing.
-    setCaptureStatus(err.name === "NotAllowedError" ? "Not capturing" : err.message, err.name !== "NotAllowedError");
+    setCaptureStatus(err.name === "NotAllowedError" ? I18n.msg("Not capturing") : err.message, err.name !== "NotAllowedError");
   } finally {
     captureBtn.disabled = false;
   }
