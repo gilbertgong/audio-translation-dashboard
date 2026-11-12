@@ -100,6 +100,12 @@ exit handlers do not run when switching views. Refreshing or closing the app sti
 
 #### Interface language
 
+All new or changed interface copy in the live, text and component-test views must participate in
+localization, including dynamically created controls, help text, statuses, app-owned errors, tooltips,
+accessibility labels and placeholders. Update the binding and Simplified Chinese catalog together.
+English fallback supports missing keys; it is not a substitute for translating new interface copy.
+The durable contributor rule is in [AI/MEMORY.md — UI changes must preserve i18n](AI/MEMORY.md#ui-changes-must-preserve-i18n).
+
 The shell, text view and component tests share `i18n.js` and the Simplified Chinese catalog
 `i18n-zh.js`. English source messages are the fallback keys. Static interface copy uses explicit
 `data-i18n` markers (with separate title, aria-label and placeholder markers); dynamic interface
@@ -119,8 +125,8 @@ language. Explicit `zh-Hans`/`zh-Hant` scripts take precedence over region; `zh-
 `zh-MO` detect as Traditional, with other Chinese tags detecting as Simplified. Traditional currently
 falls back to the Simplified catalog; other languages fall back to English. An upper-right button shows
 the other language (中文 in English UI, EN in Chinese UI) and switches to it, storing an explicit override
-in `localStorage.uiLanguage`. If storage
-is unavailable, detection and manual switching still work for the current page. No server setting or
+in `localStorage.uiLanguage`. If storage is unavailable, detection and manual switching still work
+for the current page. No server setting or
 change to the configured translation pair is involved.
 
 Switching updates bound UI messages in place, including mounted same-origin views. Newly mounted views
@@ -140,8 +146,12 @@ response panels also use `translate="no"`. Application localization still update
 
 Offline checks: `node tests/test_i18n.cjs` covers locale detection, fallbacks, persistence, storage
 denial, in-place message updates, mounted-view inheritance, literal data preservation, catalog
-substitutions and conversation opt-out markers. `node tests/test_playback.cjs` includes playback
-with Chinese UI labels. Use a separate mock dashboard to check real browser behavior without engines.
+substitutions, conversation opt-out markers, app-owned error localization through actual empty/interrupted
+translation paths, literal external errors, HTTP fallback and rich-message node reuse/order.
+`node tests/test_playback.cjs` includes playback with Chinese UI labels. For localization behavior
+changes, check that existing messages follow language switches while external data stays literal.
+Use a separate mock dashboard when checking real browser behavior without engines; simple UI-only
+changes remain subject to the project's preference to skip tests.
 
 #### Text translation (`translate.html`)
 

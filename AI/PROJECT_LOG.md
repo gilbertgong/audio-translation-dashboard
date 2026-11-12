@@ -633,3 +633,7 @@ DESIGN.md).
   lookup with the raw string as fallback, using existing message bindings. Added only lowercase
   english/chinese aliases alongside existing English/Chinese entries; no language-name mapping or
   normalization. Configuration/request values remain unchanged. No tests run for this UI-only change.
+- Strengthened durable contributor guidance with a dedicated "UI changes must preserve i18n" section
+  in MEMORY, covering all interface copy, catalog updates, error identity, rich content, live switching
+  and literal-data boundaries. Linked to DESIGN's updated implementation contract and check coverage,
+  with a reciprocal link. Documentation-only change; no tests run.
