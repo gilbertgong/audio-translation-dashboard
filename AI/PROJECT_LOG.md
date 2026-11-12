@@ -581,3 +581,74 @@ DESIGN.md).
 - Added --instances service launching, separate from the dashboard. Qwen examples use 8085/8185.
 - Offline suite: 83 tests ran, one Linux-only test skipped on Windows; remaining checks passed.
   Shell syntax and command preview passed. Real Linux/Docker/GPU verification remains outstanding.
+
+## 2026-11-10: Simplified Chinese browser interface
+
+- Scoped to live, text and component-test views. Browser detection distinguishes Simplified and
+  Traditional Chinese; Traditional currently falls back to Simplified. A header selector persists
+  English/Simplified selection independently of the configured translation languages.
+- Added explicit static/dynamic message bindings and a Simplified catalog. UI switching updates
+  mounted views without reloading; transcript/translation data, drafts, identifiers and raw responses
+  remain literal. Operational playback/progress checks no longer depend on English display labels;
+  the smoke runner checks status state while retaining its English diagnostic prose.
+- Live/text conversation regions opt out of browser automatic translation with translate="no" and
+  notranslate. Raw diagnostic panels and component-test output also request exclusion.
+- Offline localization, playback (including Chinese labels), time-stretch, JS syntax and whitespace
+  checks passed. An isolated headless Edge check against the Python mock dashboard verified zh-TW
+  fallback, persisted override across reload, mounted/late-mounted views, preserved drafts, row identity,
+  timing details and streamed results/actions, and an active synthetic microphone recording surviving
+  a language switch. Test browser/server stopped; scratch settings/logs used throughout.
+- No real inference, GPU, screen capture, physical microphone or audio quality exercised. Browser
+  automatic translation was not triggered; the opt-out markup was checked. User wording/visual review
+  remains pending. Service/browser error details are shown as supplied, and launcher/setup and the
+  separate smoke runner's prose are outside initial scope.
+- UI review follow-up: replaced the language selector with an upper-right button showing the other
+  language (中文 in English UI, EN in Chinese UI). Persistence and in-place switching are retained.
+  Updated the existing localization check's expected control text; tests were not run for this UI-only
+  follow-up, per the user's instruction.
+- The user chose to retain the original English language identifiers beside conversation timestamps;
+  reverted the subsequent label-localization change and its language-name catalog additions.
+  No tests run for this UI-only revert.
+- Fixed playback speed labels reverting to localized "Language 1/2" after a UI-language toggle:
+  config loading now replaces their initial localization bindings with literal configured names.
+  No tests run for this UI-only fix, per user preference.
+- Final verification requested by the user: all three JS suites, syntax checks for every browser
+  script, whitespace checks and the isolated headless mock browser regression passed, including
+  repeated language-button clicks and literal configured playback labels. Python discovery ran 70
+  tests: 64 passed, one Linux-only test skipped, and five release tests failed in disposable Git-remote
+  setup. The user reserved releases for themselves; release tests were not retried. No release or
+  project-remote push was performed. User authorized a local implementation commit.
+
+## 2026-11-11: i18n review refinements
+
+- Preserved app-owned error message descriptors through throws and catches, including nested speech
+  errors and HTTP fallback text. Existing displayed failures now follow subsequent UI-language changes;
+  browser/service errors remain literal even when their text matches a catalog key.
+- Restored capture-help bold picker choices and italic checkbox names. Named message slots let each
+  language order the sentence naturally while reusing authored emphasis nodes; no translated HTML parsing.
+- Focused localization checks cover actual empty/interrupted text-translation failure paths, nested
+  errors, external-error preservation, HTTP fallback, and rich-message node reuse/order. Localization,
+  playback, JS syntax and whitespace checks passed. No layout/browser/audio/inference tests run.
+- User requested another, minimal pass on timestamp and playback speed language labels: exact catalog
+  lookup with the raw string as fallback, using existing message bindings. Added only lowercase
+  english/chinese aliases alongside existing English/Chinese entries; no language-name mapping or
+  normalization. Configuration/request values remain unchanged. No tests run for this UI-only change.
+- Strengthened durable contributor guidance with a dedicated "UI changes must preserve i18n" section
+  in MEMORY, covering all interface copy, catalog updates, error identity, rich content, live switching
+  and literal-data boundaries. Linked to DESIGN's updated implementation contract and check coverage,
+  with a reciprocal link. Documentation-only change; no tests run.
+
+## 2026-11-11: Automatic Traditional Chinese interface
+
+- Added a matching 249-key Traditional catalog, with reviewed Traditional wording and preserved named
+  placeholders, loaded by all three browser views. No conversion library or runtime dependency added.
+- Kept the two visible choices EN/中文. The Chinese target is Traditional for zh-Hant/TW/HK/MO browser
+  preferences and Simplified otherwise, including English/non-Chinese browsers. Existing script-over-
+  region detection is retained. Switching to English and back retains the automatic Chinese variant.
+- Saved English still wins at startup. Either saved Chinese value now selects the automatically chosen
+  variant; older Simplified choices work on Traditional browsers. Storage events and denied storage covered.
+- Focused localization/error-path and playback suites, changed JS syntax and whitespace passed.
+  Catalog key/placeholder parity, repeated toggles, persistence and mounted-view inheritance checked.
+  Isolated headless Edge mock regression with zh-TW passed: Traditional initial UI, two-choice button,
+  label lookup, mounted views, drafts/results, persisted English and active synthetic recording preserved.
+  Browser/mock server stopped afterward. No real inference, GPU, screen capture or physical audio tested.

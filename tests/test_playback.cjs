@@ -18,6 +18,7 @@ class Element {
   }
   addEventListener(event, fn) { this.events[event] = fn; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  removeAttribute(name) { delete this.attributes[name]; }
   querySelector(selector) { return this.selectors[selector] ??= new Element(); }
   appendChild(element) { this.children.push(element); return element; }
   append() {}
@@ -48,18 +49,21 @@ class Audio extends Element {
   pause() { this.paused = true; }
 }
 const sandbox = vm.createContext({
-  console, AbortController, AbortSignal, Float32Array, Uint8Array, DataView,
+  console, AbortController, AbortSignal, Float32Array, Uint8Array, DataView, Event,
   Audio, AudioContext: Context, AudioBufferSourceNode: Source,
   performance: { now: () => 10000 },
   localStorage: { getItem() { return null; }, setItem() {} },
   document: { getElementById: element, querySelector: element, createElement: () => new Element(),
-    addEventListener() {}, body: new Element() },
-  window: { addEventListener() {} }, navigator: {},
+    querySelectorAll() { return []; }, documentElement: {}, addEventListener() {}, body: new Element() },
+  window: { addEventListener() {}, dispatchEvent() {} }, navigator: {},
   requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
   setTimeout() { return 1; }, clearTimeout() {},
   fetch() { return new Promise(() => {}); },
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/time-stretch.js"), "utf8"), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh.js"), "utf8"), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh-hant.js"), "utf8"), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/app.js"), "utf8"), sandbox);
 vm.runInContext(`
   language1 = "English"; language2 = "Chinese";
@@ -188,4 +192,15 @@ near(run("speech.ctx.sources.reduce((sum, source) => sum + source.buffer.duratio
 assert.equal(run("speech.ctx.sources.every(source => source.playbackRate === 1)"), true);
 run("speech.ctx.sources.at(-1).onended();");
 assert.equal(run("speech"), null);
+// Localized button titles do not control operational playback state.
+run(`
+  I18n.change("zh-Hans");
+  const chineseUI = fixture();
+  speakTranslation(chineseUI.row, chineseUI.btn, chineseUI.text, chineseUI);
+`);
+assert.equal(run("speech.btn.attributes.title"), "停止朗读");
+assert.match(element("playback-status").textContent, /^正在朗读/);
+element("playback-pause").click();
+assert.match(element("playback-status").textContent, /^已暂停/);
+run("stopPlayback(); I18n.change('en');");
 console.log("Playback checks passed: rate scheduling, position, pause/resume, restart, interruptions, next, stop/abort, independent language speeds, meter, recordings.");

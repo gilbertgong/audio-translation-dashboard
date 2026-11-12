@@ -220,7 +220,8 @@ async function run() {
 
     checkRows(rows, timeline, dash("languageChecks"));
     const state = (key) => dashEl(`status-${key}`).textContent;
-    check("the statuses are back to off", state("capture") === "off" && state("mic") === "off"
+    const idle = (key) => dashEl(`status-${key}`).dataset.state === "";
+    check("the statuses are back to off", idle("capture") && idle("mic")
           && !["active", "waiting"].includes(dashEl("status-playback").dataset.state),
           `${state("capture")} | ${state("mic")} | ${state("playback")}`);
   } catch (err) {

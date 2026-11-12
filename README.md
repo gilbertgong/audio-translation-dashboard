@@ -36,6 +36,13 @@ local execution example. This extracted path still needs target-machine verifica
 
 ## Use it
 
+- The **中文 / EN** button in the upper right switches to the other interface language, remembering
+  your English/Chinese choice in this browser. Initially it follows your preferred browser language.
+  Chinese uses Traditional for a Traditional Chinese browser preference, Simplified otherwise (including
+  when switching from an English browser). The button still offers only English and Chinese.
+  This changes interface text only,
+  independently of the languages being translated. The conversation areas ask browser automatic
+  translation to leave their bilingual content intact.
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
 - Switch between **Live translation**, **Text translation**, and **Component tests** in the header
   without stopping capture or losing your place. For example, captured YouTube audio keeps translating

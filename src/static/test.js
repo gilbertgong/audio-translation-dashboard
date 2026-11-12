@@ -17,7 +17,7 @@ for (const span of document.querySelectorAll(".samples")) {
   for (const [label, text] of SAMPLES) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = label;
+    I18n.text(btn, I18n.msg(label));
     btn.title = text;
     btn.addEventListener("click", () => {
       $(span.dataset.target).value = text;
@@ -31,7 +31,7 @@ for (const span of document.querySelectorAll(".samples")) {
 }
 
 function setStatus(id, text, isError = false) {
-  $(id).textContent = text;
+  I18n.text($(id), text);
   $(id).classList.toggle("error", isError);
 }
 
@@ -72,16 +72,16 @@ $("stt-record").addEventListener("click", async () => {
     recorder.onstop = () => {
       stream.getTracks().forEach((t) => t.stop());
       recorder = null;
-      $("stt-record").textContent = "Record";
+      I18n.text($("stt-record"), I18n.msg("Record"));
       $("stt-record").classList.remove("active");
       transcribe(new Blob(chunks));
     };
     recorder.start();
-    $("stt-record").textContent = "Stop";
+    I18n.text($("stt-record"), I18n.msg("Stop"));
     $("stt-record").classList.add("active");
-    setStatus("stt-status", "Recording...");
+    setStatus("stt-status", I18n.msg("Recording..."));
   } catch (err) {
-    setStatus("stt-status", `Microphone: ${err.message}`, true);
+    setStatus("stt-status", I18n.msg("Microphone: {error}", { error: I18n.errorText(err) }), true);
   }
 });
 
@@ -130,30 +130,32 @@ function encodeWav(samples, rate) {
 }
 
 async function transcribe(blob) {
-  setStatus("stt-status", "Converting...");
+  setStatus("stt-status", I18n.msg("Converting..."));
   try {
     sentWav = await toWav(blob);
   } catch (err) {
-    setStatus("stt-status", `Could not decode the audio: ${err.message}`, true);
+    setStatus("stt-status", I18n.msg("Could not decode the audio: {error}", { error: I18n.errorText(err) }), true);
     return;
   }
   const audioSeconds = (sentWav.size - 44) / 2 / sampleRate;
-  setStatus("stt-status", "Transcribing...");
+  setStatus("stt-status", I18n.msg("Transcribing..."));
   const start = performance.now();
   try {
     const res = await fetch("/api/recordings", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: sentWav });
     if (!res.ok) throw new Error(await errorMessage(res));
     const result = await res.json();
     transcribedLanguage = result.language;
-    $("stt-text").textContent = result.text || "(no speech detected)";
-    $("stt-meta").textContent = `${result.language || "?"} · ${audioSeconds.toFixed(1)}s audio · ` +
-      `whisper ${result.stt_seconds}s · round trip ${secs(performance.now() - start)} · ` +
-      (result.temporary ? "temporary recording (automatically deleted)" : `saved as ${result.file}`);
+    I18n.text($("stt-text"), result.text || I18n.msg("(no speech detected)"));
+    I18n.text($("stt-meta"), I18n.msg("{language} · {audio}s audio · whisper {stt}s · round trip {roundtrip} · {recording}", {
+      language: result.language || "?", audio: audioSeconds.toFixed(1), stt: result.stt_seconds,
+      roundtrip: secs(performance.now() - start), recording: result.temporary
+        ? I18n.msg("temporary recording (automatically deleted)") : I18n.msg("saved as {file}", { file: result.file }),
+    }));
     $("stt-raw").textContent = JSON.stringify(result.stt_raw ?? result, null, 2);
     $("stt-result").hidden = false;
     setStatus("stt-status", "");
   } catch (err) {
-    setStatus("stt-status", `Transcription failed: ${err.message}`, true);
+    setStatus("stt-status", I18n.msg("Transcription failed: {error}", { error: I18n.errorText(err) }), true);
   }
 }
 
@@ -175,10 +177,10 @@ $("llm-go").addEventListener("click", async () => {
   const text = $("llm-input").value.trim();
   if (!text) return;
   $("llm-go").disabled = true;
-  setStatus("llm-status", "Translating...");
+  setStatus("llm-status", I18n.msg("Translating..."));
   $("llm-result").hidden = false;
-  $("llm-text").textContent = "";
-  $("llm-meta").textContent = "";
+  I18n.text($("llm-text"), "");
+  I18n.text($("llm-meta"), "");
   const raw = [];
   const start = performance.now();
   let first = null;
@@ -206,16 +208,16 @@ $("llm-go").addEventListener("click", async () => {
         if (piece) {
           first ??= performance.now() - start;
           translation += piece;
-          $("llm-text").textContent = translation.trim();
+          I18n.text($("llm-text"), translation.trim());
         }
       }
       if (done) break;
     }
-    $("llm-text").textContent = translation.trim() || "(empty translation)";
-    $("llm-meta").textContent = `first token ${first === null ? "-" : secs(first)} · total ${secs(performance.now() - start)}`;
+    I18n.text($("llm-text"), translation.trim() || I18n.msg("(empty translation)"));
+    I18n.text($("llm-meta"), I18n.msg("first token {first} · total {total}", { first: first === null ? "-" : secs(first), total: secs(performance.now() - start) }));
     setStatus("llm-status", "");
   } catch (err) {
-    setStatus("llm-status", `Translation failed: ${err.message}`, true);
+    setStatus("llm-status", I18n.msg("Translation failed: {error}", { error: I18n.errorText(err) }), true);
   } finally {
     $("llm-raw").textContent = raw.join("\n\n");
     $("llm-go").disabled = false;
@@ -238,23 +240,23 @@ function stopSpeech() {
   speech.controller.abort();
   speech.ctx.close();
   speech = null;
-  $("tts-go").textContent = "Speak";
+  I18n.text($("tts-go"), I18n.msg("Speak"));
   $("tts-go").classList.remove("active");
 }
 
 $("tts-go").addEventListener("click", async () => {
   if (speech) {
     stopSpeech();
-    setStatus("tts-status", "Stopped");
+    setStatus("tts-status", I18n.msg("Stopped"));
     return;
   }
   const text = $("tts-input").value.trim();
   if (!text) return;
   const current = { ctx: new AudioContext(), controller: new AbortController() };
   speech = current;
-  $("tts-go").textContent = "Stop";
+  I18n.text($("tts-go"), I18n.msg("Stop"));
   $("tts-go").classList.add("active");
-  setStatus("tts-status", "Generating...");
+  setStatus("tts-status", I18n.msg("Generating..."));
   const start = performance.now();
   let first = null;
   const pieces = [];
@@ -276,7 +278,7 @@ $("tts-go").addEventListener("click", async () => {
     const play = (buffer) => {
       const source = new AudioBufferSourceNode(current.ctx, { buffer });
       source.connect(current.ctx.destination);
-      if (!last) setStatus("tts-status", "Playing...");
+      if (!last) setStatus("tts-status", I18n.msg("Playing..."));
       playAt = Math.max(playAt, current.ctx.currentTime + (last ? 0 : 0.1));
       source.start(playAt);
       playAt += buffer.duration;
@@ -300,7 +302,7 @@ $("tts-go").addEventListener("click", async () => {
       if (held) {
         if (first === null) {
           first = performance.now() - start;
-          setStatus("tts-status", "Buffering...");
+          setStatus("tts-status", I18n.msg("Buffering..."));
         }
         held.push(buffer);
         heldSeconds += buffer.duration;
@@ -313,14 +315,15 @@ $("tts-go").addEventListener("click", async () => {
     }
     if (speech !== current) return; // stopped while it was arriving
     held?.forEach(play); // all of it was shorter than the buffer
-    if (!last) throw new Error("no audio received");
+    if (!last) throw I18n.error("no audio received");
     const total = pieces.reduce((n, p) => n + p.length, 0);
     const all = new Float32Array(total);
     pieces.reduce((offset, p) => (all.set(p, offset), offset + p.length), 0);
     lastWav = encodeWav(all, rate);
     $("tts-download").href = URL.createObjectURL(lastWav);
-    $("tts-meta").textContent = `voice ${$("tts-voice").value} · first audio ${secs(first)} · ` +
-      `all received ${secs(performance.now() - start)} · ${(total / rate).toFixed(1)}s audio`;
+    I18n.text($("tts-meta"), I18n.msg("voice {voice} · first audio {first} · all received {total} · {seconds}s audio", {
+      voice: $("tts-voice").value, first: secs(first), total: secs(performance.now() - start), seconds: (total / rate).toFixed(1),
+    }));
     $("tts-result").hidden = false;
     last.onended = () => {
       if (speech === current) {
@@ -331,7 +334,7 @@ $("tts-go").addEventListener("click", async () => {
   } catch (err) {
     if (speech !== current) return; // stopped
     stopSpeech();
-    setStatus("tts-status", `Speech failed: ${err.message}`, true);
+    setStatus("tts-status", I18n.msg("Speech failed: {error}", { error: I18n.errorText(err) }), true);
   }
 });
 
@@ -340,6 +343,12 @@ $("tts-replay").addEventListener("click", () => {
 });
 
 // --- Setup: the dashboard's settings and the TTS server's voices.
+
+function voiceOption(name, isDefault) {
+  const option = new Option(name, name, false, isDefault);
+  if (isDefault) I18n.text(option, I18n.msg("{name} (default)", { name }));
+  return option;
+}
 
 async function init() {
   try {
@@ -360,11 +369,11 @@ async function init() {
     if (!res.ok) throw new Error(await errorMessage(res));
     const { voices, default: def } = await res.json();
     for (const name of voices.includes(def) ? voices : [def, ...voices]) {
-      select.add(new Option(name === def ? `${name} (default)` : name, name, false, name === def));
+      select.add(voiceOption(name, name === def));
     }
   } catch (err) {
-    select.add(new Option("(default)", ""));
-    setStatus("tts-status", `Voices: ${err.message}`, true);
+    select.add(I18n.text(new Option("", ""), I18n.msg("(default)")));
+    setStatus("tts-status", I18n.msg("Voices: {error}", { error: I18n.errorText(err) }), true);
   }
 }
 

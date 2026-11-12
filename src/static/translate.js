@@ -12,7 +12,7 @@ function engineQueue(name, signal, task) {
 }
 
 function status(message, error = false) {
-  $("translation-status").textContent = message;
+  I18n.text($("translation-status"), message);
   $("translation-status").classList.toggle("error", error);
 }
 
@@ -23,7 +23,7 @@ function updateControls() {
   $("swap").disabled = !ready || busy;
   $("clear").disabled = busy || !$("messages").children.length;
   $("translate").disabled = !ready || (!busy && !$("source-text").value.trim());
-  $("translate").textContent = busy ? "Stop" : "Translate";
+  I18n.text($("translate"), I18n.msg(busy ? "Stop" : "Translate"));
   document.querySelectorAll(".retry").forEach((btn) => { btn.disabled = busy; });
 }
 
@@ -65,7 +65,7 @@ $("clear").addEventListener("click", () => {
 function element(tag, className, text = "") {
   const node = document.createElement(tag);
   node.className = className;
-  node.textContent = text;
+  I18n.text(node, text);
   return node;
 }
 
@@ -76,15 +76,15 @@ function scrollToLatest() {
 function updateMessage(message, text) {
   const panel = $("conversation");
   const follow = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 80;
-  message.text.textContent = text;
+  I18n.text(message.text, text);
   if (follow) scrollToLatest();
 }
 
 function action(parent, label, callback) {
   const button = element("button", "", label);
   button.type = "button";
-  button.title = label;
-  button.setAttribute("aria-label", label);
+  I18n.attr(button, "title", label);
+  I18n.attr(button, "aria-label", label);
   button.addEventListener("click", callback);
   parent.append(button);
   return button;
@@ -101,13 +101,17 @@ function addResultActions(message) {
 
 function setPlayButton(button, playing) {
   button.textContent = playing ? "■" : "▶";
-  button.title = playing ? "Stop speaking" : "Speak this translation";
-  button.setAttribute("aria-label", button.title);
+  const label = I18n.msg(playing ? "Stop speaking" : "Speak this translation");
+  I18n.attr(button, "title", label);
+  I18n.attr(button, "aria-label", label);
 }
 
 async function responseError(res) {
-  try { return (await res.json()).error || `Request failed (${res.status})`; }
-  catch { return `Request failed (${res.status})`; }
+  try {
+    const detail = (await res.json()).error;
+    return detail ? new Error(detail) : I18n.error("Request failed ({status})", { status: res.status });
+  }
+  catch { return I18n.error("Request failed ({status})", { status: res.status }); }
 }
 
 // Consume complete SSE events even when UTF-8 text or event boundaries span reads.
@@ -126,7 +130,7 @@ async function readTranslation(res, onText) {
     if (name) return; // request metadata is only used by the debug pages
     if (data === "[DONE]") { finished = true; return; }
     const chunk = JSON.parse(data);
-    if (chunk.error) throw new Error(chunk.error.message || "Translation failed");
+    if (chunk.error) throw chunk.error.message ? new Error(chunk.error.message) : I18n.error("Translation failed");
     text += chunk.choices?.[0]?.delta?.content || "";
     onText(text);
   };
@@ -143,7 +147,7 @@ async function readTranslation(res, onText) {
       if (done) break;
     }
     if (buffer.trim()) event(buffer);
-    if (!finished) throw new Error("Translation was interrupted. Please try again.");
+    if (!finished) throw I18n.error("Translation was interrupted. Please try again.");
     return text.trim();
   } finally {
     await reader.cancel().catch(() => {});
@@ -158,8 +162,9 @@ async function runTranslation(message) {
   translating = controller;
   message.actions.replaceChildren();
   message.row.setAttribute("aria-busy", "true");
-  updateMessage(message, "Translating…");
-  status("Translating…");
+  message.receivedText = false;
+  updateMessage(message, I18n.msg("Translating…"));
+  status(I18n.msg("Translating…"));
   updateControls();
   try {
     const result = await engineQueue("llama", controller.signal, async () => {
@@ -167,22 +172,22 @@ async function runTranslation(message) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: message.original, source: message.source }), signal: controller.signal,
       });
-      if (!res.ok) throw new Error(await responseError(res));
-      return readTranslation(res, (text) => updateMessage(message, text));
+      if (!res.ok) throw await responseError(res);
+      return readTranslation(res, (text) => { message.receivedText = !!text; updateMessage(message, text); });
     });
-    if (!result) throw new Error("No translation returned. Please try again.");
+    if (!result) throw I18n.error("No translation returned. Please try again.");
     updateMessage(message, result);
     message.originalTranslation = result;
     addResultActions(message);
-    status("Translation ready.");
+    status(I18n.msg("Translation ready."));
   } catch (err) {
     const cancelled = controller.signal.aborted;
-    if (message.text.textContent === "Translating…") updateMessage(message, "");
+    if (!message.receivedText) updateMessage(message, "");
     message.actions.append(element("span", "message-note" + (cancelled ? "" : " error"),
-      cancelled ? "Translation stopped." : err.message));
-    if (message.text.textContent) message.actions.append(element("span", "message-note", "Incomplete translation"));
-    action(message.actions, "Retry", () => runTranslation(message)).classList.add("retry");
-    status(cancelled ? "Translation stopped." : err.message, !cancelled);
+      cancelled ? I18n.msg("Translation stopped.") : I18n.errorText(err)));
+    if (message.text.textContent) message.actions.append(element("span", "message-note", I18n.msg("Incomplete translation")));
+    action(message.actions, I18n.msg("Retry"), () => runTranslation(message)).classList.add("retry");
+    status(cancelled ? I18n.msg("Translation stopped.") : I18n.errorText(err), !cancelled);
   } finally {
     translating = null;
     message.row.setAttribute("aria-busy", "false");
@@ -197,7 +202,9 @@ function submitTextSegment() {
   const targetIndex = sourceIndex === 0 ? 1 : 0;
   $("empty-conversation").hidden = true;
   const row = element("article", "utterance" + (sourceIndex === 1 ? " lang2" : ""));
-  const meta = element("div", "meta", `${new Date().toLocaleTimeString()} · ${languages[sourceIndex]}`);
+  const meta = element("div", "meta", I18n.msg("{time} · {language}", {
+    time: new Date().toLocaleTimeString(), language: I18n.msg(languages[sourceIndex]),
+  }));
   const original = element("div", "original", text);
   const translation = element("div", "translation");
   row.append(meta, original, translation);
@@ -228,12 +235,12 @@ $("source-text").addEventListener("keydown", (event) => {
 
 // Play the endpoint's 16-bit PCM in memory, using the target language's voice.
 async function listen(message) {
-  if (speaking?.message === message) { stopSpeech(); status("Playback stopped."); return; }
+  if (speaking?.message === message) { stopSpeech(); status(I18n.msg("Playback stopped.")); return; }
   stopSpeech();
   const current = { ctx: new AudioContext(), controller: new AbortController(), message };
   speaking = current;
   setPlayButton(message.listen, true);
-  status("Preparing speech…");
+  status(I18n.msg("Preparing speech…"));
   try {
     await current.ctx.resume();
     const { bytes, rate } = await engineQueue("tts", current.controller.signal, async () => {
@@ -241,13 +248,13 @@ async function listen(message) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: message.originalTranslation, target: message.target }), signal: current.controller.signal,
       });
-      if (!res.ok) throw new Error(await responseError(res));
+      if (!res.ok) throw await responseError(res);
       const bytes = await res.arrayBuffer();
       const rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
       return { bytes, rate };
     });
     if (speaking !== current) return;
-    if (!bytes.byteLength || bytes.byteLength % 2) throw new Error("No complete audio received. Please try again.");
+    if (!bytes.byteLength || bytes.byteLength % 2) throw I18n.error("No complete audio received. Please try again.");
     const buffer = current.ctx.createBuffer(1, bytes.byteLength / 2, rate);
     const view = new DataView(bytes);
     const samples = buffer.getChannelData(0);
@@ -255,30 +262,30 @@ async function listen(message) {
     const source = current.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(current.ctx.destination);
-    source.onended = () => { if (speaking === current) { stopSpeech(); status("Translation ready."); } };
+    source.onended = () => { if (speaking === current) { stopSpeech(); status(I18n.msg("Translation ready.")); } };
     source.start();
-    status("Playing translation…");
+    status(I18n.msg("Playing translation…"));
   } catch (err) {
     if (speaking !== current) return;
     stopSpeech();
-    status(err.message, true);
+    status(I18n.errorText(err), true);
   }
 }
 
 async function init() {
   try {
     const res = await fetch("/api/config");
-    if (!res.ok) throw new Error(await responseError(res));
+    if (!res.ok) throw await responseError(res);
     const config = await res.json();
     languages = [config.language1, config.language2];
-    if (!languages.every((name) => typeof name === "string" && name)) throw new Error("Languages are not configured.");
+    if (!languages.every((name) => typeof name === "string" && name)) throw I18n.error("Languages are not configured.");
     updateDirection();
-    if (config.mock) status("Mock mode: translations are sample results.");
+    if (config.mock) status(I18n.msg("Mock mode: translations are sample results."));
     $("source-text").focus();
   } catch (err) {
     languages = [];
     updateControls();
-    status(`Could not load languages. Reload to try again. ${err.message}`, true);
+    status(I18n.msg("Could not load languages. Reload to try again. {error}", { error: I18n.errorText(err) }), true);
   }
 }
 

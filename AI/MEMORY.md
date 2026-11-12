@@ -96,6 +96,36 @@ launching again is a normal workflow; keep the machinery to read and use it stra
 is to use configuration without trying to validate it; deployment examples are illustrations, not a
 request to build more configuration infrastructure.
 
+### UI changes must preserve i18n
+
+Localization is part of every UI change in the live, text and component-test views. When adding or
+changing interface text, update its localization binding and matching entries in both Chinese catalogs,
+`src/static/i18n-zh.js` (Simplified) and `src/static/i18n-zh-hant.js` (Traditional), in the same change.
+This includes buttons, headings, help text, tooltips,
+accessibility labels, placeholders, statuses and app-owned errors, including dynamically created text.
+Do not leave new English-only copy because English is the fallback language.
+
+- Use static `data-i18n` markers or `I18n.msg` with `I18n.text`/`I18n.attr` for dynamic messages.
+  Keep messages bound so existing UI updates when the language switches; a one-time `I18n.t` result
+  stored as literal text does not do that.
+- Carry app-owned failures through `I18n.error` and render with `I18n.errorText`, preserving message
+  identity through throws, catches and nested messages. Browser/service error details stay literal.
+- Preserve emphasis, icons and live children. Use text-only child spans or named rich-message slots
+  rather than replacing a whole mixed-content control with translated text or parsing translated HTML.
+- Keep transcripts, translations, user input, raw responses and underlying config/request values
+  literal, even when they match a catalog key. The language labels beside conversation timestamps and
+  playback speed sliders are display-only exceptions: exact catalog lookup, original string fallback;
+  do not normalize language names or change the identifiers used by the pipeline.
+- Preserve in-place switching across mounted views and existing rows without resetting recording,
+  playback, queues, drafts or results. Operational state must never depend on a translated label.
+  Keep bilingual conversation regions opted out of browser automatic translation.
+
+Read [DESIGN.md — Interface language](../DESIGN.md#interface-language) before changing localization
+behavior; it documents the helper contract, rich slots, scope and relevant checks. Follow the testing
+preferences below; this requirement does not mandate tests for simple UI-only changes.
+*Why:* new UI and failure paths must work in English and both Chinese variants without changing user/model data or
+losing ongoing work when the user switches languages.
+
 ### Styling: just edit
 For visual and layout changes, make the edit; the user checks it in the Mock dashboard.
 *Why:* they judge the look themselves faster than any description.

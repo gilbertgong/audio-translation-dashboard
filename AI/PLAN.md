@@ -45,6 +45,14 @@ recipes good.
 
 ## Results so far
 
+- Browser UI supports English and Simplified/Traditional Chinese in live, text and component-test views.
+  The button still offers only English/Chinese: Traditional browser preferences select Traditional,
+  all other browser preferences use Simplified when Chinese is chosen. Saved English stays English;
+  saved Chinese follows the automatic variant, including older saved choices.
+  A persistent upper-right 中文 / EN button updates mounted views without restarting recording or losing content.
+  Bilingual conversations opt out of browser automatic translation. Offline localization/playback
+  checks and an isolated headless Edge mock check passed; real inference and screen capture were not run.
+
 - Shared inference supervision supports Linux/NVIDIA local and server modes through --instances.
   Local mode stops only containers started by that run; server mode leaves containers running.
   Added machine examples and INSTALL_LINUX.md; Qwen uses 8085/8185. Offline lifecycle checks pass,
