@@ -351,7 +351,9 @@ function setMeta(row, time) {
 function setLanguage(row, language) {
   row.dataset.language = language || "";
   const meta = row.querySelector(".meta");
-  meta.textContent = language ? `${row.dataset.time} · ${language}` : row.dataset.time;
+  I18n.text(meta, language
+    ? I18n.msg("{time} · {language}", { time: row.dataset.time, language: I18n.msg(language) })
+    : row.dataset.time);
   const isLang2 = !!language && language.toLowerCase() === language2.toLowerCase();
   row.querySelector(".utterance").classList.toggle("lang2", isLang2);
 }
@@ -1039,8 +1041,8 @@ async function loadConfig() {
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
-    I18n.text(document.getElementById("speed-language1"), language1);
-    I18n.text(document.getElementById("speed-language2"), language2);
+    I18n.text(document.getElementById("speed-language1"), I18n.msg(language1));
+    I18n.text(document.getElementById("speed-language2"), I18n.msg(language2));
     languageChecks = config.language_checks !== false;
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};

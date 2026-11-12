@@ -127,6 +127,10 @@ Switching updates bound UI messages in place, including mounted same-origin view
 inherit the shell's choice. Storage events synchronize other open tabs; switching never reloads a view
 or resets recording, playback, queues, drafts or conversation results. Transcripts, translations,
 sample text, configured language/voice identifiers and raw service responses are not catalog lookups.
+Language labels beside live/text conversation timestamps and playback speed sliders are display-only
+exceptions: look up the exact language string in the active catalog, falling back to the original
+string when absent. Existing rows/controls follow UI-language switches; underlying config, language
+direction and request values stay unchanged. No language-name normalization or separate mapping is used.
 Service/browser error details remain as supplied. The separate smoke-test runner and desktop launcher
 are outside this initial localization scope.
 

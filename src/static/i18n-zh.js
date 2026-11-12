@@ -134,6 +134,8 @@ const UI_ZH_HANS = {
   "Could not decode the audio: {error}": "无法解码音频：{error}",
   "English": "英语",
   "Chinese": "中文",
+  "english": "英语",
+  "chinese": "中文",
   "Mixed": "混合",
   "Recording...": "正在录音…",
   "Converting...": "正在转换…",

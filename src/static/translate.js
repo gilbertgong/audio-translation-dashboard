@@ -202,7 +202,9 @@ function submitTextSegment() {
   const targetIndex = sourceIndex === 0 ? 1 : 0;
   $("empty-conversation").hidden = true;
   const row = element("article", "utterance" + (sourceIndex === 1 ? " lang2" : ""));
-  const meta = element("div", "meta", `${new Date().toLocaleTimeString()} · ${languages[sourceIndex]}`);
+  const meta = element("div", "meta", I18n.msg("{time} · {language}", {
+    time: new Date().toLocaleTimeString(), language: I18n.msg(languages[sourceIndex]),
+  }));
   const original = element("div", "original", text);
   const translation = element("div", "translation");
   row.append(meta, original, translation);

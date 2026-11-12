@@ -629,3 +629,7 @@ DESIGN.md).
 - Focused localization checks cover actual empty/interrupted text-translation failure paths, nested
   errors, external-error preservation, HTTP fallback, and rich-message node reuse/order. Localization,
   playback, JS syntax and whitespace checks passed. No layout/browser/audio/inference tests run.
+- User requested another, minimal pass on timestamp and playback speed language labels: exact catalog
+  lookup with the raw string as fallback, using existing message bindings. Added only lowercase
+  english/chinese aliases alongside existing English/Chinese entries; no language-name mapping or
+  normalization. Configuration/request values remain unchanged. No tests run for this UI-only change.
