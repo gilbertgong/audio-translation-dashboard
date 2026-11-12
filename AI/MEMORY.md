@@ -99,8 +99,9 @@ request to build more configuration infrastructure.
 ### UI changes must preserve i18n
 
 Localization is part of every UI change in the live, text and component-test views. When adding or
-changing interface text, update its localization binding and the matching Simplified Chinese entry
-in `src/static/i18n-zh.js` in the same change. This includes buttons, headings, help text, tooltips,
+changing interface text, update its localization binding and matching entries in both Chinese catalogs,
+`src/static/i18n-zh.js` (Simplified) and `src/static/i18n-zh-hant.js` (Traditional), in the same change.
+This includes buttons, headings, help text, tooltips,
 accessibility labels, placeholders, statuses and app-owned errors, including dynamically created text.
 Do not leave new English-only copy because English is the fallback language.
 
@@ -122,7 +123,7 @@ Do not leave new English-only copy because English is the fallback language.
 Read [DESIGN.md — Interface language](../DESIGN.md#interface-language) before changing localization
 behavior; it documents the helper contract, rich slots, scope and relevant checks. Follow the testing
 preferences below; this requirement does not mandate tests for simple UI-only changes.
-*Why:* new UI and failure paths must work in both languages without changing user/model data or
+*Why:* new UI and failure paths must work in English and both Chinese variants without changing user/model data or
 losing ongoing work when the user switches languages.
 
 ### Styling: just edit

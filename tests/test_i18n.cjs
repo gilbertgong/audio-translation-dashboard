@@ -47,7 +47,7 @@ function fixture(languages = ["en-US"], saved = null, blocked = false) {
       setItem(key, value) { if (blocked) throw new Error("blocked"); writes.push([key, value]); },
     },
   });
-  for (const file of ["i18n-zh.js", "i18n.js"]) vm.runInContext(fs.readFileSync(path.join(staticDir, file), "utf8"), context);
+  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js"]) vm.runInContext(fs.readFileSync(path.join(staticDir, file), "utf8"), context);
   return { ui: window.I18n, node, ready: () => events.DOMContentLoaded(), writes, window, windowEvents, document, context };
 }
 
@@ -59,13 +59,53 @@ for (const [tag, expected] of Object.entries({
 })) assert.equal(f.ui.detect([tag]), expected, tag);
 assert.equal(f.ui.detect(["en-US", "zh-CN"]), "en"); // first browser preference wins
 assert.equal(f.ui.detect([]), "en");
-assert.equal(fixture(["zh-TW"]).ui.language, "zh-Hans");
+assert.equal(fixture(["zh-TW"]).ui.language, "zh-Hant");
 assert.equal(fixture(["zh-CN"], "en").ui.language, "en");
 assert.equal(fixture(["en"], "zh-Hans").ui.language, "zh-Hans");
 assert.equal(fixture(["en"], "invalid").ui.language, "en");
 const blocked = fixture(["zh-HK"], null, true);
 blocked.ready(); blocked.ui.change("en");
 assert.equal(blocked.ui.language, "en");
+
+// Still only EN/中文: Chinese script is automatic, including after a saved English override.
+for (const [locale, chinese] of [["zh-TW", "zh-Hant"], ["zh-HK", "zh-Hant"], ["zh-MO", "zh-Hant"],
+  ["zh-Hant-CN", "zh-Hant"], ["zh-Hans-HK", "zh-Hans"], ["zh-CN", "zh-Hans"], ["en-US", "zh-Hans"], ["fr", "zh-Hans"]]) {
+  const view = fixture([locale], "en");
+  const toggle = view.node({ id: "ui-language" });
+  const label = view.node({ "data-i18n": "Capture Audio" });
+  const literal = view.node(); literal.textContent = "Capture Audio";
+  view.ready();
+  assert.equal(view.ui.language, "en");
+  assert.equal(toggle.textContent, "中文");
+  assert.equal(toggle.lang, chinese);
+  for (let i = 0; i < 2; i++) {
+    toggle.click();
+    assert.equal(view.ui.language, chinese, locale);
+    assert.equal(toggle.textContent, "EN");
+    assert.equal(label.textContent, chinese === "zh-Hant" ? "擷取音訊" : "捕获音频");
+    assert.equal(literal.textContent, "Capture Audio");
+    assert.equal(view.document.documentElement.lang, chinese);
+    assert.equal(fixture([locale], view.writes.at(-1)[1]).ui.language, chinese);
+    toggle.click();
+    assert.equal(view.ui.language, "en");
+  }
+}
+assert.equal(fixture(["zh-TW"], "zh-Hans").ui.language, "zh-Hant"); // existing Chinese preference
+assert.equal(fixture(["en"], "zh-Hant").ui.language, "zh-Hans"); // new browser chooses its variant
+const traditional = fixture(["zh-TW"], null, true);
+const traditionalToggle = traditional.node({ id: "ui-language" });
+traditional.ready(); traditionalToggle.click(); traditionalToggle.click();
+assert.equal(traditional.ui.language, "zh-Hant");
+traditional.windowEvents.storage({ key: "uiLanguage", newValue: "en" });
+assert.equal(traditional.ui.language, "en");
+traditional.windowEvents.storage({ key: "uiLanguage", newValue: "zh-Hans" });
+assert.equal(traditional.ui.language, "zh-Hant");
+traditional.windowEvents.storage({ key: "uiLanguage", newValue: null });
+assert.equal(traditional.ui.language, "zh-Hant");
+const traditionalChild = fixture(["zh-TW"], "en", true);
+traditionalChild.window.parent = { I18n: traditional.ui };
+traditionalChild.ready();
+assert.equal(traditionalChild.ui.language, "zh-Hant");
 
 const button = f.node({ "data-i18n": "Start Recording", "data-i18n-title": "Start/stop recording (Space)" });
 const early = f.node({ "data-i18n": "Loading languages…" });
@@ -109,7 +149,9 @@ child.ready();
 assert.equal(child.ui.language, "zh-Hans"); // late-mounted views inherit even with storage blocked
 
 const catalog = vm.runInContext("UI_ZH_HANS", f.context);
-for (const [key, translated] of Object.entries(catalog)) {
+const traditionalCatalog = vm.runInContext("UI_ZH_HANT", f.context);
+assert.deepEqual(Object.keys(traditionalCatalog).sort(), Object.keys(catalog).sort());
+for (const [key, translated] of [...Object.entries(catalog), ...Object.entries(traditionalCatalog)]) {
   const placeholders = (value) => [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
   assert.deepEqual(placeholders(translated), placeholders(key), key);
 }
@@ -118,7 +160,9 @@ for (const file of ["index.html", "translate.html", "test.html"]) {
   for (const match of source.matchAll(/data-i18n(?:-title|-aria-label|-placeholder|-rich)?="([^"]+)"/g)) {
     const key = match[1].replaceAll("&#x27;", "'").replaceAll("&quot;", '"').replaceAll("&amp;", "&");
     assert.ok(Object.hasOwn(catalog, key), `${file}: ${key}`);
+    assert.ok(Object.hasOwn(traditionalCatalog, key), `${file}: Traditional ${key}`);
   }
+  assert.ok(source.indexOf('src="i18n-zh-hant.js"') < source.indexOf('src="i18n.js"'));
 }
 for (const [file, id] of [["index.html", "translation-window"], ["translate.html", "conversation"]]) {
   assert.match(fs.readFileSync(path.join(staticDir, file), "utf8"), new RegExp(`<section translate="no" class="notranslate" id="${id}"`));

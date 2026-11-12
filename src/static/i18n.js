@@ -2,7 +2,7 @@
 const I18n = (() => {
   const storageKey = "uiLanguage";
   const bindings = new WeakMap();
-  const catalogs = { "zh-Hans": UI_ZH_HANS };
+  const catalogs = { "zh-Hans": UI_ZH_HANS, "zh-Hant": UI_ZH_HANT };
   function detect(languages) {
     const tag = (languages?.[0] || "en").toLowerCase().replaceAll("_", "-");
     if (!/^zh(?:-|$)/.test(tag)) return "en";
@@ -10,12 +10,14 @@ const I18n = (() => {
     if (tag.includes("-hans")) return "zh-Hans";
     return /-(tw|hk|mo)(?:-|$)/.test(tag) ? "zh-Hant" : "zh-Hans";
   }
-  // Traditional detection is retained separately; until its catalog exists, use Simplified.
-  function supported(language) { return language === "zh-Hant" ? "zh-Hans" : language; }
-  let language = supported(detect(navigator.languages?.length ? navigator.languages : [navigator.language]));
+  const detected = detect(navigator.languages?.length ? navigator.languages : [navigator.language]);
+  // The visible choices stay English/Chinese; browser preference chooses the Chinese script.
+  const chineseLanguage = detected === "zh-Hant" ? "zh-Hant" : "zh-Hans";
+  let language = detected;
   try {
     const saved = localStorage.getItem(storageKey);
-    if (saved === "en" || Object.hasOwn(catalogs, saved)) language = saved;
+    if (saved === "en") language = "en";
+    else if (Object.hasOwn(catalogs, saved)) language = chineseLanguage;
   } catch {} // The language switch also works when storage is unavailable.
 
   function msg(key, values = {}) { return { key, values }; }
@@ -63,8 +65,9 @@ const I18n = (() => {
     const button = document.getElementById("ui-language");
     if (button) {
       button.textContent = language === "en" ? "中文" : "EN";
-      button.lang = language === "en" ? "zh-Hans" : "en";
-      button.title = language === "en" ? "切换到简体中文" : "Switch to English";
+      button.lang = language === "en" ? chineseLanguage : "en";
+      button.title = language === "en"
+        ? (chineseLanguage === "zh-Hant" ? "切換到中文" : "切换到中文") : "Switch to English";
       button.setAttribute("aria-label", button.title);
     }
   }
@@ -80,7 +83,10 @@ const I18n = (() => {
     window.dispatchEvent(new Event("uilanguagechange"));
   }
   window.addEventListener("storage", (event) => {
-    if (event.key === storageKey) change(event.newValue || supported(detect(navigator.languages)), false);
+    if (event.key !== storageKey) return;
+    if (!event.newValue) change(detected, false);
+    else if (event.newValue === "en") change("en", false);
+    else if (Object.hasOwn(catalogs, event.newValue)) change(chineseLanguage, false);
   });
   document.addEventListener("DOMContentLoaded", () => {
     if (window !== window.parent && window.parent.I18n) language = window.parent.I18n.language;
@@ -98,7 +104,7 @@ const I18n = (() => {
       set(node, "rich", { ...msg(node.dataset.i18nRich), slots });
     });
     refresh();
-    document.getElementById("ui-language")?.addEventListener("click", () => change(language === "en" ? "zh-Hans" : "en"));
+    document.getElementById("ui-language")?.addEventListener("click", () => change(language === "en" ? chineseLanguage : "en"));
   });
   return { detect, t, msg, error, errorText, text, attr, refresh, change, get language() { return language; } };
 })();

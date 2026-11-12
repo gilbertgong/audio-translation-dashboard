@@ -62,6 +62,7 @@ const sandbox = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/time-stretch.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh.js"), "utf8"), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh-hant.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/app.js"), "utf8"), sandbox);
 vm.runInContext(`

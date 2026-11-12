@@ -637,3 +637,18 @@ DESIGN.md).
   in MEMORY, covering all interface copy, catalog updates, error identity, rich content, live switching
   and literal-data boundaries. Linked to DESIGN's updated implementation contract and check coverage,
   with a reciprocal link. Documentation-only change; no tests run.
+
+## 2026-11-11: Automatic Traditional Chinese interface
+
+- Added a matching 249-key Traditional catalog, with reviewed Traditional wording and preserved named
+  placeholders, loaded by all three browser views. No conversion library or runtime dependency added.
+- Kept the two visible choices EN/中文. The Chinese target is Traditional for zh-Hant/TW/HK/MO browser
+  preferences and Simplified otherwise, including English/non-Chinese browsers. Existing script-over-
+  region detection is retained. Switching to English and back retains the automatic Chinese variant.
+- Saved English still wins at startup. Either saved Chinese value now selects the automatically chosen
+  variant; older Simplified choices work on Traditional browsers. Storage events and denied storage covered.
+- Focused localization/error-path and playback suites, changed JS syntax and whitespace passed.
+  Catalog key/placeholder parity, repeated toggles, persistence and mounted-view inheritance checked.
+  Isolated headless Edge mock regression with zh-TW passed: Traditional initial UI, two-choice button,
+  label lookup, mounted views, drafts/results, persisted English and active synthetic recording preserved.
+  Browser/mock server stopped afterward. No real inference, GPU, screen capture or physical audio tested.

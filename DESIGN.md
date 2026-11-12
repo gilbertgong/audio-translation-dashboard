@@ -102,12 +102,13 @@ exit handlers do not run when switching views. Refreshing or closing the app sti
 
 All new or changed interface copy in the live, text and component-test views must participate in
 localization, including dynamically created controls, help text, statuses, app-owned errors, tooltips,
-accessibility labels and placeholders. Update the binding and Simplified Chinese catalog together.
+accessibility labels and placeholders. Update the binding and both Chinese catalogs together.
 English fallback supports missing keys; it is not a substitute for translating new interface copy.
 The durable contributor rule is in [AI/MEMORY.md — UI changes must preserve i18n](AI/MEMORY.md#ui-changes-must-preserve-i18n).
 
-The shell, text view and component tests share `i18n.js` and the Simplified Chinese catalog
-`i18n-zh.js`. English source messages are the fallback keys. Static interface copy uses explicit
+The shell, text view and component tests share `i18n.js`, the Simplified Chinese catalog
+`i18n-zh.js` and Traditional Chinese catalog `i18n-zh-hant.js`. Both catalogs have the same English
+message keys and named placeholders; English source messages are the fallback keys. Static interface copy uses explicit
 `data-i18n` markers (with separate title, aria-label and placeholder markers); dynamic interface
 messages use `I18n.msg(key, values)` with `I18n.text` or `I18n.attr`. Plain strings passed to those
 helpers remain literal data. Named substitutions are rendered as text, never HTML. Localize only
@@ -122,12 +123,18 @@ switching reuses the authored bold/italic nodes in catalog order, without parsin
 
 The first `navigator.languages` preference (or `navigator.language`) determines the initial UI
 language. Explicit `zh-Hans`/`zh-Hant` scripts take precedence over region; `zh-TW`, `zh-HK` and
-`zh-MO` detect as Traditional, with other Chinese tags detecting as Simplified. Traditional currently
-falls back to the Simplified catalog; other languages fall back to English. An upper-right button shows
-the other language (中文 in English UI, EN in Chinese UI) and switches to it, storing an explicit override
-in `localStorage.uiLanguage`. If storage is unavailable, detection and manual switching still work
-for the current page. No server setting or
-change to the configured translation pair is involved.
+`zh-MO` detect as Traditional, with other Chinese tags detecting as Simplified; other languages fall
+back to English. The Chinese variant is automatic: Traditional for a detected Traditional preference,
+Simplified otherwise, including English/non-Chinese browsers. An upper-right button shows only the
+other language (中文 in English UI, EN in either Chinese UI). It toggles English and the automatically
+chosen Chinese variant; there is no separate variant selector or three-way cycle.
+
+`localStorage.uiLanguage` retains the explicit English/Chinese choice using `en`, `zh-Hans` or
+`zh-Hant`. On startup and storage events, either saved Chinese value selects the browser's automatic
+variant, including values saved before Traditional support. Saved English stays English. Returning
+from English via the button uses the same detected Chinese variant. Removing the saved preference
+restores browser detection. If storage is unavailable, detection and manual switching still work for
+the current page. No server setting or change to the configured translation pair is involved.
 
 Switching updates bound UI messages in place, including mounted same-origin views. Newly mounted views
 inherit the shell's choice. Storage events synchronize other open tabs; switching never reloads a view
@@ -145,7 +152,8 @@ exclusion from browser automatic translation, including Chrome's. Component-test
 response panels also use `translate="no"`. Application localization still updates their own controls.
 
 Offline checks: `node tests/test_i18n.cjs` covers locale detection, fallbacks, persistence, storage
-denial, in-place message updates, mounted-view inheritance, literal data preservation, catalog
+denial, both Chinese variants and the two-choice toggle, saved-choice compatibility, in-place message
+updates, mounted-view inheritance, literal data preservation, parity between Chinese catalogs, catalog
 substitutions, conversation opt-out markers, app-owned error localization through actual empty/interrupted
 translation paths, literal external errors, HTTP fallback and rich-message node reuse/order.
 `node tests/test_playback.cjs` includes playback with Chinese UI labels. For localization behavior
