@@ -81,7 +81,7 @@ $("stt-record").addEventListener("click", async () => {
     $("stt-record").classList.add("active");
     setStatus("stt-status", I18n.msg("Recording..."));
   } catch (err) {
-    setStatus("stt-status", I18n.msg("Microphone: {error}", { error: err.message }), true);
+    setStatus("stt-status", I18n.msg("Microphone: {error}", { error: I18n.errorText(err) }), true);
   }
 });
 
@@ -134,7 +134,7 @@ async function transcribe(blob) {
   try {
     sentWav = await toWav(blob);
   } catch (err) {
-    setStatus("stt-status", I18n.msg("Could not decode the audio: {error}", { error: err.message }), true);
+    setStatus("stt-status", I18n.msg("Could not decode the audio: {error}", { error: I18n.errorText(err) }), true);
     return;
   }
   const audioSeconds = (sentWav.size - 44) / 2 / sampleRate;
@@ -155,7 +155,7 @@ async function transcribe(blob) {
     $("stt-result").hidden = false;
     setStatus("stt-status", "");
   } catch (err) {
-    setStatus("stt-status", I18n.msg("Transcription failed: {error}", { error: err.message }), true);
+    setStatus("stt-status", I18n.msg("Transcription failed: {error}", { error: I18n.errorText(err) }), true);
   }
 }
 
@@ -217,7 +217,7 @@ $("llm-go").addEventListener("click", async () => {
     I18n.text($("llm-meta"), I18n.msg("first token {first} · total {total}", { first: first === null ? "-" : secs(first), total: secs(performance.now() - start) }));
     setStatus("llm-status", "");
   } catch (err) {
-    setStatus("llm-status", I18n.msg("Translation failed: {error}", { error: err.message }), true);
+    setStatus("llm-status", I18n.msg("Translation failed: {error}", { error: I18n.errorText(err) }), true);
   } finally {
     $("llm-raw").textContent = raw.join("\n\n");
     $("llm-go").disabled = false;
@@ -315,7 +315,7 @@ $("tts-go").addEventListener("click", async () => {
     }
     if (speech !== current) return; // stopped while it was arriving
     held?.forEach(play); // all of it was shorter than the buffer
-    if (!last) throw new Error(I18n.t("no audio received"));
+    if (!last) throw I18n.error("no audio received");
     const total = pieces.reduce((n, p) => n + p.length, 0);
     const all = new Float32Array(total);
     pieces.reduce((offset, p) => (all.set(p, offset), offset + p.length), 0);
@@ -334,7 +334,7 @@ $("tts-go").addEventListener("click", async () => {
   } catch (err) {
     if (speech !== current) return; // stopped
     stopSpeech();
-    setStatus("tts-status", I18n.msg("Speech failed: {error}", { error: err.message }), true);
+    setStatus("tts-status", I18n.msg("Speech failed: {error}", { error: I18n.errorText(err) }), true);
   }
 });
 
@@ -373,7 +373,7 @@ async function init() {
     }
   } catch (err) {
     select.add(I18n.text(new Option("", ""), I18n.msg("(default)")));
-    setStatus("tts-status", I18n.msg("Voices: {error}", { error: err.message }), true);
+    setStatus("tts-status", I18n.msg("Voices: {error}", { error: I18n.errorText(err) }), true);
   }
 }
 

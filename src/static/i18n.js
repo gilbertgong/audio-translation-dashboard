@@ -19,6 +19,9 @@ const I18n = (() => {
   } catch {} // The language switch also works when storage is unavailable.
 
   function msg(key, values = {}) { return { key, values }; }
+  // Keep app-owned message identity across throws; external errors remain literal.
+  function error(key, values = {}) { return Object.assign(new Error(key), { uiMessage: msg(key, values) }); }
+  function errorText(err) { return err.uiMessage ?? err.message; }
   function isMessage(value) { return value !== null && typeof value === "object" && typeof value.key === "string"; }
   function t(key, values = {}) {
     const catalog = catalogs[language];
@@ -30,7 +33,12 @@ const I18n = (() => {
   }
   function render(node, attribute, value) {
     const text = isMessage(value) ? t(value.key, value.values) : String(value ?? "");
-    if (attribute === "textContent") node.textContent = text;
+    if (attribute === "rich") {
+      const parts = text.split(/(\{\w+\})/g).map((part) =>
+        value.slots[part.slice(1, -1)] && /^\{\w+\}$/.test(part)
+          ? value.slots[part.slice(1, -1)] : document.createTextNode(part));
+      node.replaceChildren(...parts);
+    } else if (attribute === "textContent") node.textContent = text;
     else node.setAttribute(attribute, text);
   }
   function set(node, attribute, value) {
@@ -84,10 +92,15 @@ const I18n = (() => {
         if (!bindings.get(node)?.has(name)) attr(node, name, msg(node.getAttribute(`data-i18n-${name}`)));
       });
     }
+    document.querySelectorAll("[data-i18n-rich]").forEach((node) => {
+      const slots = Object.fromEntries([...node.querySelectorAll("[data-i18n-slot]")]
+        .map((slot) => [slot.dataset.i18nSlot, slot]));
+      set(node, "rich", { ...msg(node.dataset.i18nRich), slots });
+    });
     refresh();
     document.getElementById("ui-language")?.addEventListener("click", () => change(language === "en" ? "zh-Hans" : "en"));
   });
-  return { detect, t, msg, text, attr, refresh, change, get language() { return language; } };
+  return { detect, t, msg, error, errorText, text, attr, refresh, change, get language() { return language; } };
 })();
 // Expose only the localization API to the application's same-origin child views.
 window.I18n = I18n;

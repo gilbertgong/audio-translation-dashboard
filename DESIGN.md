@@ -108,6 +108,12 @@ helpers remain literal data. Named substitutions are rendered as text, never HTM
 text-only nodes, or dedicated child spans when a control also contains icons or other live content.
 Playback state and translation progress are tracked independently of their displayed labels.
 
+App-owned failures use `I18n.error(key, values)` to retain a `uiMessage` descriptor through throws;
+render with `I18n.errorText(error)`, including inside other message substitutions. External errors
+fall back to their literal `message`; never recognize them by matching their text against a catalog.
+Capture-help list items use `data-i18n-rich` templates with named `data-i18n-slot` children. Language
+switching reuses the authored bold/italic nodes in catalog order, without parsing translated HTML.
+
 The first `navigator.languages` preference (or `navigator.language`) determines the initial UI
 language. Explicit `zh-Hans`/`zh-Hant` scripts take precedence over region; `zh-TW`, `zh-HK` and
 `zh-MO` detect as Traditional, with other Chinese tags detecting as Simplified. Traditional currently

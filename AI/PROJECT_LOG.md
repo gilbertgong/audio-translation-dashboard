@@ -618,3 +618,14 @@ DESIGN.md).
   tests: 64 passed, one Linux-only test skipped, and five release tests failed in disposable Git-remote
   setup. The user reserved releases for themselves; release tests were not retried. No release or
   project-remote push was performed. User authorized a local implementation commit.
+
+## 2026-11-11: i18n review refinements
+
+- Preserved app-owned error message descriptors through throws and catches, including nested speech
+  errors and HTTP fallback text. Existing displayed failures now follow subsequent UI-language changes;
+  browser/service errors remain literal even when their text matches a catalog key.
+- Restored capture-help bold picker choices and italic checkbox names. Named message slots let each
+  language order the sentence naturally while reusing authored emphasis nodes; no translated HTML parsing.
+- Focused localization checks cover actual empty/interrupted text-translation failure paths, nested
+  errors, external-error preservation, HTTP fallback, and rich-message node reuse/order. Localization,
+  playback, JS syntax and whitespace checks passed. No layout/browser/audio/inference tests run.

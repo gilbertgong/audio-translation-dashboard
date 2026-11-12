@@ -265,7 +265,7 @@ async function sendAudioSegment(samples, sampleRate, note, source) {
     processAudioSegment(encodeWav(resampled, targetSampleRate), note, source);
   } catch (err) {
     console.error(err);
-    addNote(I18n.msg("Error: {error}", { error: err.message }), true);
+    addNote(I18n.msg("Error: {error}", { error: I18n.errorText(err) }), true);
   }
 }
 
@@ -632,7 +632,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     console.error(err);
     stopSpeech();
     setTiming(row, "tts", "failed");
-    addDetail(row, I18n.msg("Speech error: {error}", { error: err.message }), true);
+    addDetail(row, I18n.msg("Speech error: {error}", { error: I18n.errorText(err) }), true);
     playNextSpeech();
   };
   current.update = () => {
@@ -657,7 +657,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     updateStatus();
     if (!audio.done) return;
     audio.listeners.delete(current.update);
-    if (!last) return audio.seconds ? finished() : fail(new Error(I18n.t("no audio received")));
+    if (!last) return audio.seconds ? finished() : fail(I18n.error("no audio received"));
     if (ctx.currentTime >= playAt) finished(); // already played out
     else last.onended = finished;
   };
@@ -1021,7 +1021,7 @@ async function checkServices() {
     // The dashboard itself didn't answer (e.g. stopped): mark everything unknown.
     for (const item of servicesEl.children) {
       item.className = "service";
-      I18n.attr(item, "title", I18n.msg("Dashboard not reachable: {error}", { error: err.message }));
+      I18n.attr(item, "title", I18n.msg("Dashboard not reachable: {error}", { error: I18n.errorText(err) }));
     }
   }
   if (!pageLifetime.signal.aborted) {
@@ -1146,7 +1146,7 @@ async function stopRecording(recording = micRecording) {
     return null;
   }
   const samples = concat(chunks);
-  if (samples.length === 0) throw new Error(I18n.t("No audio captured"));
+  if (samples.length === 0) throw I18n.error("No audio captured");
   const resampled = await resample(samples, inputRate, targetSampleRate);
   return encodeWav(resampled, targetSampleRate);
 }
@@ -1343,7 +1343,7 @@ async function translateRow(row, text, source) {
   } catch (err) {
     setTiming(row, "llm", "failed");
     if (err.raw) addRawButton(row, "llm", I18n.msg("llama request and streamed response"), err.raw);
-    setLine(row, ".translation", I18n.msg("Error: {error}", { error: err.message }), "error");
+    setLine(row, ".translation", I18n.msg("Error: {error}", { error: I18n.errorText(err) }), "error");
     throw err;
   }
 }
@@ -1375,7 +1375,7 @@ async function recheck(row, stt, reason) {
     console.error(err);
     setTiming(row, "recheck", "failed");
     setLine(row, ".original", stt.text);
-    addDetail(row, I18n.msg("Recheck failed: {error}", { error: err.message }), true);
+    addDetail(row, I18n.msg("Recheck failed: {error}", { error: I18n.errorText(err) }), true);
     return stt;
   }
 }
@@ -1401,7 +1401,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
       stt = await uploadWav(wav);
     } catch (err) {
       setTiming(row, "stt", "failed");
-      setLine(row, ".original", I18n.msg("Error: {error}", { error: err.message }), "error");
+      setLine(row, ".original", I18n.msg("Error: {error}", { error: I18n.errorText(err) }), "error");
       if (err.body?.file) addFileInfo(row, err.body.file, err.body.temporary);
       throw err;
     }
@@ -1457,7 +1457,7 @@ recordBtn.addEventListener("click", async () => {
     }
   } catch (err) {
     console.error(err);
-    addNote(I18n.msg("Error: {error}", { error: err.message }), true);
+    addNote(I18n.msg("Error: {error}", { error: I18n.errorText(err) }), true);
     setIndicator("mic", "error", "error");
     stopMeter();
     if (micRecording) {
@@ -1590,8 +1590,8 @@ async function startCapture() {
   const track = stream.getAudioTracks()[0];
   if (!track) {
     stream.getTracks().forEach((t) => t.stop());
-    throw new Error(I18n.t(surface === "window" ? "A window shares no sound; choose a tab or the entire screen."
-      : 'No sound was shared: turn on "Also share tab audio" (or "system audio") in the picker.'));
+    throw I18n.error(surface === "window" ? "A window shares no sound; choose a tab or the entire screen."
+      : 'No sound was shared: turn on "Also share tab audio" (or "system audio") in the picker.');
   }
   const ctx = new AudioContext();
   try {
@@ -1669,7 +1669,7 @@ captureBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     // Closing the picker without sharing isn't an error worth showing.
-    setCaptureStatus(err.name === "NotAllowedError" ? I18n.msg("Not capturing") : err.message, err.name !== "NotAllowedError");
+    setCaptureStatus(err.name === "NotAllowedError" ? I18n.msg("Not capturing") : I18n.errorText(err), err.name !== "NotAllowedError");
   } finally {
     captureBtn.disabled = false;
   }

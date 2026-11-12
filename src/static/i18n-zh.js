@@ -1,5 +1,13 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
+  "{tab} (best), with {tabAudio} on: just that tab's sound, e.g. a YouTube video or a meeting in the browser. {mute} (tick it before capturing) silences it for you while it's still captured, so you hear only the translations.": "{tab}（推荐），开启{tabAudio}：仅接收该标签页的声音，例如 YouTube 视频或浏览器中的会议。在捕获前勾选{mute}，可在继续捕获的同时将其静音，让您只听到翻译。",
+  "{screen}, with {systemAudio} on: everything your computer plays (Windows), e.g. a meeting app. This includes the spoken translations.": "{screen}，开启{systemAudio}：接收计算机播放的所有声音（Windows），例如会议应用。其中也包括朗读的翻译。",
+  "A {window} shares no sound in most browsers.": "在大多数浏览器中，{window}不共享声音。",
+  "A browser tab": "浏览器标签页",
+  "Also share tab audio": "同时共享标签页音频",
+  "Entire screen": "整个屏幕",
+  "Also share system audio": "同时共享系统音频",
+  "window": "窗口",
   "L": "左",
   "R": "右",
   "M": "单",

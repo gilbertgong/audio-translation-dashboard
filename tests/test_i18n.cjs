@@ -13,6 +13,9 @@ function fixture(languages = ["en-US"], saved = null, blocked = false) {
   function node(attributes = {}) {
     const item = {
       attributes: { ...attributes }, textContent: "", value: "", dataset: {},
+      children: [], classList: { toggle() {}, add() {} },
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
       setAttribute(name, value) { this.attributes[name] = value; },
       getAttribute(name) { return this.attributes[name]; },
       removeAttribute(name) { delete this.attributes[name]; },
@@ -28,13 +31,17 @@ function fixture(languages = ["en-US"], saved = null, blocked = false) {
     documentElement: {},
     addEventListener(name, fn) { events[name] = fn; },
     getElementById(id) { return nodes.find((node) => node.attributes.id === id); },
+    createElement() { return node(); },
     querySelectorAll(selector) {
       if (selector === "iframe.app-view-frame") return nodes.filter((node) => node.contentWindow);
-      const name = /^\[([^\]]+)\]$/.exec(selector)[1];
+      const match = /^\[([^\]]+)\]$/.exec(selector);
+      if (!match) return [];
+      const name = match[1];
       return nodes.filter((node) => name in node.attributes);
     },
   };
   const context = vm.createContext({ window, document, navigator: { languages, language: languages[0] }, Event,
+    AbortController, TextDecoder, fetch() { return new Promise(() => {}); },
     localStorage: {
       getItem() { if (blocked) throw new Error("blocked"); return saved; },
       setItem(key, value) { if (blocked) throw new Error("blocked"); writes.push([key, value]); },
@@ -108,7 +115,7 @@ for (const [key, translated] of Object.entries(catalog)) {
 }
 for (const file of ["index.html", "translate.html", "test.html"]) {
   const source = fs.readFileSync(path.join(staticDir, file), "utf8");
-  for (const match of source.matchAll(/data-i18n(?:-title|-aria-label|-placeholder)?="([^"]+)"/g)) {
+  for (const match of source.matchAll(/data-i18n(?:-title|-aria-label|-placeholder|-rich)?="([^"]+)"/g)) {
     const key = match[1].replaceAll("&#x27;", "'").replaceAll("&quot;", '"').replaceAll("&amp;", "&");
     assert.ok(Object.hasOwn(catalog, key), `${file}: ${key}`);
   }
@@ -116,4 +123,66 @@ for (const file of ["index.html", "translate.html", "test.html"]) {
 for (const [file, id] of [["index.html", "translation-window"], ["translate.html", "conversation"]]) {
   assert.match(fs.readFileSync(path.join(staticDir, file), "utf8"), new RegExp(`<section translate="no" class="notranslate" id="${id}"`));
 }
+// Rich messages reuse authored emphasis nodes while the catalog controls word order.
+const rich = fixture();
+const windowSlot = rich.node({ "data-i18n": "window" });
+windowSlot.dataset.i18nSlot = "window";
+const help = rich.node({ "data-i18n-rich": "A {window} shares no sound in most browsers." });
+help.dataset.i18nRich = help.getAttribute("data-i18n-rich");
+help.querySelectorAll = () => [windowSlot];
+rich.document.createTextNode = (textContent) => ({ textContent });
+rich.ready();
+assert.equal(help.children.map((n) => n.textContent).join(""), "A window shares no sound in most browsers.");
+rich.ui.change("zh-Hans");
+assert.equal(help.children.map((n) => n.textContent).join(""), "在大多数浏览器中，窗口不共享声音。");
+assert.ok(help.children.includes(windowSlot));
+rich.ui.change("en");
+assert.equal(help.children.map((n) => n.textContent).join(""), "A window shares no sound in most browsers.");
 console.log("Localization checks passed: locale detection/fallback, persistence, storage denial, live switching, mounted views, raw text/drafts, catalog placeholders and translation protection.");
+
+// Exercise the actual text-view failure paths, not just message construction.
+async function errorChecks() {
+  const f = fixture();
+  for (const id of ["source-text", "swap", "clear", "messages", "translate", "conversation", "translation-status"]) f.node({ id });
+  f.ready();
+  vm.runInContext(fs.readFileSync(path.join(staticDir, "translate.js"), "utf8"), f.context);
+  function response(stream) {
+    let done = false;
+    return { ok: true, body: { getReader: () => ({
+      async read() { if (done) return { done: true }; done = true; return { value: new TextEncoder().encode(stream), done: false }; },
+      async cancel() {}, releaseLock() {},
+    }) } };
+  }
+  for (const [stream, key] of [
+    ["data: [DONE]\n\n", "No translation returned. Please try again."],
+    ["", "Translation was interrupted. Please try again."],
+  ]) {
+    f.ui.change("en");
+    const message = { row: f.node(), text: f.node(), actions: f.node(), original: "original", source: "English" };
+    f.context.testMessage = message;
+    f.context.fetch = async () => response(stream);
+    await vm.runInContext("runTranslation(testMessage)", f.context);
+    const status = f.document.getElementById("translation-status");
+    assert.equal(status.textContent, key);
+    f.ui.change("zh-Hans");
+    assert.equal(status.textContent, f.ui.t(key));
+    assert.equal(message.actions.children[0].textContent, f.ui.t(key));
+    f.ui.change("en");
+    assert.equal(status.textContent, key);
+  }
+  const nested = f.node();
+  const speechError = f.ui.error("no audio received");
+  f.ui.text(nested, f.ui.msg("Speech error: {error}", { error: f.ui.errorText(speechError) }));
+  const external = f.node();
+  f.ui.text(external, f.ui.errorText(new Error("No translation returned. Please try again.")));
+  f.ui.change("zh-Hans");
+  assert.equal(nested.textContent, "语音错误：未收到音频");
+  assert.equal(external.textContent, "No translation returned. Please try again.");
+  const fallback = await vm.runInContext("responseError({status: 503, json: async () => ({})})", f.context);
+  f.ui.text(nested, f.ui.errorText(fallback));
+  assert.equal(nested.textContent, "请求失败（503）");
+  f.ui.change("en");
+  assert.equal(nested.textContent, "Request failed (503)");
+  console.log("Error localization checks passed: actual empty/interrupted translation paths, nested speech errors, HTTP fallback and literal external errors.");
+}
+errorChecks().catch((err) => { console.error(err); process.exitCode = 1; });
