@@ -102,10 +102,6 @@ traditional.windowEvents.storage({ key: "uiLanguage", newValue: "zh-Hans" });
 assert.equal(traditional.ui.language, "zh-Hant");
 traditional.windowEvents.storage({ key: "uiLanguage", newValue: null });
 assert.equal(traditional.ui.language, "zh-Hant");
-const traditionalChild = fixture(["zh-TW"], "en", true);
-traditionalChild.window.parent = { I18n: traditional.ui };
-traditionalChild.ready();
-assert.equal(traditionalChild.ui.language, "zh-Hant");
 
 const button = f.node({ "data-i18n": "Start Recording", "data-i18n-title": "Start/stop recording (Space)" });
 const early = f.node({ "data-i18n": "Loading languages…" });
@@ -116,8 +112,6 @@ const raw = f.node(); raw.textContent = "Stop"; // a valid interface key used as
 const input = f.node(); input.value = "Keep this draft 原文";
 const dynamic = f.node();
 const stale = f.node();
-const childChanges = [];
-const frame = f.node(); frame.contentWindow = { I18n: { change: (...args) => childChanges.push(args) } };
 f.ready();
 f.ui.text(speedLabel, "english"); // config replaces the localized placeholder
 f.ui.text(dynamic, f.ui.msg("{label} · {language}", { label: f.ui.msg("Speaking"), language: "English" }));
@@ -135,7 +129,6 @@ assert.equal(toggle.textContent, "EN");
 assert.equal(speedLabel.textContent, "english");
 assert.equal(f.document.documentElement.lang, "zh-Hans");
 assert.deepEqual(f.writes.at(-1), ["uiLanguage", "zh-Hans"]);
-assert.deepEqual(childChanges.at(-1), ["zh-Hans", false]);
 f.ui.text(button, f.ui.msg("Stop Recording"));
 f.ui.change("en");
 assert.equal(button.textContent, "Stop Recording"); // static marker never restores an old state
@@ -143,10 +136,6 @@ assert.equal(f.ui.t("Missing English fallback"), "Missing English fallback");
 assert.equal(f.ui.t("Error: {error}", { error: "{count}<b>原样</b>" }), "Error: {count}<b>原样</b>");
 f.windowEvents.storage({ key: "uiLanguage", newValue: "zh-Hans" });
 assert.equal(button.textContent, "停止录音");
-const child = fixture(["en"], null, true);
-child.window.parent = { I18n: f.ui };
-child.ready();
-assert.equal(child.ui.language, "zh-Hans"); // late-mounted views inherit even with storage blocked
 
 const catalog = vm.runInContext("UI_ZH_HANS", f.context);
 const traditionalCatalog = vm.runInContext("UI_ZH_HANT", f.context);
@@ -182,7 +171,7 @@ assert.equal(help.children.map((n) => n.textContent).join(""), "在大多数浏�
 assert.ok(help.children.includes(windowSlot));
 rich.ui.change("en");
 assert.equal(help.children.map((n) => n.textContent).join(""), "A window shares no sound in most browsers.");
-console.log("Localization checks passed: locale detection/fallback, persistence, storage denial, live switching, mounted views, raw text/drafts, catalog placeholders and translation protection.");
+console.log("Localization checks passed: locale detection/fallback, persistence, storage denial, live switching, independent-page preference, raw text/drafts, catalog placeholders and translation protection.");
 
 // Exercise the actual text-view failure paths, not just message construction.
 async function errorChecks() {

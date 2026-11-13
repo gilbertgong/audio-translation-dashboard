@@ -4,19 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="Text Translation">Text Translation</title>
-  <script src="view-entry.js" data-view="text"></script>
   <script src="i18n-zh.js"></script>
   <script src="i18n-zh-hant.js"></script>
   <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="translate.css">
+  <link rel="stylesheet" href="header.css">
 </head>
-<body>
-  <header>
-    <h1 data-i18n="Text Translation">Text Translation</h1>
-    <a class="header-link" href="/" data-i18n="Live translation">Live translation</a>
-    <a class="header-link" href="test.html" data-i18n="Component tests">Component tests</a>
-  </header>
+<body data-page="text">
+  <header id="app-header"></header>
+  <script src="header-custom.js"></script>
+  <script src="header.js"></script>
   <main class="text-translator">
     <div class="chat-toolbar">
       <button id="clear" type="button" disabled data-i18n="New conversation">New conversation</button>

@@ -203,4 +203,5 @@ assert.match(element("playback-status").textContent, /^正在朗读/);
 element("playback-pause").click();
 assert.match(element("playback-status").textContent, /^已暂停/);
 run("stopPlayback(); I18n.change('en');");
+assert.equal(run(`isSpaceShortcut({ code: "Space", target: { closest: (selector) => selector === "#app-header" } })`), false);
 console.log("Playback checks passed: rate scheduling, position, pause/resume, restart, interruptions, next, stop/abort, independent language speeds, meter, recordings.");

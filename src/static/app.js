@@ -997,43 +997,6 @@ try {
   setActivityHidden(localStorage.getItem("activityHidden") === "1");
 } catch {}
 
-// Server status in the header: /api/health checks whisper, llama and the TTS
-// server; shown as a dot per server. The tooltip has the address and what the
-// check found. Checked every 10 s, or every 2 s while any isn't ready (e.g.
-// while they start: the dashboard starts first), so they turn green promptly.
-const servicesEl = document.getElementById("services");
-const SERVICE_LABELS = { stt: "Transcribe", llm: "Translate", tts: "Speak" };
-const HEALTH_INTERVAL_MS = 10000;
-const HEALTH_INTERVAL_STARTING_MS = 2000;
-
-async function checkServices() {
-  if (pageLifetime.signal.aborted) return;
-  let allOk = false;
-  try {
-    const res = await pageFetch("/api/health");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { services } = await res.json();
-    servicesEl.replaceChildren(...services.map((s) => {
-      const item = el("span", `service ${s.state}`, SERVICE_LABELS[s.role] ? I18n.msg(SERVICE_LABELS[s.role]) : s.role);
-      item.title = `${s.name} at ${s.url}: ${s.state} (${s.detail})`;
-      return item;
-    }));
-    allOk = services.every((s) => s.state === "ok");
-  } catch (err) {
-    // The dashboard itself didn't answer (e.g. stopped): mark everything unknown.
-    for (const item of servicesEl.children) {
-      item.className = "service";
-      I18n.attr(item, "title", I18n.msg("Dashboard not reachable: {error}", { error: I18n.errorText(err) }));
-    }
-  }
-  if (!pageLifetime.signal.aborted) {
-    healthTimer = setTimeout(checkServices, allOk ? HEALTH_INTERVAL_MS : HEALTH_INTERVAL_STARTING_MS);
-  }
-}
-
-let healthTimer = null;
-checkServices();
-
 async function loadConfig() {
   try {
     const res = await pageFetch("/api/config");
@@ -1063,7 +1026,7 @@ async function loadConfig() {
 // the same way as real entries, so the page can be styled without whisper or llama.
 function showMockConversation(items) {
   const badge = el("span", "mock-badge", "MOCK");
-  document.querySelector("header h1").append(" ", badge);
+  document.getElementById("header-branding")?.append(" ", badge);
   for (const item of items) {
     const row = addRow();
     setMeta(row, new Date().toLocaleTimeString());
@@ -1226,7 +1189,6 @@ function oneAtATime() {
 
 const toWhisper = oneAtATime();
 const toLlama = oneAtATime();
-window.translationQueues = { whisper: toWhisper, llama: toLlama, tts: toTts };
 
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).
@@ -1681,10 +1643,10 @@ captureBtn.addEventListener("click", async () => {
 // from focused buttons and switches (which would otherwise also be toggled);
 // Enter still activates buttons. Text fields keep Space for typing.
 function isSpaceShortcut(e) {
-  if (window.location.hash && window.location.hash !== "#live") return false;
   if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
+  if (target.closest("#app-header")) return false; // header controls keep native keyboard behavior
   if (target.closest("#playback")) return false; // Space operates focused transport controls
   const isTextInput = target.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(target.type);
   return !(target.isContentEditable || isTextInput || ["TEXTAREA", "SELECT"].includes(target.tagName));
@@ -1714,7 +1676,6 @@ function discardRecording(recording) {
 
 window.addEventListener("pagehide", () => {
   pageLifetime.abort();
-  clearTimeout(healthTimer);
   clearTimeout(turnTimer);
   stopPlayback();
   const microphone = micRecording;
@@ -1727,11 +1688,6 @@ window.addEventListener("pagehide", () => {
   if (captured) cancelAnimationFrame(captured.frame);
   discardRecording(microphone);
   discardRecording(captured?.recording);
-});
-
-window.addEventListener("pageshow", (event) => {
-  // A back/forward-cache restore otherwise revives aborted queues and closed audio contexts.
-  if (event.persisted) window.location.reload();
 });
 
 loadConfig();

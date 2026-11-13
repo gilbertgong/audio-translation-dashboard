@@ -44,9 +44,10 @@ local execution example. This extracted path still needs target-machine verifica
   independently of the languages being translated. The conversation areas ask browser automatic
   translation to leave their bilingual content intact.
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
-- Switch between **Live translation**, **Text translation**, and **Component tests** in the header
-  without stopping capture or losing your place. For example, captured YouTube audio keeps translating
-  while you type a separate translation. Refreshing or closing the app ends the session.
+- The header's page dropdown opens **Live translation**, **Text translation**, or **Component tests**.
+  These are separate pages: navigating away stops the current page's recording, requests and playback;
+  its conversation and drafts are not saved. Open another page in a separate tab to keep Live running.
+  All three pages share the branding, language button and API-server status bar.
 - **Text translation** in the header opens a chat page for typing or pasting text and choosing a
   language direction. Enter sends; Shift+Enter adds a line. Each translation appears below your message,
   with Copy and Listen controls.
@@ -56,6 +57,14 @@ local execution example. This extracted path still needs target-machine verifica
 - **Capture audio** (the left sidebar) translates a browser tab or your whole system instead of the microphone. Tick
   **Mute captured tab** first to hear only the translations.
 - The header's **Component tests** page checks each stage on its own.
+
+## Header customization
+
+The three application pages use the same browser-side header. Its top row is two-thirds branding
+and one-third header controls; the status bar below contains the page dropdown and API-server lights.
+`src/static/header-custom.js` is a shipped no-op extension file. A deployment can replace it to render
+or extend any of those three sections. See [Header customization](DESIGN.md#header-customization)
+for the renderer contract and an example. No server-side rendering or build step is involved.
 
 ## Settings
 
