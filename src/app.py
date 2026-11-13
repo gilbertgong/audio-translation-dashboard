@@ -20,6 +20,7 @@ import itertools
 import json
 import logging
 import re
+import secrets
 import tempfile
 import threading
 import time
@@ -137,11 +138,11 @@ def setup_logging(config_dir):
     return path
 
 
-def load_config(path):
+def load_config(path, *, standalone=False):
     """The settings (see configuration.py), with path standing in for
     config_local.toml, plus values derived from them: absolute temp_dir, the
     servers' URLs and unsupported language names."""
-    config = configuration.load(path)
+    config = configuration.load(path, standalone=standalone)
     temp_dir = Path(config["audio"]["temp_dir"])
     if not temp_dir.is_absolute():
         temp_dir = ROOT / temp_dir
@@ -569,7 +570,10 @@ def post_recording(req):
 
     temp_dir = config["audio"]["temp_dir"]
     temp_dir.mkdir(parents=True, exist_ok=True)
-    path = temp_dir / datetime.now().strftime("recording_%Y%m%d_%H%M%S_%f.wav")
+    # The name is the only proof a recheck request comes from the page that uploaded it, so its
+    # random part keeps one session from rechecking another's recording.
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    path = temp_dir / f"recording_{stamp}_{secrets.token_hex(16)}.wav"
     temporary = not save_session_data()
     with contextlib.ExitStack() as cleanup:
         if temporary:
@@ -609,7 +613,7 @@ def post_recheck(req):
     the existing raw response groups their results under the legacy "attempts" key."""
     data = req.json()
     name = Path(data.get("file", "")).name if isinstance(data, dict) else ""
-    if not re.fullmatch(r"recording_[\d_]+\.wav", name):
+    if not re.fullmatch(r"recording_\d{8}_\d{6}_\d{6}_[0-9a-f]{32}\.wav", name):
         raise HTTPError(400, 'expected JSON {"file": "<a recording\'s name>"}')
     recording = take_temporary_recording(name)
     if recording is not None:
@@ -648,9 +652,11 @@ def main():
                              "(default: config_local.toml in the project folder)")
     parser.add_argument("--mock", action="store_true",
                         help="sample data instead of whisper/llama, for styling the page")
+    parser.add_argument("--standalone-config", type=Path,
+                        help="use only this TOML file, without merging other settings files")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.standalone_config or args.config, standalone=args.standalone_config is not None)
     mock = args.mock
     log_path = setup_logging(config["_config_dir"])
     host = config["server"]["host"]

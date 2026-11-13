@@ -96,6 +96,21 @@ class SessionDataTests(unittest.TestCase):
         self.assertIn("confidence", "\n".join(logs.output))
         self.assertNotIn(SECRET, "\n".join(logs.output))
 
+    def test_recheck_needs_the_uploaded_name(self):
+        payload = self.upload(transcript("russian"))
+        name = Path(payload["file"]).name
+        self.assertRegex(name, r"^recording_\d{8}_\d{6}_\d{6}_[0-9a-f]{32}\.wav$")
+        stamp, token = name.removesuffix(".wav").rsplit("_", 1)
+        other = "0" * 32 if token != "0" * 32 else "1" * 32
+        for guess in (f"{stamp}.wav", f"{stamp}_{other}.wav"):
+            request = Mock()
+            request.json.return_value = {"file": guess}
+            with self.assertRaises(HTTPError) as caught:
+                app.post_recheck(request)
+            self.assertEqual(caught.exception.status, 400)
+        self.assertIn(name, app.temporary_recordings)
+        self.assertFalse(self.files[0].closed)
+
     def test_failed_initial_transcription_closes_file(self):
         request = Mock()
         request.body.return_value = WAV

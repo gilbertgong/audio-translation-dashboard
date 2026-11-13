@@ -264,7 +264,7 @@ Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`
 | `GET /api/config`              | Settings the page needs.                                      |
 | `GET /api/health`              | The three servers' status (`ok`, `loading`, `down`), checked in parallel (2 s timeout each). |
 | `POST /api/recordings`         | Transcribe a WAV with whisper using an automatically deleted temporary file by default. Returns the text, language, confidence, timing and the raw exchange, and `recheck: true` when the language is neither of the two configured. |
-| `POST /api/recordings/recheck` | Transcribe the original server-side recording again, forced to each of the two languages; return the more confident result. |
+| `POST /api/recordings/recheck` | Transcribe the original server-side recording again, forced to each of the two languages; return the more confident result. Takes the recording name `POST /api/recordings` returned, whose random part is unguessable. |
 | `POST /api/translate`          | Translate `{text, source}` with llama (source must match the configured pair; target is the other language; prompt rendered per request), streamed as server-sent events. |
 | `POST /api/speak`              | Speak text with the TTS server, streamed as raw PCM: in a given voice, else the configured voice for its language (`target`: `language1`/`language2`), else the default voice. |
 | `GET /api/voices`              | The TTS server's voices and the configured default (for the test page). |
@@ -339,6 +339,11 @@ Settings come in three layers, each on top of the one before; tables merge key b
 | `config/defaults.toml`   | Every setting, documented in its comments. Not edited for local changes.     |
 | `config_generated.toml`  | Written by the launcher's Generate config: the languages and a recipe's servers and models. Optional, git-ignored. |
 | `config_local.toml`      | Your own settings (e.g. host, the Mock button), always on top. Optional, git-ignored. |
+
+For an isolated dashboard configuration, run `python src/app.py --standalone-config FILE`.
+This reads only the selected complete TOML file, without merging any of the layers above.
+Relative paths still resolve from the project folder. The normal `--config FILE` option
+continues to select the top layer while retaining defaults and generated settings.
 
 Sections:
 
@@ -630,6 +635,11 @@ recheck. The handle stays open through both forced-language requests and closes 
 failure. Abandoned rechecks expire after 15 minutes; pending handles also close at process exit.
 With retention enabled, the original saved-file recheck behavior is preserved. Existing recordings
 and logs are not removed by this setting.
+
+Recording names are `recording_<date>_<time>_<microseconds>_<32 random hex digits>.wav`, and the
+recheck endpoint accepts only that form. The name is returned only to the page that uploaded the
+recording, so the random part is what keeps one session (another tab, or another person's meeting on
+a shared dashboard) from rechecking a recording it did not make.
 
 ## Known limitations
 
