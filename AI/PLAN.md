@@ -49,7 +49,7 @@ recipes good.
   The button still offers only English/Chinese: Traditional browser preferences select Traditional,
   all other browser preferences use Simplified when Chinese is chosen. Saved English stays English;
   saved Chinese follows the automatic variant, including older saved choices.
-  A persistent upper-right 中文 / EN button updates mounted views without restarting recording or losing content.
+  A persistent upper-right 中文 / EN button updates the current page without restarting recording or losing content.
   Bilingual conversations opt out of browser automatic translation. Offline localization/playback
   checks and an isolated headless Edge mock check passed; real inference and screen capture were not run.
 
@@ -117,8 +117,10 @@ recipes good.
 
 - Kokoro CPU threading defaults to ONNX Runtime automatic selection (`--threads 0`).
 
-- Live, text and component-test views stay mounted in a persistent shell. Capture, engine queues,
-  playback, conversation history and drafts survive switching views; typed requests share live queues.
+- Live, text and component tests are independent pages, with a shared browser-side header and a page
+  dropdown. Header sections (branding 2/3, controls 1/3, status bar below) can be replaced/extended through
+  header-custom.js. Each page polls API status; navigating away cancels its work and discards unfinished
+  audio. Open separate tabs for simultaneous use; there are no shared cross-page engine queues.
 
 - Text translation uses a dashboard-styled chat layout: scrolling history, bottom composer, Enter to
   send / Shift+Enter for new lines, source/target labels with swap, streamed replies with Stop/Retry, and

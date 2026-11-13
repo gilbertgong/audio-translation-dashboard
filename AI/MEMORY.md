@@ -116,8 +116,9 @@ Do not leave new English-only copy because English is the fallback language.
   literal, even when they match a catalog key. The language labels beside conversation timestamps and
   playback speed sliders are display-only exceptions: exact catalog lookup, original string fallback;
   do not normalize language names or change the identifiers used by the pipeline.
-- Preserve in-place switching across mounted views and existing rows without resetting recording,
-  playback, queues, drafts or results. Operational state must never depend on a translated label.
+- Preserve in-place UI-language switching within the current page and its existing rows without
+  resetting recording, playback, queues, drafts or results. Navigation to a different page ends that
+  page's work; the three pages have independent lifetimes. Operational state must never depend on a translated label.
   Keep bilingual conversation regions opted out of browser automatic translation.
 
 Read [DESIGN.md — Interface language](../DESIGN.md#interface-language) before changing localization
@@ -166,6 +167,10 @@ Target-host testing is required before claiming end-to-end operation; mocked Doc
 that proof. Do not start real inference stacks or change a target host without user direction.
 
 ### Code and files
+- Keep the shared browser-side header in `header.js`/`header.css`; the three application pages load
+  `header-custom.js` before the shared renderer. Use its branding, controls and statusBar hooks for
+  deployment customization, retaining defaults where appropriate. Do not introduce server-rendered
+  headers or duplicate header implementations across pages. See DESIGN's header customization contract.
 - Use the pipeline terminology in DESIGN.md: session = browser tab; segment = one browser-submitted
   audio or text input; request = one model task; attempt = one execution/retry of that task.
   A forced-language recheck is a new request, not a retry. Reserve chunk for future app-side

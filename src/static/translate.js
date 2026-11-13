@@ -5,12 +5,6 @@ let sourceIndex = 0;
 let translating = null;
 let speaking = null;
 
-// Share engine capacity with live capture, while each view keeps its own UI state.
-function engineQueue(name, signal, task) {
-  const queue = window.parent.translationQueues?.[name] || ((run) => run());
-  return queue(() => { signal.throwIfAborted(); return task(); });
-}
-
 function status(message, error = false) {
   I18n.text($("translation-status"), message);
   $("translation-status").classList.toggle("error", error);
@@ -167,14 +161,12 @@ async function runTranslation(message) {
   status(I18n.msg("Translating…"));
   updateControls();
   try {
-    const result = await engineQueue("llama", controller.signal, async () => {
-      const res = await fetch("/api/translate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message.original, source: message.source }), signal: controller.signal,
-      });
-      if (!res.ok) throw await responseError(res);
-      return readTranslation(res, (text) => { message.receivedText = !!text; updateMessage(message, text); });
+    const res = await fetch("/api/translate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: message.original, source: message.source }), signal: controller.signal,
     });
+    if (!res.ok) throw await responseError(res);
+    const result = await readTranslation(res, (text) => { message.receivedText = !!text; updateMessage(message, text); });
     if (!result) throw I18n.error("No translation returned. Please try again.");
     updateMessage(message, result);
     message.originalTranslation = result;
@@ -243,16 +235,13 @@ async function listen(message) {
   status(I18n.msg("Preparing speech…"));
   try {
     await current.ctx.resume();
-    const { bytes, rate } = await engineQueue("tts", current.controller.signal, async () => {
-      const res = await fetch("/api/speak", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message.originalTranslation, target: message.target }), signal: current.controller.signal,
-      });
-      if (!res.ok) throw await responseError(res);
-      const bytes = await res.arrayBuffer();
-      const rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
-      return { bytes, rate };
+    const res = await fetch("/api/speak", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: message.originalTranslation, target: message.target }), signal: current.controller.signal,
     });
+    if (!res.ok) throw await responseError(res);
+    const bytes = await res.arrayBuffer();
+    const rate = Number(/rate=(\d+)/.exec(res.headers.get("Content-Type") || "")?.[1]) || 24000;
     if (speaking !== current) return;
     if (!bytes.byteLength || bytes.byteLength % 2) throw I18n.error("No complete audio received. Please try again.");
     const buffer = current.ctx.createBuffer(1, bytes.byteLength / 2, rate);

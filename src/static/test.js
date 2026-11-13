@@ -4,6 +4,11 @@
 // don't speak.
 
 const $ = (id) => document.getElementById(id);
+const pageLifetime = new AbortController();
+function pageFetch(url, options = {}) {
+  return fetch(url, { ...options, signal: options.signal
+    ? AbortSignal.any([pageLifetime.signal, options.signal]) : pageLifetime.signal });
+}
 let sampleRate = 16000; // what the dashboard sends whisper; from /api/config
 let audioProcessing = {};
 
@@ -66,6 +71,10 @@ $("stt-record").addEventListener("click", async () => {
         echoCancellation: audioProcessing.echo_cancellation ?? true,
       },
     });
+    if (pageLifetime.signal.aborted) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     const chunks = [];
     recorder = new MediaRecorder(stream);
     recorder.ondataavailable = (e) => chunks.push(e.data);
@@ -141,7 +150,7 @@ async function transcribe(blob) {
   setStatus("stt-status", I18n.msg("Transcribing..."));
   const start = performance.now();
   try {
-    const res = await fetch("/api/recordings", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: sentWav });
+    const res = await pageFetch("/api/recordings", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: sentWav });
     if (!res.ok) throw new Error(await errorMessage(res));
     const result = await res.json();
     transcribedLanguage = result.language;
@@ -185,7 +194,7 @@ $("llm-go").addEventListener("click", async () => {
   const start = performance.now();
   let first = null;
   try {
-    const res = await fetch("/api/translate", {
+    const res = await pageFetch("/api/translate", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, source: $("llm-source").value }),
     });
     if (!res.ok) throw new Error(await errorMessage(res));
@@ -261,7 +270,7 @@ $("tts-go").addEventListener("click", async () => {
   let first = null;
   const pieces = [];
   try {
-    const res = await fetch("/api/speak", {
+    const res = await pageFetch("/api/speak", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice: $("tts-voice").value }), signal: current.controller.signal,
     });
@@ -352,20 +361,25 @@ function voiceOption(name, isDefault) {
 
 async function init() {
   try {
-    const config = await (await fetch("/api/config")).json();
+    const config = await (await pageFetch("/api/config")).json();
     for (const name of [config.language1, config.language2]) {
       $("llm-source").add(new Option(name, name));
     }
     sampleRate = config.sample_rate;
     audioProcessing = config.audio_processing || {};
     if (config.playback_buffer_ms !== undefined) $("tts-buffer").value = config.playback_buffer_ms / 1000;
-    if (config.mock) document.querySelector("header h1").insertAdjacentHTML("beforeend", ' <span class="mock-badge">MOCK</span>');
+    if (config.mock) {
+      const badge = document.createElement("span");
+      badge.className = "mock-badge";
+      badge.textContent = "MOCK";
+      document.getElementById("header-branding")?.append(" ", badge);
+    }
   } catch (err) {
     console.warn("Could not load config, using defaults", err);
   }
   const select = $("tts-voice");
   try {
-    const res = await fetch("/api/voices");
+    const res = await pageFetch("/api/voices");
     if (!res.ok) throw new Error(await errorMessage(res));
     const { voices, default: def } = await res.json();
     for (const name of voices.includes(def) ? voices : [def, ...voices]) {
@@ -377,4 +391,16 @@ async function init() {
   }
 }
 
+window.addEventListener("pagehide", () => {
+  pageLifetime.abort();
+  stopSpeech();
+  if (recorder) {
+    // Navigation discards the unfinished recording instead of submitting it from onstop.
+    recorder.onstop = null;
+    recorder.ondataavailable = null;
+    if (recorder.state !== "inactive") recorder.stop();
+    recorder.stream.getTracks().forEach((track) => track.stop());
+    recorder = null;
+  }
+});
 init();

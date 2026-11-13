@@ -652,3 +652,23 @@ DESIGN.md).
   Isolated headless Edge mock regression with zh-TW passed: Traditional initial UI, two-choice button,
   label lookup, mounted views, drafts/results, persisted English and active synthetic recording preserved.
   Browser/mock server stopped afterward. No real inference, GPU, screen capture or physical audio tested.
+
+## 2026-11-12: Independent pages and customizable browser header
+
+- Separated Live, Text and Component tests into normal pages with a shared browser-side header.
+  Removed persistent-view iframes, hash navigation and redirect-to-shell code. Legacy /#text and
+  /#tests bookmarks now lead to the standalone pages. The smoke runner retains its diagnostic iframe.
+- Header top row is 2/3 branding and 1/3 controls. Below it, a native dropdown replaces the three
+  navigation buttons and shares the status bar with API lights. Shared polling runs once per page;
+  leaving the page cancels it. Header keyboard interactions do not trigger live recording.
+- Shipped header-custom.js as a no-op deployment extension. Synchronous branding, controls and
+  statusBar renderers can replace their section or call its default and extend it. No server rendering,
+  framework or build step. Default navigation, language behavior and polling can be retained independently.
+- Navigation ends the page's work. Live retains its own engine queues; typed requests no longer use
+  parent-frame queues. Component tests abort requests/stop audio and discard unfinished microphone
+  recordings on exit, including permission requests resolving late. Back/forward restores reload.
+- All four JS suites, changed-script syntax and whitespace checks passed. Isolated headless Edge with
+  the actual Python mock app verified direct pages/navigation, persisted language, API lights on all
+  pages, typed translation, custom branding/controls/status on each page, legacy links and synthetic
+  microphone cleanup without an abandoned upload. Browser/server stopped; scratch settings/logs used.
+  No layout tests, real inference, GPU, physical microphone, screen capture or release checks run.

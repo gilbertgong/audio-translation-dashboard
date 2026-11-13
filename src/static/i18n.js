@@ -76,10 +76,6 @@ const I18n = (() => {
     language = next;
     if (persist) { try { localStorage.setItem(storageKey, language); } catch {} }
     refresh();
-    // Same-origin mounted views keep their work; no reload or network request is needed.
-    document.querySelectorAll("iframe.app-view-frame").forEach((frame) => {
-      frame.contentWindow?.I18n?.change(language, false);
-    });
     window.dispatchEvent(new Event("uilanguagechange"));
   }
   window.addEventListener("storage", (event) => {
@@ -89,7 +85,6 @@ const I18n = (() => {
     else if (Object.hasOwn(catalogs, event.newValue)) change(chineseLanguage, false);
   });
   document.addEventListener("DOMContentLoaded", () => {
-    if (window !== window.parent && window.parent.I18n) language = window.parent.I18n.language;
     document.querySelectorAll("[data-i18n]").forEach((node) => {
       if (!bindings.get(node)?.has("textContent")) text(node, msg(node.dataset.i18n));
     });
@@ -108,5 +103,5 @@ const I18n = (() => {
   });
   return { detect, t, msg, error, errorText, text, attr, refresh, change, get language() { return language; } };
 })();
-// Expose only the localization API to the application's same-origin child views.
+// Shared by page scripts and optional header customization.
 window.I18n = I18n;

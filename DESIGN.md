@@ -10,7 +10,7 @@ A local, self-hosted tool that captures speech from the microphone, transcribes 
 
 | Term | Meaning |
 |---|---|
-| Session | One browser tab's connection/activity with the app, shared across its live, typed and component-test views. Microphone and capture recorder state are parts of that session, not separate sessions. |
+| Session | One browser tab's connection/activity with the app on its current page. Navigating between live, text and component-test pages ends the current page's in-memory work. Microphone and capture recorder state are parts of that session, not separate sessions. |
 | Segment | One input submitted by the browser to the app: an audio WAV or a typed text submission. It remains the same segment across transcription, language rechecks, translation and speech generation. |
 | Request | One model task, such as initial transcription, transcription forced to one language, translation or speech generation. Each language recheck is a separate request. |
 | Attempt | One backend execution of a request. Retrying that same task on another backend is another attempt of the same request. |
@@ -81,22 +81,73 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
 - **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a segment was split, temporary recording status, or the saved path when retention is enabled).
 
-#### Persistent views
+#### Independent pages and shared header
 
-`index.html` keeps the live dashboard mounted, with `views.js` switching between live, text and
-component-test views. Its header puts the title alone on the first row; the second row has live/text
-links on the left, with service status and test links on the right. Navigation uses
-`#live`, `#text` and `#tests`. Text and tests are lazy-loaded into same-origin
-frames once and then retained. Switching views (including hash Back/Forward) never unloads capture,
-queues or playback. Live processing continues while either other view is visible; chat history/drafts
-and component-test inputs also survive switching. The live Space shortcut is limited to the live view.
-`view-entry.js` redirects old standalone text/test URLs into the shell; embedded pages hide their own
-headers. The tests view exposes Smoke test in a separate tab so it does not replace the running app.
-Typed translation and speech generation share the live dashboard's per-engine request queues.
+`index.html` (also `/`), `translate.html` and `test.html` are independent static documents. They load
+the same `header.css`, `header-custom.js` and `header.js`, which builds their shared header entirely
+in the browser. `body[data-page]` identifies live/text/tests. There is no frontend framework, server
+template or build step. The top row uses a 2:1 grid: branding on the left, header controls on the right.
+The full-width status bar below has a current-page dropdown on the left and engine status on the right.
+Component tests additionally provides a Smoke test link opening a separate tab.
 
-Actual page exit cancels live requests/queued jobs, timers, capture and playback, discarding unfinished
-audio rather than uploading it. A full-document cache restore reloads those closed resources. These
-exit handlers do not run when switching views. Refreshing or closing the app still ends the session.
+The dropdown is native `details`/`summary` containing navigation links, with the current link marked
+`aria-current="page"`. Escape and outside clicks close it. Space in the header retains native button/
+dropdown behavior rather than triggering live recording. Older `/#text` and `/#tests` bookmarks redirect
+to their standalone pages. `views.js`, `view-entry.js` and application-view iframes have been removed;
+the diagnostic smoke runner still embeds Live as its test target.
+
+Header health polling is independent of each page's pipeline: one `/api/health` poller per document,
+every 10 seconds when ready and every 2 seconds otherwise, cancelled on page exit. It never launches
+or stops engines. Live retains its per-engine queues, while typed translations run within their own
+page's busy/cancellation handling. Separate tabs do not share inference queues.
+
+Page exit stops recording/playback and aborts requests; Live and Component tests discard unfinished
+recordings rather than submitting them from a stop callback. Header polling also stops. Navigating
+between pages does not preserve history, drafts, capture or playback. Open pages in separate tabs
+for simultaneous use. Back/forward-cache restoration reloads the page instead of reviving aborted
+jobs or closed audio resources. This affects browser work only, not the running Python/inference services.
+
+#### Header customization
+
+Each application page has `<header id="app-header">`, followed by blocking `header-custom.js` and
+`header.js` scripts, before its page-specific scripts. The customization file ships as a no-op;
+replace its contents in a deployment to define `window.HeaderCustom`. Maintain that deployment file
+when applying application source updates. It is ordinary application source, not automatically
+discovered configuration or a general component/plugin loader.
+
+The supported optional renderers are `branding`, `controls` and `statusBar`. Each receives
+`(container, { page, defaults })` and runs once, synchronously. Missing renderers use their defaults.
+Call `defaults.<section>(container)` to render the default before adding content, or render the whole
+section yourself. The containers are `#header-branding`, `#header-controls` and `#header-status-bar`;
+their layout stays in the shared header CSS.
+
+```js
+window.HeaderCustom = {
+  branding(container, { page, defaults }) {
+    defaults.branding(container);
+    // Add a deployment logo or replace the title here.
+  },
+  controls(container, { defaults }) {
+    defaults.controls(container);
+    // Add deployment controls alongside the language button here.
+  },
+  statusBar(container, { defaults }) {
+    defaults.statusBar(container);
+    // Extend the page picker / API status row here.
+  },
+};
+```
+
+Defaults own the page dropdown, `#ui-language` button and `#services` display. A replacement controls
+renderer can call the default or provide a `button#ui-language` to retain automatic language behavior.
+A replacement status bar can call its default or provide `#services` for shared polling; omit it to
+opt out of default polling. A fully replaced bar is also responsible for its navigation. Branding
+need not contain an h1; mock badges attach to the branding container. Custom renderers execute before
+DOMContentLoaded, so i18n can bind authored markers; dynamic copy can use `I18n.text`/`I18n.attr`.
+Maintain both catalogs for deployment-specific UI copy, and preserve keyboard/accessibility behavior.
+
+`node tests/test_header.cjs` checks section replacement/extension, page links, localization, keyboard
+dismissal, polling ownership/cleanup and legacy links without live engines.
 
 #### Interface language
 
@@ -136,9 +187,10 @@ from English via the button uses the same detected Chinese variant. Removing the
 restores browser detection. If storage is unavailable, detection and manual switching still work for
 the current page. No server setting or change to the configured translation pair is involved.
 
-Switching updates bound UI messages in place, including mounted same-origin views. Newly mounted views
-inherit the shell's choice. Storage events synchronize other open tabs; switching never reloads a view
-or resets recording, playback, queues, drafts or conversation results. Transcripts, translations,
+Switching UI language updates bound messages in place on the current page. Each independently loaded
+page reads the saved preference, and storage events synchronize other open tabs. A UI-language switch
+does not reload the page or reset recording, playback, queues, drafts or results; navigation to another
+page does end that page's work, as described above. Transcripts, translations,
 sample text, configured language/voice identifiers and raw service responses are not catalog lookups.
 Language labels beside live/text conversation timestamps and playback speed sliders are display-only
 exceptions: look up the exact language string in the active catalog, falling back to the original
@@ -153,7 +205,7 @@ response panels also use `translate="no"`. Application localization still update
 
 Offline checks: `node tests/test_i18n.cjs` covers locale detection, fallbacks, persistence, storage
 denial, both Chinese variants and the two-choice toggle, saved-choice compatibility, in-place message
-updates, mounted-view inheritance, literal data preservation, parity between Chinese catalogs, catalog
+updates, independent-page preference handling, literal data preservation, parity between Chinese catalogs, catalog
 substitutions, conversation opt-out markers, app-owned error localization through actual empty/interrupted
 translation paths, literal external errors, HTTP fallback and rich-message node reuse/order.
 `node tests/test_playback.cjs` includes playback with Chinese UI labels. For localization behavior

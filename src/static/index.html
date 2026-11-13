@@ -8,24 +8,12 @@
   <script src="i18n-zh-hant.js"></script>
   <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="header.css">
 </head>
-<body class="app-shell">
-  <header>
-    <div class="app-heading">
-      <h1><span data-i18n="Audio Translation Dashboard">Audio Translation Dashboard</span></h1>
-      <button id="ui-language" class="ui-language header-link" type="button" lang="zh-Hans" translate="no">中文</button>
-    </div>
-    <div class="app-toolbar">
-      <nav class="primary-views" aria-label="Translation views" data-i18n-aria-label="Translation views">
-        <a class="header-link" href="#live" data-view="live" data-i18n="Live translation">Live translation</a>
-        <a class="header-link" href="#text" data-view="text" data-i18n="Text translation">Text translation</a>
-      </nav>
-      <!-- The three servers' status (filled in by app.js from /api/health). -->
-      <div id="services" class="services" aria-live="polite"></div>
-      <a class="header-link" href="#tests" data-view="tests" data-i18n="Component tests">Component tests</a>
-      <a id="smoke-link" class="header-link" href="smoke.html" target="_blank" rel="noopener" hidden data-i18n="Smoke test ↗">Smoke test ↗</a>
-    </div>
-  </header>
+<body class="app-shell" data-page="live">
+  <header id="app-header"></header>
+  <script src="header-custom.js"></script>
+  <script src="header.js"></script>
 
   <!-- The page: the capture sidebar to the left of the main area, in what was
        empty space (the main area keeps its size, centered, when there's room). -->
@@ -151,9 +139,6 @@
   </aside>
   </div>
 
-  <!-- Loaded once, then kept mounted so switching views preserves their state. -->
-  <iframe id="text-view" class="app-view-frame" title="Text translation" data-src="translate.html" hidden data-i18n-title="Text translation"></iframe>
-  <iframe id="tests-view" class="app-view-frame" title="Component tests" data-src="test.html" allow="microphone" hidden data-i18n-title="Component tests"></iframe>
 
   <!-- How capturing works (the ? in the capture sidebar). -->
   <dialog id="capture-help" class="help-dialog" aria-labelledby="capture-help-title">
@@ -186,6 +171,5 @@
   <script src="translation-actions.js"></script>
   <script src="time-stretch.js"></script>
   <script src="app.js"></script>
-  <script src="views.js"></script>
 </body>
 </html>

@@ -4,20 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="Component Tests">Component Tests</title>
-  <script src="view-entry.js" data-view="tests"></script>
   <script src="i18n-zh.js"></script>
   <script src="i18n-zh-hant.js"></script>
   <script src="i18n.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="test.css">
+  <link rel="stylesheet" href="header.css">
 </head>
-<body>
-  <header>
-    <h1><span data-i18n="Component Tests">Component Tests</span></h1>
-    <a class="header-link" href="smoke.html" data-i18n="Smoke test">Smoke test</a>
-    <a class="header-link" href="translate.html" data-i18n="Text translation">Text translation</a>
-    <a class="header-link" href="/" data-i18n="Dashboard">Dashboard</a>
-  </header>
+<body data-page="tests">
+  <header id="app-header"></header>
+  <script src="header-custom.js"></script>
+  <script src="header.js"></script>
 
   <!-- Each panel tests one stage through the dashboard's own endpoints, so a
        result here is what the dashboard would get. -->
