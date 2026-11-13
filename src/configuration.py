@@ -7,6 +7,7 @@ Settings come in layers, each on top of the one before:
     config_local.toml        your own settings (optional)
 Tables merge key by key; any other value (lists included) is replaced. Relative
 paths in settings are relative to the project folder.
+An explicit standalone load reads just its selected TOML, without any other layers.
 
 Standard library only (Python 3.11+ for tomllib).
 """
@@ -56,10 +57,12 @@ def layers(local=CONFIG_LOCAL_FILE):
     return [path for path in (DEFAULTS_FILE, GENERATED_FILE, local) if path.is_file()]
 
 
-def load(local=CONFIG_LOCAL_FILE):
-    """The merged settings. Also sets "_config_dir" (the project folder, for
-    relative paths) and "_files" (the layers used, as paths)."""
-    files = layers(local)
+def load(local=CONFIG_LOCAL_FILE, *, standalone=False):
+    """Read layers normally, or only local when standalone=True.
+
+    Also sets _config_dir (project-relative paths) and _files (files actually read).
+    """
+    files = [Path(local)] if standalone else layers(local)
     settings = {}
     for path in files:
         with open(path, "rb") as f:

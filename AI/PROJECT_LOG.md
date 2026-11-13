@@ -672,3 +672,13 @@ DESIGN.md).
   pages, typed translation, custom branding/controls/status on each page, legacy links and synthetic
   microphone cleanup without an abandoned upload. Browser/server stopped; scratch settings/logs used.
   No layout tests, real inference, GPU, physical microphone, screen capture or release checks run.
+
+## 2026-11-13: Unguessable recording names for rechecks
+
+Recording filenames now include a random 128-bit token, and rechecks require the complete
+returned filename. Timestamp-only names and incorrect tokens cannot consume a pending recording.
+The browser request contract is unchanged; no server-side session tracking was added.
+
+The dashboard also accepts `--standalone-config FILE` to read one complete TOML in isolation.
+Normal layered loading and project-relative path resolution remain unchanged. Offline checks
+cover isolated loading, normal layering, and backend URL derivation.
