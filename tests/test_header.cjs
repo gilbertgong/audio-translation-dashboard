@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const staticDir = path.join(__dirname, "../src/static");
 const flush = () => new Promise(setImmediate);
 
-function fixture(page, custom, hash = "") {
+function fixture(page, custom, hash = "", engineState = "ok") {
   class Element {
     constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.dataset = {}; this.events = {}; this._text = ""; }
     append(...children) { this.children.push(...children); }
@@ -40,16 +40,16 @@ function fixture(page, custom, hash = "") {
     location: { hash, reload() { reloads++; }, replace(url) { redirect = url; } },
     addEventListener(name, fn) { (events[name] ??= []).push(fn); }, dispatchEvent() {},
   };
-  const sandbox = vm.createContext({ document, window, navigator: { languages: ["en"] }, Event, AbortController,
+  const sandbox = vm.createContext({ document, window, navigator: { languages: ["en"] }, Event, AbortController, AbortSignal,
     localStorage: { getItem() { return null; }, setItem() {} },
     setTimeout(fn, delay) { timers.push({ fn, delay }); return timers.length; }, clearTimeout() {},
     async fetch(url, options) {
       requests.push({ url, options });
       return { ok: true, json: async () => ({ services: ["stt", "llm", "tts"].map((role) =>
-        ({ role, name: role, state: "ok", detail: "test", url: "http://test" })) }) };
+        ({ role, name: role, state: engineState, detail: "test", url: "http://test" })) }) };
     },
   });
-  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "header-custom.js", "header.js"]) {
+  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "coordinator.js", "header-custom.js", "header.js"]) {
     vm.runInContext(fs.readFileSync(path.join(staticDir, file), "utf8"), sandbox);
   }
   for (const fn of documentEvents.DOMContentLoaded || []) fn();
@@ -73,7 +73,7 @@ function fixture(page, custom, hash = "") {
     assert.equal(f.requests.length, 1); // one header poller, no live-page dependency
     assert.equal(f.requests[0].url, "/api/health");
     assert.equal(f.timers[0].delay, 10000);
-    assert.equal(f.document.getElementById("services").children.length, 3);
+    assert.equal(f.document.getElementById("services").children.length, 4);
     menu.open = true;
     menu.events.keydown({ key: "Escape", stopPropagation() {} });
     assert.equal(menu.open, false);
@@ -84,7 +84,8 @@ function fixture(page, custom, hash = "") {
     vm.runInContext("I18n.change('zh-Hant')", f.sandbox);
     assert.equal(brand.textContent, "音訊翻譯面板");
     assert.equal(controls.textContent, "EN");
-    assert.equal(f.document.getElementById("services").children[0].textContent, "轉寫");
+    assert.equal(f.document.getElementById("services").children[0].textContent, "協調服務");
+    assert.equal(f.document.getElementById("services").children[1].textContent, "轉寫");
     f.events.pagehide[0]();
     assert.equal(f.requests[0].options.signal.aborted, true);
     f.events.pageshow[0]({ persisted: true });
@@ -98,7 +99,14 @@ function fixture(page, custom, hash = "") {
   assert.equal(custom.document.getElementById("header-branding").textContent, "Custom text");
   assert.equal(custom.document.getElementById("header-controls").textContent, "中文 account");
   assert.equal(custom.document.getElementById("header-status-bar").textContent, "Custom status");
-  assert.equal(custom.requests.length, 0); // replacement can omit the default service display
+  assert.equal(custom.requests.length, 1); // shared health still runs with a custom display
+  const unhealthy = fixture("live", undefined, "", "down");
+  await flush();
+  const lights = unhealthy.document.getElementById("services").children;
+  assert.equal(lights[0].className, "service ok");
+  assert.ok(lights.slice(1).every((light) => light.className === "service down"));
+  assert.equal(unhealthy.requests.length, 1);
+  assert.equal(unhealthy.timers[0].delay, 2000);
   assert.equal(fixture("live", undefined, "#text").redirect, "translate.html");
   assert.equal(fixture("live", undefined, "#tests").redirect, "test.html");
   console.log("Header checks passed: independent pages, default sections, navigation, localization, customization, polling ownership and keyboard dismissal.");

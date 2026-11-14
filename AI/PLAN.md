@@ -45,6 +45,12 @@ recipes good.
 
 ## Results so far
 
+- Coordinator reachability has its own header light, derived from the same /api/health reply as the
+  engine lights. Successful replies mean Coordinator is alive even with all engines down. Live transcription/translation wait through known outages and automatically retry eligible
+  fetch network/502/503/504 failures inside pageFetch, up to three attempts with 1/3 s delays.
+  Existing caller/queue/body-read handling is unchanged; no stage replay or manual Re-fetch added. Six JS suites, recording-retention Python tests and isolated mock
+  browser recovery checks passed; no real inference/GPU or physical audio tested.
+
 - Browser UI supports English and Simplified/Traditional Chinese in live, text and component-test views.
   The button still offers only English/Chinese: Traditional browser preferences select Traditional,
   all other browser preferences use Simplified when Chinese is chosen. Saved English stays English;

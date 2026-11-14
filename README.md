@@ -44,6 +44,13 @@ local execution example. This extracted path still needs target-machine verifica
   independently of the languages being translated. The conversation areas ask browser automatic
   translation to leave their bilingual content intact.
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
+- The **Coordinator** light shows whether the application backend is reachable, independently of the
+  three inference-engine lights, using the same health response. Even if all engines report down,
+  a successful response means Coordinator is alive. Live transcription and translation wait when
+  Coordinator is unavailable.
+  Fetch network failures and HTTP 502/503/504 responses get up to three attempts. Failures while
+  subsequently reading JSON or translation streams use existing error handling and are not replayed.
+  There is no manual Re-fetch button in this version.
 - The header's page dropdown opens **Live translation**, **Text translation**, or **Component tests**.
   These are separate pages: navigating away stops the current page's recording, requests and playback;
   its conversation and drafts are not saved. Open another page in a separate tab to keep Live running.

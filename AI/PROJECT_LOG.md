@@ -673,12 +673,24 @@ DESIGN.md).
   microphone cleanup without an abandoned upload. Browser/server stopped; scratch settings/logs used.
   No layout tests, real inference, GPU, physical microphone, screen capture or release checks run.
 
-## 2026-11-13: Unguessable recording names for rechecks
+## 2026-11-13: Automatic Live fetch retries and Coordinator liveness
 
-Recording filenames now include a random 128-bit token, and rechecks require the complete
-returned filename. Timestamp-only names and incorrect tokens cannot consume a pending recording.
-The browser request contract is unchanged; no server-side session tracking was added.
-
-The dashboard also accepts `--standalone-config FILE` to read one complete TOML in isolation.
-Normal layered loading and project-relative path resolution remain unchanged. Offline checks
-cover isolated loading, normal layering, and backend URL derivation.
+- Coordinator reachability uses the existing /api/health reply and has a fourth header light. User
+  requested removal of the separate liveness endpoint; one shared poll now supplies Coordinator and
+  engine status, with Coordinator up even when all engines are down. Unknown/down reachability holds
+  eligible Live fetches without consuming attempts; access failures fail visibly. Polling stays outside
+  service queues, cancels on navigation, and does not cancel in-flight inference.
+- User clarified the implementation should be a small retry loop inside the existing pageFetch,
+  with its signature unchanged. Removed the initial Recovery abstraction and reverted all upload,
+  stream-parser, queue and row-processing changes. No caller/progress options or stage framework.
+- pageFetch retries only initial upload/translation network failures and 502/503/504, at most three
+  fetch attempts with 1 s/3 s delays. Final responses/errors reach the original caller. JSON/stream
+  reads afterward do not replay requests. Rechecks, speech, Text and component-test policies unchanged.
+- Both Chinese catalogs include Coordinator messages. There is no manual Re-fetch or per-row retry
+  status. Documentation distinguishes the header liveness indicator from the existing pending rows.
+- Deterministic pageFetch checks cover bounds/delays, HTTP policy, original body/error/queue contracts,
+  Coordinator waits, cancellation, and no replay after body failures. Coordinator/header/localization/
+  playback/time-stretch and recording-retention checks are recorded in the review handoff.
+- Shared-poll regression checks and isolated mock browser verification passed for all engines down
+  with Coordinator up, failed health requests holding uploads, bounded fetch retries and resumed
+  downstream translation. The header no longer makes its own duplicate request. Backend API is unchanged.
