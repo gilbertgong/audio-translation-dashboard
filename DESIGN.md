@@ -318,6 +318,33 @@ Both connect to the engine before the response starts, so an unreachable engine 
 
 Stock whisper-server and llama-server binaries from the projects' GitHub releases, run as separate processes. whisper auto-detects the language, so mixed-language speech works.
 
+The backend joins Whisper's `segments[].text` directly with no separator, trimming only the outer
+whitespace. This preserves word spaces and joins words split across segments without inserting
+the HTTP server's formatting newlines. If no segments are returned, it uses the combined `text`.
+Display, translation and subsequent prompt context all use this transcript; the browser wraps it
+to the available width. Raw response details retain the original combined text and segments.
+
+Live supplies the preceding segment's original transcript as Whisper's inference-time `prompt`,
+separately for microphone and captured audio. It keeps at most 100 Unicode characters, further
+limited to 200 UTF-8 bytes (a conservative bound below Whisper's usual 224-token prompt budget).
+If trimming cuts a space-delimited span, its leading fragment is dropped, using the same rule for
+all languages, including Chinese. If no space remains after the cutoff, context is empty. Short
+transcripts that fit the size limits remain intact. This is a continuation hint, not a same-language
+guarantee. The next speech block after
+a source has been quiet for `[tts] turn_pause_ms` starts a fresh context. Both this decision and
+automatic playback use the same `turnWait` calculation and speech-activity clock; processing/queue
+delays do not count as recording pauses. Muted capture still updates its own context, while
+continuing to let playback talk over the video. TTS playback does not clear context.
+
+Each segment snapshots its predecessor before resampling/queuing and reads its transcript when
+its Whisper request begins. A late result from an earlier turn cannot seed a new turn. Empty or
+failed transcripts supply no context; out-of-pair results supply context only after a successful
+language recheck, if that correction is available before the next request starts. Translation
+completion is not required. The WAV request body is unchanged: optional `X-Whisper-Prompt` carries
+URI-encoded UTF-8 text, which the backend decodes and forwards as a multipart `prompt` field.
+The raw Whisper request viewer includes that field. No server-side conversation memory is added;
+recheck inference and component tests remain unprompted, and navigation discards Live context.
+
 Whisper inherits Silero VAD v6.2.0 from `defaults.toml`: `[models.whisper].vad-model`
 downloads the GGML model and supplies `--vad-model`; startup args enable `--vad`. Whisper fragments
 inherit both settings. VAD filters speech inside uploaded clips before transcription; browser silence
@@ -699,7 +726,7 @@ The project's history (milestones, measurements and the reasons behind decisions
 
 - **Streaming:**
   - Live provisional text while speaking: re-send the current segment's audio about once a second, show whisper's result as provisional, and translate only finished segments. The browser keeps the audio, so the server stays stateless.
-- **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`; passing the previous segment to whisper as a prompt for continuity.
+- **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`.
 - **Chinese script:** whisper sometimes writes Traditional characters (always, when a recheck forces Chinese), and it can't easily be made to write Simplified. llama can convert them reliably, e.g. a small pass (or an instruction in the translation prompt) that returns the transcript in Simplified characters before it's shown; a descriptive language name for llama ("Chinese-simplified") alongside whisper's name for the checks would fit the same idea.
 - **Configuration:**
   - Recipes for other hardware: no GPU, non-NVIDIA (Vulkan builds), and remote setups (a laptop using a desktop's servers).

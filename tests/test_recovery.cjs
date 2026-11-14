@@ -48,7 +48,7 @@ function fixture() {
   class Audio extends Element { play() { return Promise.resolve(); } pause() {} }
   const sandbox = vm.createContext({
     console: { error() {}, warn() {} }, TypeError, SyntaxError, Error, AbortController, AbortSignal, Event, Blob,
-    Float32Array, Uint8Array, DataView, TextDecoder, Audio,
+    Float32Array, Uint8Array, DataView, TextDecoder, TextEncoder, Audio,
     URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
     performance: { now: () => clock.now },
     localStorage: { getItem() { return null; }, setItem() {} },
@@ -90,6 +90,70 @@ function stream(chunks = [], error = null) {
 }
 
 (async () => {
+  { const f = fixture();
+    assert.equal(f.run("transcriptTail('prefix '.repeat(40) + 'I think…')"), 'prefix '.repeat(13) + 'I think…');
+    assert.equal(f.run("transcriptTail('a'.repeat(150))"), ''); // no partial oversized word
+    assert.equal(f.run("transcriptTail('x'.repeat(110) + ' Hello world')"), 'Hello world');
+    assert.equal(f.run("transcriptTail('中'.repeat(100))"), '');
+    assert.equal(f.run("transcriptTail('中'.repeat(100) + '， 继续说明。')"), '继续说明。');
+    assert.equal(f.run("transcriptTail('😀'.repeat(100) + ' next phrase')"), 'next phrase');
+    assert.equal(f.run("transcriptTail('这是一个短句子。')"), '这是一个短句子。');
+    const chineseTail = f.run("transcriptTail('中， '.repeat(100))");
+    assert.equal(chineseTail, '中， '.repeat(28)); // 196 bytes; retain whole space-delimited spans
+    assert.equal(f.run("transcriptTail('I think…')"), 'I think…');
+    assert.equal(f.run("transcriptTail('I think…\\n What next?')"), 'I think…\n What next?');
+  }
+  // Context follows the same speech-clock pause rule as playback, separately per source.
+  { const f = fixture();
+    f.run("noteSpeech(false, 'capture'); globalThis.initial = transcriptContext('capture'); initial.text='previous';");
+    await f.clock.advance(1999);
+    f.run("noteSpeech(false, 'capture'); globalThis.continuation=transcriptContext('capture');");
+    assert.equal(f.run("continuation.previous === initial"), true);
+    assert.equal(f.run("transcriptContext('mic').previous"), null);
+    await f.clock.advance(2000);
+    assert.equal(f.run("turnWait(transcriptSources.capture.lastSpeechAt)"), 0);
+    f.run("noteSpeech(false, 'capture')");
+    assert.equal(f.run("transcriptContext('capture').previous"), null);
+  }
+  { const f = fixture(); let finish;
+    const text = "earlier sentence " + "中😀".repeat(120) + "， 后续内容。";
+    f.network(async () => {
+      if (f.calls.length === 1) await new Promise((resolve) => { finish = resolve; });
+      return json(200, { text });
+    });
+    f.run("noteSpeech(false, 'capture'); globalThis.first=transcriptContext('capture')");
+    const first = f.run("uploadWav(wav, first)"); await f.clock.flush();
+    await f.clock.advance(100);
+    f.run("noteSpeech(false, 'capture'); globalThis.second=transcriptContext('capture')");
+    const second = f.run("uploadWav(wav, second)"); await f.clock.flush();
+    // A slow transcription cannot expire context for a continuation already recorded.
+    await f.clock.advance(10000); finish(); await Promise.all([first, second]);
+    assert.equal(f.calls[0].options.headers['X-Whisper-Prompt'], undefined);
+    assert.equal(decodeURIComponent(f.calls[1].options.headers['X-Whisper-Prompt']), '后续内容。');
+    assert.equal(f.calls[1].options.body, f.sandbox.wav);
+    assert.equal(f.run("second.previous"), null);
+    // New speech after the recording pause starts a new turn, regardless of the old result.
+    f.run("noteSpeech(false, 'capture')");
+    await f.run("uploadWav(wav, transcriptContext('capture'))");
+    assert.equal(f.calls[2].options.headers['X-Whisper-Prompt'], undefined);
+  }
+  { const f = fixture();
+    f.run("capture={muted:true}; noteSpeech(false, 'capture'); globalThis.initial=transcriptContext('capture'); initial.text='YouTube';");
+    await f.clock.advance(1000);
+    f.run("noteSpeech(false, 'capture')");
+    assert.equal(f.run("transcriptContext('capture').previous.text"), "YouTube");
+    assert.equal(f.run("lastSpeechAt"), 0); // muted video doesn't delay automatic playback
+  }
+  { const f = fixture();
+    f.network(async () => json(200, { text: "wrong language", recheck: true }));
+    f.run("noteSpeech(false); globalThis.first=transcriptContext('mic')");
+    await f.run("uploadWav(wav, first)");
+    assert.equal(f.run("first.text"), "");
+    f.network(async () => json(200, { text: "corrected", language: "english", stt_seconds: 1 }));
+    await f.run("recheck(row, {file:'recording.wav', text:'wrong language'}, 'reason', first)");
+    assert.equal(f.run("first.text"), "corrected");
+    assert.equal(f.calls[1].url, "/api/recordings/recheck");
+  }
   const f = fixture(); let count = 0;
   f.network(async () => { if (++count < 3) throw new TypeError("fetch failed"); return json(200, { text: "hello" }); });
   const result = f.upload(); await f.clock.flush(); assert.equal(f.calls.length, 1);

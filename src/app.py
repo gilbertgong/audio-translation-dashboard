@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -207,16 +208,19 @@ def sse_event(name, data):
     return f"event: {name}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
 
 
-def transcribe(whisper_url, wav, filename, language=None):
+def transcribe(whisper_url, wav, filename, language=None, prompt=""):
     """Send a WAV to whisper-server; return {"text", "language", "confidence",
     "stt_raw"}. language: force it (whisper's code or lowercase English name,
-    e.g. "chinese") instead of letting whisper detect it.
+    e.g. "chinese") instead of letting whisper detect it. prompt: preceding
+    transcript context, supplied explicitly for this request only.
 
     confidence is the segments' average log-probability, weighted by their
     length (closer to 0 = more confident). stt_raw is the request settings and
     whisper's full reply, for debugging.
     """
     fields = {"response_format": "verbose_json", "temperature": "0.0"}
+    if prompt:
+        fields["prompt"] = prompt
     if language:
         fields["language"] = language
     body, content_type = multipart(fields, {"file": (filename, "audio/wav", wav)})
@@ -227,10 +231,12 @@ def transcribe(whisper_url, wav, filename, language=None):
     raw = {"request": {"url": url, "fields": fields, "file": f"{filename} ({len(wav)} bytes)"},
            "response": result}
     segments = result.get("segments") or []
+    # Segment text retains word spaces; the server's combined text adds newlines even mid-word.
+    text = "".join(s["text"] for s in segments) if segments else result["text"]
     weights = [max(s.get("end", 0) - s.get("start", 0), 0.01) for s in segments]
     confidence = (sum(s.get("avg_logprob", 0) * w for s, w in zip(segments, weights)) / sum(weights)
                   if segments else None)
-    return {"text": result["text"].strip(), "language": result.get("language") if language
+    return {"text": text.strip(), "language": result.get("language") if language
             else result.get("detected_language"), "confidence": confidence, "stt_raw": raw}
 
 
@@ -553,7 +559,8 @@ def post_recording(req):
     """Body: one audio segment as a WAV file. Saves and transcribes it; returns {"file", "bytes",
     "text", "language", "confidence", "recheck", "stt_seconds", "stt_raw"} with
     status 201. recheck is true when whisper heard neither of the two
-    [languages]: the page then asks /api/recordings/recheck to try again."""
+    [languages]: the page then asks /api/recordings/recheck to try again.
+    Optional X-Whisper-Prompt: URI-encoded UTF-8 preceding transcript text."""
     data = req.body(max_bytes=config["audio"]["max_upload_mb"] * 1024 * 1024)
     if not data:
         raise HTTPError(400, "empty upload")
@@ -587,7 +594,8 @@ def post_recording(req):
 
         start = time.monotonic()
         try:
-            result = transcribe(config["whisper_url"], data, path.name)
+            prompt = urllib.parse.unquote(req.headers.get("X-Whisper-Prompt", ""))
+            result = transcribe(config["whisper_url"], data, path.name, prompt=prompt)
         except (OSError, RuntimeError, ValueError) as err:
             # OSError: connection problems; RuntimeError: errors from whisper-server.
             error = f"transcription failed: {err} (is whisper-server running at {config['whisper_url']}?)"

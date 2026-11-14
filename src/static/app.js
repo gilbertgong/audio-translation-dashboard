@@ -234,7 +234,7 @@ function segmentSplitterBlock(sp, block, rms) {
   const loud = db > sp.thresholdDb;
   // For automatic playback: speech now; sustained (past a cough) mid-segment.
   // A muted captured tab isn't heard here, so the translations talk over it.
-  if (loud && !(sp.source === "capture" && capture?.muted)) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms);
+  if (loud) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms, sp.source);
 
   if (!sp.speaking) {
     sp.preRoll.push(block);
@@ -283,10 +283,10 @@ function endSegment(sp, reason) {
   sendAudioSegment(samples, sp.sampleRate, I18n.msg("{label} ({reason})", { label: I18n.msg(sp.label), reason: I18n.msg(reason) }), sp.source);
 }
 
-async function sendAudioSegment(samples, sampleRate, note, source) {
+async function sendAudioSegment(samples, sampleRate, note, source, context = transcriptContext(source)) {
   try {
     const resampled = await resample(samples, sampleRate, targetSampleRate);
-    processAudioSegment(encodeWav(resampled, targetSampleRate), note, source);
+    processAudioSegment(encodeWav(resampled, targetSampleRate), note, source, context);
   } catch (err) {
     console.error(err);
     addNote(I18n.msg("Error: {error}", { error: I18n.errorText(err) }), true);
@@ -709,10 +709,42 @@ let turnPauseMs = 2000;
 let maxBacklogS = 30;
 let lastSpeechAt = 0; // performance.now() of the last speech from any source
 let turnTimer = null;
+const transcriptSources = Object.fromEntries(["mic", "capture"].map((source) =>
+  [source, { lastSpeechAt: -Infinity, turn: { last: null } }]));
+
+// Both playback and transcription context use the same speech-activity pause rule.
+function turnWait(lastAt) {
+  return turnPauseMs - (performance.now() - lastAt);
+}
+
+function transcriptContext(source) {
+  const turn = transcriptSources[source].turn;
+  const context = { previous: turn.last, text: "" };
+  turn.last = context;
+  return context;
+}
+
+function transcriptTail(text) {
+  const characters = Array.from(text || "");
+  let start = Math.max(0, characters.length - 100);
+  // Byte-level BPE cannot use more tokens than UTF-8 bytes; leave room below 224 tokens.
+  while (new TextEncoder().encode(characters.slice(start).join("")).length > 200) start++;
+  let tail = characters.slice(start).join("");
+  // If the size cutoff lands inside a space-delimited span, discard that partial span.
+  if (start > 0 && !/\s/u.test(characters[start - 1]) && !/\s/u.test(characters[start])) {
+    tail = tail.replace(/^\S+\s*/u, "");
+  }
+  return tail.trimStart();
+}
 
 // Called by the sources as they hear speech. sustained: speech that should
 // interrupt automatic playback (not just a cough or a click).
-function noteSpeech(sustained) {
+function noteSpeech(sustained, source = "mic") {
+  const state = transcriptSources[source];
+  if (turnWait(state.lastSpeechAt) <= 0) state.turn = { last: null };
+  state.lastSpeechAt = performance.now();
+  // Muted capture still has transcription turns, but does not hold back playback.
+  if (source === "capture" && capture?.muted) return;
   lastSpeechAt = performance.now();
   if (sustained && speech?.item && !playbackPaused) {
     const item = speech.item;
@@ -762,7 +794,7 @@ function trimBacklog() {
 function playNextSpeech() {
   clearTimeout(turnTimer);
   if (playbackPaused || speech || playingBtn || !speechQueue.length) return;
-  const wait = turnPauseMs - (performance.now() - lastSpeechAt);
+  const wait = turnWait(lastSpeechAt);
   if (wait > 0) {
     turnTimer = setTimeout(playNextSpeech, wait + 20);
     return;
@@ -1216,14 +1248,19 @@ const toLlama = oneAtATime();
 
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).
-async function uploadWav(wav) {
+async function uploadWav(wav, context) {
   const { res, body } = await toWhisper(async () => {
+    // Read the preceding result inside the queue, after its transcription has completed.
+    const prompt = context?.previous?.text;
+    if (context) context.previous = null; // retain one tail, not a chain of old transcripts
     const res = await pageFetch("/api/recordings", {
       method: "POST",
-      headers: { "Content-Type": "audio/wav" },
+      headers: { "Content-Type": "audio/wav", ...(prompt ? { "X-Whisper-Prompt": encodeURIComponent(prompt) } : {}) },
       body: wav,
     });
-    return { res, body: await res.json() };
+    const body = await res.json();
+    if (res.ok && context) context.text = body.recheck ? "" : transcriptTail(body.text);
+    return { res, body };
   });
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { body });
   return body;
@@ -1340,7 +1377,7 @@ async function translateRow(row, text, source) {
 // quiet Chinese); reason says who thought so. Show it, marked, while the server
 // transcribes it again forced to each of the two, then swap in the more
 // confident result. Returns the result to use (the original if this fails).
-async function recheck(row, stt, reason) {
+async function recheck(row, stt, reason, context) {
   setLine(row, ".original", I18n.msg("{text} ({reason}; rechecking…)", { text: stt.text, reason }), "pending");
   setTiming(row, "recheck", null);
   try {
@@ -1353,6 +1390,7 @@ async function recheck(row, stt, reason) {
       return { res, result: await res.json() };
     });
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    if (context) context.text = transcriptTail(result.text);
     setTiming(row, "recheck", result.stt_seconds);
     addRawButton(row, "recheck", I18n.msg("whisper recheck: both languages"), result.stt_raw);
     setLanguage(row, result.language);
@@ -1371,7 +1409,7 @@ async function recheck(row, stt, reason) {
 // Transcribe, then translate, in the background so the next recording can start.
 // note: optional detail for the activity cell (e.g. how an auto-split segment ended).
 // source: "mic" or "capture" (for the status row's counts).
-async function processAudioSegment(wav, note = "", source = "mic") {
+async function processAudioSegment(wav, note = "", source = "mic", context = transcriptContext(source)) {
   if (pageLifetime.signal.aborted) return;
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
@@ -1386,7 +1424,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
   try {
     let stt;
     try {
-      stt = await uploadWav(wav);
+      stt = await uploadWav(wav, context);
     } catch (err) {
       setTiming(row, "stt", "failed");
       setLine(row, ".original", I18n.msg("Error: {error}", { error: I18n.errorText(err) }), "error");
@@ -1402,7 +1440,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
       return;
     }
     setLine(row, ".original", stt.text);
-    if (stt.recheck) stt = await recheck(row, stt, I18n.msg("whisper heard {language}", { language: stt.language }));
+    if (stt.recheck) stt = await recheck(row, stt, I18n.msg("whisper heard {language}", { language: stt.language }), context);
     if (!stt.text) {
       setLine(row, ".original", I18n.msg("(no speech detected)"), "pending");
       return;
@@ -1438,10 +1476,11 @@ recordBtn.addEventListener("click", async () => {
     } else {
       I18n.text(recordBtn, I18n.msg("Start Recording"));
       recordBtn.classList.remove("recording");
+      const context = micRecording.splitter ? null : transcriptContext("mic");
       const wav = await stopRecording();
       autoSplitToggle.disabled = false;
       updateStatus();
-      if (wav) processAudioSegment(wav); // not awaited: runs in the background
+      if (wav) processAudioSegment(wav, "", "mic", context); // not awaited: runs in the background
     }
   } catch (err) {
     console.error(err);

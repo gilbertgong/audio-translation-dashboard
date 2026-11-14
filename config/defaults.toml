@@ -132,6 +132,7 @@ auto_play = false
 # and resumes about 100 ms before the interruption at the next turn's end.
 # (The ▶ buttons
 # play at once.)
+# Also resets Live's preceding-transcript context per source, using the same speech pause.
 turn_pause_ms = 1000
 # At most this much speech (ms) waits to be spoken: the translations waiting
 # (not the one playing), counting each once its audio has come back from the

@@ -6,6 +6,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+import urllib.parse
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -51,11 +52,13 @@ class SessionDataTests(unittest.TestCase):
         temporary_patch.start()
         self.addCleanup(temporary_patch.stop)
 
-    def upload(self, result=None):
+    def upload(self, result=None, prompt=""):
         request = Mock()
+        request.headers = {"X-Whisper-Prompt": urllib.parse.quote(prompt)} if prompt else {}
         request.body.return_value = WAV
-        with patch.object(app, "transcribe", return_value=result or transcript()):
+        with patch.object(app, "transcribe", return_value=result or transcript()) as transcribe:
             payload, status = app.post_recording(request)
+            self.assertEqual(transcribe.call_args.kwargs["prompt"], prompt)
         self.assertEqual(status, 201)
         self.assertEqual(payload["text"], SECRET)
         return payload
@@ -82,6 +85,38 @@ class SessionDataTests(unittest.TestCase):
         self.assertIn("english", output)
         self.assertIn("[content omitted]", output)
         self.assertNotIn(SECRET, output)
+
+    def test_recording_forwards_unicode_prompt_without_changing_wav(self):
+        self.upload(prompt="这是先前的句子。 100% + context")
+
+    def test_transcription_prompt_is_a_multipart_field(self):
+        for prompt in ("", "这是先前的句子。"):
+            with self.subTest(prompt=prompt), patch.object(app, "call_server", return_value={
+                    "text": "new words", "detected_language": "english"}) as call:
+                result = app.transcribe("http://mock", WAV, "test.wav", prompt=prompt)
+                body = call.call_args.args[1]
+                self.assertEqual(b'name="prompt"' in body, bool(prompt))
+                if prompt:
+                    self.assertIn(prompt.encode("utf-8"), body)
+                self.assertEqual(result["stt_raw"]["request"]["fields"].get("prompt", ""), prompt)
+
+    def test_transcription_joins_segment_text_without_inserting_or_stripping_spaces(self):
+        cases = [([" the s", "not out"], "the snot out"),
+                 (["Hello", " world"], "Hello world"),
+                 (["中", "文"], "中文"),
+                 (["Hello\n", " world"], "Hello\n world"),
+                 ([], "fallback text")]
+        for language in (None, "english"):
+            for texts, expected in cases:
+                with self.subTest(texts=texts, language=language):
+                    reply = {"text": "\n".join(texts) if texts else "fallback text",
+                             "segments": [{"text": text} for text in texts],
+                             "language": "english", "detected_language": "english"}
+                    with patch.object(app, "call_server", return_value=reply):
+                        result = app.transcribe("http://mock", WAV, "test.wav", language=language)
+                    self.assertEqual(result["text"], expected)
+                    self.assertIs(result["stt_raw"]["response"], reply)
+                    self.assertEqual(reply["text"], "\n".join(texts) if texts else "fallback text")
 
     def test_recheck_uses_open_server_file_then_closes_it(self):
         payload = self.upload(transcript("russian"))
@@ -114,6 +149,7 @@ class SessionDataTests(unittest.TestCase):
     def test_failed_initial_transcription_closes_file(self):
         request = Mock()
         request.body.return_value = WAV
+        request.headers = {}
         with patch.object(app, "transcribe", side_effect=OSError("connection refused")):
             with self.assertRaises(HTTPError), self.assertLogs("app", level="WARNING") as logs:
                 app.post_recording(request)

@@ -27,6 +27,13 @@ Everything runs on your own machine; nothing is sent to the cloud.
 2. **▶ Launch:** downloads the servers and models the first time (this takes a while), then starts everything.
 3. **Open dashboard:** opens <http://localhost:8080/>.
 
+Whisper transcript segments are joined directly, preserving words and letting the browser wrap text
+instead of inserting a line break at each segment boundary. Raw responses remain available for inspection.
+
+Live carries a short trailing transcript into the next transcription, separately for microphone and
+captured audio, until that source pauses for `[tts] turn_pause_ms`. This uses the same speech-pause
+rule as playback turns; processing delays and translation playback do not clear it.
+
 Whisper setups download Silero VAD v6.2.0 and enable it when starting transcription. Existing configs
 that override Whisper `args` need regeneration or `--vad` added; the installed whisper-server must
 support this model. Remote servers need the same setup on their host.

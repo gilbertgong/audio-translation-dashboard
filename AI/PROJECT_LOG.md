@@ -723,3 +723,44 @@ cover isolated loading, normal layering, and backend URL derivation.
 - Verification: 10 configuration-generator, 12 Docker-instance and 3 standalone-config checks passed.
   All TOML parsed; offline previews confirmed VAD flags/model paths for all four shipped Whisper
   machine instances, including Docker mounts. No models downloaded or inference services started.
+
+## 2026-11-14: Preceding transcript context for Live Whisper requests
+
+- Keep the preceding original transcript tail separately for microphone and captured audio. Reuse
+  the existing speech-activity clock and a shared turnWait calculation with turn_pause_ms for both
+  playback turns and context reset. Processing/queue delays and TTS playback do not reset context.
+  Muted video capture still tracks transcription turns without delaying automatic playback.
+- Cap the tail at 100 Unicode characters and 200 UTF-8 bytes, dropping an initial partial word
+  in space-delimited text; Chinese needs no space boundary. Short continuations remain intact.
+- Snapshot predecessors before resampling and read their text within the Whisper queue. Older-turn
+  results cannot seed new turns. Empty/failed results provide no prompt; successful language recheck
+  can correct its own context entry when available. No global/server conversation memory.
+- Keep WAV uploads unchanged; carry URI-encoded UTF-8 context in optional X-Whisper-Prompt, decoded
+  into Whisper's multipart prompt field and visible in raw request details. Recheck inference is
+  unprompted. No new setting, language prediction or second inference pass added.
+- Recovery/context, playback, localization and 13 Python recording-retention/prompt checks passed,
+  along with JS/Python syntax and whitespace. Covers source isolation, exact turn threshold, long
+  processing delays, muted capture, Unicode caps/word boundaries and prompt forwarding. No real
+  inference/audio quality checks or service starts; accuracy improvement assumed for this first cut.
+
+## 2026-11-14: Use joined Whisper segment text throughout the pipeline
+
+- Build the canonical transcript by joining segments[].text with no separator, then trimming only
+  outer whitespace. Preserve existing word spaces and genuine newlines inside segment text; do not
+  inherit formatting newlines added by whisper-server's combined text. Fall back to combined text
+  when no segments are returned. Applies to initial transcription and forced-language rechecks.
+- Display, translation and subsequent context use the joined transcript. Browser text wrapping
+  handles display width; raw Whisper responses remain untouched. Removed the interim prompt-only
+  newline/whitespace cleanup. Inference timestamp options were not changed.
+- Fourteen Python retention/transcription/prompt checks and JS context/recovery, playback and
+  localization suites passed, plus syntax and whitespace checks. Covers split words, preserved
+  spaces, Chinese, genuine segment newlines, empty/missing segments and untouched raw responses.
+  No services or real inference started; changes remain uncommitted.
+
+## 2026-11-14: One whitespace-boundary rule for transcript context
+
+- At the user's request, removed the Chinese exception from tail trimming. After applying the
+  100-character/200-byte limits, drop a partial space-delimited span for every language. Short
+  transcripts remain intact; a truncated tail with no remaining whitespace supplies no context.
+- Focused context/recovery, JavaScript syntax and whitespace checks passed, including Chinese
+  comma/space boundaries, long unspaced text, unchanged short Chinese and Unicode byte limits.

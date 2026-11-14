@@ -45,6 +45,14 @@ recipes good.
 
 ## Results so far
 
+- Whisper transcripts join `segments[].text` directly for display, translation and prompt context;
+  raw responses remain untouched. No prompt-specific newline removal or whitespace normalization.
+
+- Live Whisper prompts carry the preceding transcript tail per audio source, bounded to 100 Unicode
+  characters and 200 UTF-8 bytes, dropping cut-off spans at whitespace boundaries for all languages. Context uses the
+  same speech-pause calculation as playback turns (`turn_pause_ms`), independently of processing
+  delay or TTS playback, including muted capture.
+
 - Whisper defaults download Silero VAD v6.2.0, pass its model path and enable VAD at startup.
   Whisper fragments inherit these settings; browser silence detection is unchanged.
 

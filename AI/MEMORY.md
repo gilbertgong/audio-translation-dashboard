@@ -84,6 +84,13 @@ Don't design around hypothetical problems (e.g. speaker feedback into the microp
 Mention a risk once at most.
 *Why:* the user prefers minimal features and real evidence; speculative fixes have steered designs wrongly before.
 
+### Transcription context and turn timing
+
+For Live transcription context, reuse the turn-detection speech clock and pause calculation with
+`turn_pause_ms`, separately per audio source. Processing/queue delays must not define turns; TTS
+playback does not reset context. Keep muted captured-video transcription context independent of
+the existing exception that lets automatic playback talk over muted capture.
+
 ### Keep configuration simple; don't validate it
 Read configuration at startup and use what it specifies. Don't add configuration validation or rules
 that judge whether a configuration is sensible, supported or an expected combination. Don't anticipate
