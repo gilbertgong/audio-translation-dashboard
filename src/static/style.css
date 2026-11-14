@@ -829,3 +829,6 @@ kbd {
   .activity { padding: 8px 10px; }
   .timing .secs { font-size: 1rem; }
 }
+
+/* Keep touch holds on the recording button from becoming scroll gestures. */
+#record-btn { touch-action: none; user-select: none; -webkit-user-select: none; }

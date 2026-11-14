@@ -56,7 +56,8 @@ echo_cancellation = true
 [auto_split]
 # Automatic splitting on pauses, switched on/off on the page ("Continuous Audio
 # Mode"). When on, one Start/Stop keeps the microphone open and each segment
-# is sent as its own recording when you pause. "Speech" is anything clearly
+# is sent as its own recording when you pause. When off, hold the recording
+# button, Space or backtick to record one clip and release to send it. "Speech" is anything clearly
 # louder than the background noise, which is measured continuously.
 # Whether the switch starts out on when the page loads.
 enabled = true

@@ -61,7 +61,7 @@
          belongs to (the Space hint above the button, the status above the
          level). Bottom row: button, mode switch, gain, level. -->
     <div class="controls">
-      <span class="shortcut-hint"><kbd data-i18n="Space">Space</kbd> <span data-i18n="to start/stop">to start/stop</span></span>
+      <span class="shortcut-hint"><span id="toggle-shortcut" data-i18n-rich="{space} or {backtick} to start/stop"><kbd data-i18n-slot="space" data-i18n="Space">Space</kbd> or <kbd data-i18n-slot="backtick">`</kbd> to start/stop</span><span id="talk-shortcut" data-i18n-rich="Hold {space} or {backtick} to talk" hidden>Hold <kbd data-i18n-slot="space" data-i18n="Space">Space</kbd> or <kbd data-i18n-slot="backtick">`</kbd> to talk</span></span>
       <!-- Three independent indicators, left to right (filled in by app.js):
            the capture and the microphone (each with its own recording state), and
            playback, which waits for both to be quiet. Unlabeled: the position
@@ -74,7 +74,7 @@
 
       <button id="record-btn" type="button" title="Start/stop recording (Space)" data-i18n-title="Start/stop recording (Space)" data-i18n="Start Recording">Start Recording</button>
       <!-- "Continuous Audio Mode" in the UI; called auto-split in the code and config. -->
-      <label class="switch" title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop." data-i18n-title="On: keep listening and send each phrase when you pause. Off: one recording per Start/Stop.">
+      <label class="switch" title="On: keep listening and send each phrase when you pause. Off: hold to talk, release to send." data-i18n-title="On: keep listening and send each phrase when you pause. Off: hold to talk, release to send.">
         <input type="checkbox" id="auto-split" role="switch">
         <span class="switch-track"></span><span data-i18n="Continuous Audio Mode">Continuous Audio Mode</span></label>
       <label class="switch" title="On: speak each translation as soon as it's done. Off: use the ▶ button after a translation." data-i18n-title="On: speak each translation as soon as it&#x27;s done. Off: use the ▶ button after a translation.">

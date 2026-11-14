@@ -1093,6 +1093,7 @@ async function loadConfig() {
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
     autoSplitToggle.checked = !!enabled;
+    updateRecordingUi();
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;
     maxBacklogS = (config.max_backlog_ms ?? maxBacklogS * 1000) / 1000;
@@ -1493,22 +1494,40 @@ async function processAudioSegment(wav, note = "", source = "mic", context = tra
   }
 }
 
-recordBtn.addEventListener("click", async () => {
+// A held input owns a push-to-talk recording, including asynchronous mic startup.
+let talkInput = null;
+let recordingBusy = false;
+function updateRecordingUi() {
+  const auto = autoSplitToggle.checked;
+  if (!auto) recordBtn.classList.toggle("recording", talkInput !== null);
+  I18n.text(recordBtn, I18n.msg(auto
+    ? (micRecording ? "Stop Listening" : "Start Recording")
+    : (talkInput !== null ? "Release to send" : "Hold to Talk")));
+  document.getElementById("toggle-shortcut").hidden = !auto;
+  document.getElementById("talk-shortcut").hidden = auto;
+  I18n.attr(recordBtn, "title", I18n.msg(auto ? "Start/stop recording (Space or `)" : "Hold to talk; release to send (Space or `)"));
+}
+autoSplitToggle.addEventListener("change", updateRecordingUi);
+updateRecordingUi();
+
+async function toggleRecording() {
+  if (recordingBusy) return;
   // if (capture) return; // capturing instead (one source at a time: off for now)
-  recordBtn.disabled = true;
+  recordingBusy = true;
+  recordBtn.disabled = autoSplitToggle.checked;
   try {
     if (!micRecording) {
       const auto = autoSplitToggle.checked;
       autoSplitToggle.disabled = true; // no mode change mid-recording
       await startRecording(auto);
-      I18n.text(recordBtn, I18n.msg(auto ? "Stop Listening" : "Stop Recording"));
-      recordBtn.classList.add("recording");
+      updateRecordingUi();
+      if (auto) recordBtn.classList.add("recording");
       updateStatus();
     } else {
-      I18n.text(recordBtn, I18n.msg("Start Recording"));
       recordBtn.classList.remove("recording");
       const context = micRecording.splitter ? null : transcriptContext("mic");
       const wav = await stopRecording();
+      updateRecordingUi();
       autoSplitToggle.disabled = false;
       updateStatus();
       if (wav) processAudioSegment(wav, "", "mic", context); // not awaited: runs in the background
@@ -1524,12 +1543,38 @@ recordBtn.addEventListener("click", async () => {
       micRecording = null;
     }
     autoSplitToggle.disabled = false;
-    I18n.text(recordBtn, I18n.msg("Start Recording"));
+    talkInput = null;
+    updateRecordingUi();
     recordBtn.classList.remove("recording");
   } finally {
+    recordingBusy = false;
     recordBtn.disabled = false;
-    // captureBtn.disabled = !!micRecording; // one source at a time (off for now)
+    // A release during getUserMedia/worklet setup must not leave the mic running.
+    if (!autoSplitToggle.checked && talkInput === null && micRecording) toggleRecording();
   }
+}
+
+recordBtn.addEventListener("click", () => {
+  if (autoSplitToggle.checked) toggleRecording();
+});
+recordBtn.addEventListener("pointerdown", (e) => {
+  if (autoSplitToggle.checked || e.button !== 0 || talkInput !== null || recordingBusy) return;
+  e.preventDefault();
+  talkInput = e.pointerId;
+  updateRecordingUi();
+  toggleRecording();
+});
+for (const event of ["pointerup", "pointercancel"]) window.addEventListener(event, (e) => {
+  if (talkInput !== e.pointerId) return;
+  talkInput = null;
+  updateRecordingUi();
+  if (micRecording) toggleRecording();
+});
+window.addEventListener("blur", () => {
+  if (talkInput === null) return;
+  talkInput = null;
+  updateRecordingUi();
+  if (micRecording) toggleRecording();
 });
 
 // --- Capture Audio (the sidebar): translate the sound of a browser tab, a
@@ -1735,9 +1780,11 @@ captureBtn.addEventListener("click", async () => {
 
 // Space starts/stops recording from anywhere on the page. It takes over Space
 // from focused buttons and switches (which would otherwise also be toggled);
-// Enter still activates buttons. Text fields keep Space for typing.
-function isSpaceShortcut(e) {
-  if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
+// Backtick also toggles listening or holds to talk, with the same exclusions.
+// Enter still activates buttons. Text fields keep Space/backtick for typing.
+function isRecordingShortcut(e) {
+  const backtick = e.key === "`" && !e.shiftKey && !e.isComposing;
+  if ((e.code !== "Space" && !backtick) || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
   if (target.closest("#app-header")) return false; // header controls keep native keyboard behavior
@@ -1747,14 +1794,25 @@ function isSpaceShortcut(e) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!isSpaceShortcut(e)) return;
+  if (!isRecordingShortcut(e)) return;
   e.preventDefault(); // no page scroll, no click on a focused button
-  if (!e.repeat) recordBtn.click(); // holding Space toggles only once
+  if (e.repeat) return;
+  if (autoSplitToggle.checked) recordBtn.click();
+  else if (talkInput === null && !recordingBusy) {
+    talkInput = e.code;
+    updateRecordingUi();
+    toggleRecording();
+  }
 });
 
 // A focused button is "clicked" on Space key-up; block that too.
 document.addEventListener("keyup", (e) => {
-  if (isSpaceShortcut(e)) e.preventDefault();
+  if (typeof talkInput === "string" && e.code === talkInput) {
+    e.preventDefault(); // release the held recording even if focus moved
+    talkInput = null;
+    updateRecordingUi();
+    if (micRecording) toggleRecording();
+  } else if (isRecordingShortcut(e)) e.preventDefault();
 });
 
 // Discard unfinished audio on navigation; normal Stop still sends the final segment.

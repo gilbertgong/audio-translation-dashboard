@@ -75,7 +75,9 @@ local execution example. This extracted path still needs target-machine verifica
 - **Text translation** in the header opens a chat page for typing or pasting text and choosing a
   language direction. Enter sends; Shift+Enter adds a line. Each translation appears below your message,
   with Copy and Listen controls.
-- **Start** (or Space) and talk. With Continuous Audio Mode on, each pause starts a new row.
+- With **Continuous Audio Mode** on, **Start** (or Space or the backtick key) toggles listening and each pause starts a new row.
+  With it off, hold **Hold to Talk** or Space or the backtick key to record one clip; release to send. The held button reads
+  **Release to send**, and the hint reads **Hold Space or ` to talk**. Existing Space shortcut exclusions are unchanged.
 - **▶** after a translation speaks it; the adjacent copy icon copies the translation. With Automatic Translation Playback on, translations are spoken when the
   speaker pauses.
 - **Capture audio** (the left sidebar) translates a browser tab or your whole system instead of the microphone. Tick

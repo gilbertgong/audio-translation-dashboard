@@ -794,3 +794,52 @@ cover isolated loading, normal layering, and backend URL derivation.
 - Playback, context/recovery, localization, JS syntax and whitespace checks passed, including mobile
   and desktop defaults, preference overrides, blocked storage and both offset signs. No physical
   mobile audio test, model inference or service changes. Still uncommitted.
+
+
+## 2026-11-14: Push-to-talk when continuous mode is off
+
+At user request, replaced non-continuous click-to-start/stop with hold-to-record,
+release-to-send using pointer input or the existing Space shortcut. Idle/held button labels
+are Hold to Talk / Release to send; the hint is Hold Space to talk. Continuous mode and
+Space shortcut exclusions remain unchanged; no additional Space override policy was added.
+Both Chinese catalogs and the mode tooltip were updated. Release during microphone startup,
+pointer cancellation and window blur end the hold so recording cannot remain latched.
+
+Verification: offline recording interactions (including deferred startup, permission failure,
+continuous toggling and native Space exclusions), playback and i18n suites passed; browser JS
+syntax and git diff whitespace checks passed. Physical microphone/touch-device behavior has
+not been tested. No services started, commits made or pushes performed.
+
+
+### Additional backtick push-to-talk key
+
+User agreed to try backtick alongside Space and the button. Only non-continuous mode
+accepts an unmodified backtick; text/editable fields, selects, header/playback controls
+and the raw viewer keep their normal behavior. Shift/tilde, modified shortcuts and IME
+composition do not start recording. Release is honored even if focus changes during startup.
+Updated hint, tooltip, both Chinese catalogs and usage docs. Recording/i18n suites,
+JS syntax and whitespace checks passed; no physical keyboard/microphone audition performed.
+
+
+### Push-to-talk hint key outlines
+
+At user request, Space and backtick in the push-to-talk hint use the existing kbd
+outline style. Reused i18n rich-message slots to preserve key elements in both Chinese
+variants. No recording behavior changed. Tests skipped per preference for UI-only edits.
+
+
+### Synchronize push-to-talk button feedback
+
+User observed label/color changes occurring separately. The held label changed immediately,
+while the recording class was added only after asynchronous mic startup. Push-to-talk now
+updates the class and label in the same UI update on press/release; late startup cannot
+reapply the held color after release. Startup failure clears the held input and resets both.
+Continuous-mode class timing is unchanged. Tests skipped for this UI feedback adjustment.
+
+
+### Same keys in continuous mode
+
+At user request, Space and backtick now both toggle listening in continuous mode.
+Key repeat and key release do not toggle again; existing typing/control exclusions remain.
+The continuous hint shows both outlined keys, with matching localized tooltip/catalog entries.
+Recording and localization suites, JS syntax and whitespace checks passed.

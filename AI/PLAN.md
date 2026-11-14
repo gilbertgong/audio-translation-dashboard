@@ -45,6 +45,9 @@ recipes good.
 
 ## Results so far
 
+- Continuous Audio Mode off uses hold-to-talk/release-to-send with the button, existing Space shortcut or backtick key.
+  Space and backtick toggle recording in continuous mode; existing Space shortcut exclusions remain unchanged.
+
 - Playback's **Allow Interrupting Translator** option remembers the browser choice (mobile defaults
   off, desktop on). When off, speech does not interrupt translation playback and microphone blocks become
   silence while received audio plays. White/Muted mic indicator; captured audio stays active.
