@@ -43,6 +43,8 @@ const UI_ZH_HANS = {
   "Hide activity": "隐藏活动",
   "Show activity": "显示活动",
   "Translations will appear here.": "翻译结果将显示在这里。",
+  "Mock Mobile": "模拟手机",
+  "Mock Desktop": "模拟桌面",
   "Space": "空格",
   "Hold to Talk": "按住说话",
   "Release to send": "松开发送",

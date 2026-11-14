@@ -832,3 +832,18 @@ kbd {
 
 /* Keep touch holds on the recording button from becoming scroll gestures. */
 #record-btn { touch-action: none; user-select: none; -webkit-user-select: none; }
+
+/* Mobile capture is unavailable; keyboard shortcuts need no visible hint. */
+body.mobile #capture, body.mobile .shortcut-hint { display: none; }
+@media (max-width: 1000px) {
+  body.mobile .playback-panel { grid-column: 1 / -1; margin-left: 16px; }
+}
+
+#app-header .mock-device {
+  background: var(--recording);
+  color: #fff;
+  width: 128px;
+  height: 30px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}

@@ -501,7 +501,9 @@ function isMobileBrowser() {
   return !!navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
-allowInterruptToggle.checked = !isMobileBrowser();
+let mobileBrowser = isMobileBrowser();
+document.body.classList.toggle("mobile", mobileBrowser);
+allowInterruptToggle.checked = !mobileBrowser;
 try {
   const saved = localStorage.getItem("allowTranslatorInterrupt");
   if (saved !== null) allowInterruptToggle.checked = saved === "true";
@@ -1060,14 +1062,14 @@ function addNote(text, isError = false) {
 
 // Activity column visibility, remembered per browser.
 
-function setActivityHidden(hidden) {
+function setActivityHidden(hidden, remember = true) {
   document.body.classList.toggle("activity-hidden", hidden);
   activityToggle.setAttribute("aria-expanded", String(!hidden));
   const label = hidden ? "Show activity" : "Hide activity";
   I18n.attr(activityToggle, "aria-label", I18n.msg(label));
   I18n.attr(activityToggle, "title", I18n.msg(label));
   try {
-    localStorage.setItem("activityHidden", hidden ? "1" : "0");
+    if (remember) localStorage.setItem("activityHidden", hidden ? "1" : "0");
   } catch {}
 }
 
@@ -1075,14 +1077,35 @@ activityToggle.addEventListener("click", () => {
   setActivityHidden(!document.body.classList.contains("activity-hidden"));
 });
 
+setActivityHidden(mobileBrowser, false);
 try {
-  setActivityHidden(localStorage.getItem("activityHidden") === "1");
+  const saved = localStorage.getItem("activityHidden");
+  if (saved !== null) setActivityHidden(saved === "1", false);
 } catch {}
 
 async function loadConfig() {
   try {
     const res = await pageFetch("/api/config");
     const config = await res.json();
+    if (config.mock) {
+      const url = new URL(window.location.href);
+      const preview = url.searchParams.get("mockMobile");
+      if (preview === "1" || preview === "0") mobileBrowser = preview === "1";
+      document.body.classList.toggle("mobile", mobileBrowser);
+      setActivityHidden(mobileBrowser, false);
+      allowInterruptToggle.checked = !mobileBrowser;
+      const controls = document.getElementById("header-controls");
+      if (controls) {
+        const button = el("button", "ui-language header-link mock-device");
+        button.type = "button";
+        I18n.text(button, I18n.msg(mobileBrowser ? "Mock Desktop" : "Mock Mobile"));
+        button.addEventListener("click", () => {
+          url.searchParams.set("mockMobile", mobileBrowser ? "0" : "1");
+          window.location.href = url.href;
+        });
+        controls.insertBefore(button, document.getElementById("ui-language"));
+      }
+    }
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
@@ -1092,7 +1115,7 @@ async function loadConfig() {
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
-    autoSplitToggle.checked = !!enabled;
+    autoSplitToggle.checked = !mobileBrowser && !!enabled;
     updateRecordingUi();
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;

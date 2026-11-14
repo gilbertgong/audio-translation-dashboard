@@ -45,6 +45,10 @@ recipes good.
 
 ## Results so far
 
+- Mobile Live hides Capture Audio and keyboard hints, defaults Activity collapsed (saved choice
+  wins), and starts in push-to-talk mode. Mock Live has a header Mobile/Desktop preview toggle
+  that reloads with device defaults, including interruption, without storing those defaults.
+
 - Continuous Audio Mode off uses hold-to-talk/release-to-send with the button, existing Space shortcut or backtick key.
   Space and backtick toggle recording in continuous mode; existing Space shortcut exclusions remain unchanged.
 

@@ -287,5 +287,59 @@ assert.match(element("playback-status").textContent, /^正在朗读/);
 element("playback-pause").click();
 assert.match(element("playback-status").textContent, /^已暂停/);
 run("stopPlayback(); I18n.change('en');");
-assert.equal(run(`isSpaceShortcut({ code: "Space", target: { closest: (selector) => selector === "#app-header" } })`), false);
+assert.equal(run(`isRecordingShortcut({ code: "Space", target: { closest: (selector) => selector === "#app-header" } })`), false);
 console.log("Playback checks passed: rate scheduling, position, pause/resume, restart, interruptions, next, stop/abort, independent language speeds, meter, recordings.");
+
+
+// Mobile defaults and mock overrides use the real config application path.
+(async () => {
+  const classes = new Set();
+  sandbox.document.body.classList.toggle = (name, enabled) => {
+    if (enabled) classes.add(name); else classes.delete(name);
+  };
+  sandbox.document.body.classList.contains = name => classes.has(name);
+  sandbox.URL = URL;
+  sandbox.window.location = { href: 'http://localhost/?mockMobile=1' };
+  const controls = element('header-controls');
+  const language = element('ui-language');
+  controls.children = [language];
+  controls.insertBefore = (child, reference) => {
+    assert.equal(reference, language);
+    controls.children.unshift(child);
+  };
+  const writes = [];
+  sandbox.localStorage.setItem = (...args) => writes.push(args);
+  sandbox.console = { ...console, warn(error, detail) { throw detail || Error(error); } };
+  run('showMockConversation = () => {};');
+  let config = { mock: true, sample_rate: 16000, auto_split: { enabled: true } };
+  sandbox.fetch = async () => ({ json: async () => config });
+  await run('loadConfig()');
+  assert.equal(classes.has('mobile'), true);
+  assert.equal(classes.has('activity-hidden'), true);
+  assert.equal(element('auto-split').checked, false);
+  assert.equal(element('allow-interrupt').checked, false);
+  assert.equal(controls.children[0].textContent, 'Mock Desktop');
+  assert.deepEqual(writes, []); // preview defaults do not overwrite saved choices
+  controls.children[0].click();
+  assert.equal(new URL(sandbox.window.location.href).searchParams.get('mockMobile'), '0');
+  controls.children = [language];
+  await run('loadConfig()');
+  assert.equal(classes.has('mobile'), false);
+  assert.equal(classes.has('activity-hidden'), false);
+  assert.equal(element('auto-split').checked, true);
+  assert.equal(element('allow-interrupt').checked, true);
+  assert.equal(controls.children[0].textContent, 'Mock Mobile');
+  // Preview query parameters have no authority over a real dashboard.
+  controls.children = [language];
+  sandbox.window.location.href = 'http://localhost/?mockMobile=1';
+  config.mock = false;
+  await run('loadConfig()');
+  assert.equal(element('auto-split').checked, true);
+  assert.equal(controls.children.length, 1);
+  sandbox.navigator.userAgent = 'iPhone';
+  assert.equal(run('isMobileBrowser()'), true);
+  run('mobileBrowser = isMobileBrowser();');
+  await run('loadConfig()');
+  assert.equal(element('auto-split').checked, false);
+  console.log('Mobile defaults and mock desktop/mobile config checks passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

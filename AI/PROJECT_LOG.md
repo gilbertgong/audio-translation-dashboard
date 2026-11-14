@@ -843,3 +843,25 @@ At user request, Space and backtick now both toggle listening in continuous mode
 Key repeat and key release do not toggle again; existing typing/control exclusions remain.
 The continuous hint shows both outlined keys, with matching localized tooltip/catalog entries.
 Recording and localization suites, JS syntax and whitespace checks passed.
+
+
+## 2026-11-14: Mobile defaults and mock device preview
+
+At user request, reused existing mobile detection to hide the entire Capture Audio panel and
+keyboard hint, default the Activity column collapsed (respecting a saved explicit choice),
+and default Continuous Audio Mode off. Narrow layouts let Playback fill the space left by
+hidden Capture Audio. Desktop configuration behavior is preserved.
+
+Mock Live adds a button immediately left of the language switch: Mock Mobile on desktop,
+Mock Desktop on mobile. It reloads with a mock-only query override and reapplies the device
+defaults, including Allow Interrupting Translator, without saving those defaults over browser
+preferences. Explicit user changes continue using existing persistence. The override/button
+are confined to mock Live; previewing does not resize the browser viewport.
+
+Recording, i18n, playback and new mobile/mock config-path checks passed, as did JS syntax and
+whitespace checks. Fixed a stale playback assertion referencing the pre-PTT shortcut helper
+name. No real-device/browser visual verification or physical audio tests; no services started.
+Changes left uncommitted; no push performed.
+
+Mock device toggle styling: user requested the MOCK badge red/white palette and fixed
+size for both labels. Set 128px by 30px, non-shrinking; no tests for this styling-only edit.

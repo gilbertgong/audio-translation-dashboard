@@ -55,6 +55,9 @@ local execution example. This extracted path still needs target-machine verifica
   independently of the languages being translated. The conversation areas ask browser automatic
   translation to leave their bilingual content intact.
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
+- On mobile, the **Capture Audio** panel and keyboard shortcut hint are hidden, the Activity column
+  starts collapsed unless you saved a different choice, and **Continuous Audio Mode** starts off
+  for push-to-talk. You can still expand Activity or enable continuous listening.
 - **Allow Interrupting Translator**, above the playback speed controls, defaults to unchecked on mobile
   and checked on desktop; a saved browser choice takes precedence. Turn it off if speaker audio causes unwanted interruptions, especially
   on mobile: detected speech won't pause the translator, and microphone input is treated as silence
@@ -200,3 +203,9 @@ for details and the reserved meaning of app-side chunks.
 
 BSD 2-Clause; see [LICENSE](LICENSE). Kokoro pipeline-derived portions are Apache-2.0;
 see [Kokoro license](src/licenses/Kokoro-LICENSE.txt).
+
+
+For layout previews, the mock Live dashboard adds a **Mock Mobile** / **Mock Desktop**
+button to the left of the language switch. It reloads the mock page with the other device's
+defaults, including the translator interruption setting, without saving those defaults over
+your browser preferences. This toggle appears only when the backend runs in mock mode.

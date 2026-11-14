@@ -43,6 +43,8 @@ const UI_ZH_HANT = {
   "Hide activity": "隱藏活動",
   "Show activity": "顯示活動",
   "Translations will appear here.": "翻譯結果將顯示在這裡。",
+  "Mock Mobile": "模擬手機",
+  "Mock Desktop": "模擬桌面",
   "Space": "空格",
   "Hold to Talk": "按住說話",
   "Release to send": "放開傳送",
