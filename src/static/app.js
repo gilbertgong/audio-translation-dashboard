@@ -133,6 +133,8 @@ const toDb = (x) => (x > 0 ? Math.max(METER_FLOOR_DB, 20 * Math.log10(x)) : METE
 const dbToPercent = (db) => ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100;
 
 function drawMeter(now) {
+  const muted = micInputSuppressed();
+  meterEl.classList.toggle("muted", muted);
   const db = toDb(meter.rms);
   meter.shownDb = db > meter.shownDb ? db : Math.max(db, meter.shownDb - 1); // fall ~60 dB/s
   meter.maxDb = Math.max(meter.maxDb, toDb(meter.peak)); // highest peak this recording
@@ -148,7 +150,7 @@ function drawMeter(now) {
   meterEl.classList.toggle("quiet", meter.shownDb < METER_QUIET_DB);
   meterEl.setAttribute("aria-valuenow", String(Math.round(meter.shownDb)));
   meterDb.classList.toggle("clip", clipping);
-  meterDb.textContent = clipping ? I18n.t("CLIP")
+  meterDb.textContent = muted ? I18n.t("Muted") : clipping ? I18n.t("CLIP")
     : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
 
   // Auto-split: show the current speech threshold and whether speech is detected.
@@ -169,7 +171,7 @@ function startMeter() {
 
 function stopMeter() {
   cancelAnimationFrame(meter.frame);
-  meterEl.classList.remove("active", "quiet", "hot", "clip", "auto", "speaking");
+  meterEl.classList.remove("active", "quiet", "hot", "clip", "auto", "speaking", "muted");
   meterEl.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
   meterFill.style.width = "0";
   meterDb.classList.remove("clip");
@@ -494,6 +496,23 @@ const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb
 const SPEECH_RESUME_REWIND_S = 0.1; // replay a little context after an interruption
 let playbackBufferS = 0.8;
 const toTts = oneAtATime();
+const allowInterruptToggle = document.getElementById("allow-interrupt");
+function isMobileBrowser() {
+  return !!navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+allowInterruptToggle.checked = !isMobileBrowser();
+try {
+  const saved = localStorage.getItem("allowTranslatorInterrupt");
+  if (saved !== null) allowInterruptToggle.checked = saved === "true";
+} catch {}
+allowInterruptToggle.addEventListener("change", () => {
+  try { localStorage.setItem("allowTranslatorInterrupt", String(allowInterruptToggle.checked)); } catch {}
+});
+
+function micInputSuppressed(offsetSeconds = 0) {
+  return !allowInterruptToggle.checked && !!speech?.isPlaying(offsetSeconds);
+}
 
 function setSpeakButton(btn, state) {
   const looks = {
@@ -618,7 +637,14 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
   analyser.fftSize = 2048;
   analyser.connect(ctx.destination);
   const scheduled = []; // context times mapped to positions in the original audio
-  const current = { ctx, btn, row, text, item, audio, analyser, speed, update: null, position: () => {
+  const current = { ctx, btn, row, text, item, audio, analyser, speed, update: null,
+    isPlaying: (offsetSeconds = 0) => {
+      // Positive offsets look ahead on the playback clock; production callers use zero.
+      const now = ctx.currentTime + offsetSeconds;
+      return !playbackPaused && ctx.state === "running" &&
+        scheduled.some((segment) => now >= segment.start && now < segment.end);
+    },
+    position: () => {
     const now = ctx.currentTime;
     for (let i = scheduled.length - 1; i >= 0; i--) {
       const segment = scheduled[i];
@@ -645,7 +671,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     if (!last) setSpeakButton(btn, "playing");
     playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
     source.start(playAt, skip);
-    scheduled.push({ start: playAt, offset, duration });
+    scheduled.push({ start: playAt, end: playAt + buffer.duration - skip, offset, duration });
     playAt += buffer.duration - skip;
     last = source;
   };
@@ -746,7 +772,7 @@ function noteSpeech(sustained, source = "mic") {
   // Muted capture still has transcription turns, but does not hold back playback.
   if (source === "capture" && capture?.muted) return;
   lastSpeechAt = performance.now();
-  if (sustained && speech?.item && !playbackPaused) {
+  if (allowInterruptToggle.checked && sustained && speech?.item && !playbackPaused) {
     const item = speech.item;
     const position = speech.position();
     // Don't repeatedly rewind when interrupted before resumed audio starts.
@@ -1127,22 +1153,27 @@ async function startRecording(auto) {
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
     const splitter = auto ? createSegmentSplitter(ctx.sampleRate) : null;
-    node.port.onmessage = (e) => {
-      const rms = meterSample(e.data);
-      if (splitter) segmentSplitterBlock(splitter, e.data, rms);
-      else {
-        chunks.push(e.data);
-        noteSpeech(false); // a manual recording is a turn in progress
-      }
-    };
+    const recording = { stream, ctx, source, gain, node, chunks, splitter };
+    node.port.onmessage = (e) => microphoneBlock(recording, e.data);
     source.connect(gain).connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    micRecording = { stream, ctx, source, gain, node, chunks, splitter };
+    micRecording = recording;
     startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
     ctx.close();
     throw err;
+  }
+}
+
+function microphoneBlock(recording, samples) {
+  const muted = micInputSuppressed();
+  if (muted) samples.fill(0); // preserve recording duration; don't store or detect playback echo
+  const rms = meterSample(samples);
+  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms);
+  else {
+    recording.chunks.push(samples);
+    if (!muted) noteSpeech(false); // a manual recording is a turn in progress
   }
 }
 

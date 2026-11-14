@@ -737,6 +737,11 @@ kbd {
 
 .playback-panel { grid-column: 3; grid-row: 1; justify-self: start; margin: 16px 16px 0 0; }
 .playback-controls { margin: 0; gap: 8px; }
+.playback-interrupt { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer; }
+.playback-interrupt input { margin: 0; accent-color: var(--accent); }
+#level-meter.muted { background: #fff; }
+#level-meter.muted .meter-fill, #level-meter.muted .meter-peak,
+#level-meter.muted .meter-threshold { visibility: hidden; }
 .playback-controls .row-btn:disabled { opacity: 0.35; cursor: default; border-color: var(--border); }
 .playback-panel .level { width: 100%; align-self: center; }
 .playback-timeline input { width: 100%; margin: 0; accent-color: var(--accent); }

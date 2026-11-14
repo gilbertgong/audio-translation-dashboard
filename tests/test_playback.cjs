@@ -144,6 +144,90 @@ assert.equal(run("player.currentTime"), 0);
 element("playback-pause").click();
 assert.equal(run("player.paused"), false);
 run("stopPlayback()");
+// Disallowing interruptions suppresses only microphone samples during received audio playback.
+run(`
+  I18n.change('en');
+  allowInterruptToggle.checked = false;
+  speedInputs[1].value = '1';
+  const protectedSpeech = fixture('english', false);
+  protectedSpeech.audio.pieces = []; protectedSpeech.audio.seconds = 0;
+  speakTranslation(protectedSpeech.row, protectedSpeech.btn, protectedSpeech.text, protectedSpeech);
+`);
+assert.equal(run("micInputSuppressed()"), false); // initial network buffering
+run(`
+  protectedSpeech.audio.pieces.push(new Float32Array(24000)); protectedSpeech.audio.seconds = 1;
+  protectedSpeech.audio.listeners.forEach(fn => fn());
+`);
+assert.equal(run("micInputSuppressed()"), false); // existing scheduling lead, no mute pre-roll
+assert.equal(run("micInputSuppressed(0.1)"), true); // unused optional offset looks ahead, in seconds
+run("speech.ctx.currentTime = 0.1");
+assert.equal(run("micInputSuppressed()"), true);
+assert.equal(run("micInputSuppressed(-0.1)"), false);
+run(`
+  const manualMic = {chunks: [], splitter: null};
+  const micBlock = new Float32Array([0.5, -0.5]);
+  microphoneBlock(manualMic, micBlock);
+  noteSpeech(true); noteSpeech(true, 'capture');
+`);
+assert.equal(run("manualMic.chunks[0].every(sample => sample === 0)"), true);
+assert.equal(run("manualMic.chunks[0].length"), 2); // preserve time, don't concatenate around the mute
+assert.equal(run("speech.item === protectedSpeech"), true);
+assert.equal(run("speechQueue.length"), 0); // neither mic nor capture interrupts
+const meterClasses = new Map();
+element('level-meter').classList.toggle = (name, enabled) => meterClasses.set(name, enabled);
+run("drawMeter(0)");
+assert.equal(meterClasses.get('muted'), true);
+assert.equal(element('level-db').textContent, 'Muted');
+run(`
+  const continuousMic = {splitter: createSegmentSplitter(1000), chunks: []};
+  continuousMic.splitter.calibrating = false;
+  microphoneBlock(continuousMic, new Float32Array(100).fill(0.5));
+  const video = createSegmentSplitter(1000, 'captured audio', 'capture');
+  video.calibrating = false; video.noiseDb = -60;
+  segmentSplitterBlock(video, new Float32Array(100).fill(0.1), 0.1);
+`);
+assert.equal(run("continuousMic.splitter.speaking"), false);
+assert.equal(run("video.speaking"), true); // captured input remains live
+element('playback-pause').click();
+assert.equal(run("micInputSuppressed()"), false);
+run("microphoneBlock(manualMic, new Float32Array([0.25]))");
+assert.equal(run("manualMic.chunks.at(-1)[0]"), 0.25);
+element('playback-pause').click();
+assert.equal(run("micInputSuppressed()"), true);
+run("speech.ctx.currentTime = 1.1; drawMeter(0)");
+assert.equal(run("micInputSuppressed()"), false); // no mute post-roll, even before final stream EOF
+assert.equal(run("micInputSuppressed(-0.1)"), true); // can query an earlier playback time
+assert.equal(meterClasses.get('muted'), false);
+run(`
+  speech.ctx.currentTime = 2;
+  protectedSpeech.audio.pieces.push(new Float32Array(24000)); protectedSpeech.audio.seconds = 2;
+  protectedSpeech.audio.listeners.forEach(fn => fn());
+`);
+assert.equal(run("micInputSuppressed()"), true); // streaming resumes after the network gap
+run("allowInterruptToggle.checked = true");
+assert.equal(run("micInputSuppressed()"), false); // option can be changed during playback
+run("allowInterruptToggle.checked = false");
+run("protectedSpeech.audio.done = true; protectedSpeech.audio.listeners.forEach(fn => fn()); speech.ctx.currentTime = 3; speech.ctx.sources.at(-1).onended();");
+assert.equal(run("micInputSuppressed()"), false);
+run("speakTranslation(protectedSpeech.row, protectedSpeech.btn, protectedSpeech.text, protectedSpeech); speech.ctx.currentTime = 0.1;");
+element('playback-stop').click();
+assert.equal(run("micInputSuppressed()"), false);
+const originalConsole = sandbox.console;
+sandbox.console = { ...console, error() {} }; // expected stream failure below
+run(`
+  const failedSpeech = fixture('english', false);
+  speakTranslation(failedSpeech.row, failedSpeech.btn, failedSpeech.text, failedSpeech);
+  speech.ctx.currentTime = 0.1;
+  failedSpeech.audio.error = new Error('stream failed');
+  failedSpeech.audio.listeners.forEach(fn => fn());
+`);
+sandbox.console = originalConsole;
+assert.equal(run("micInputSuppressed()"), false);
+let storedInterrupt;
+sandbox.localStorage.setItem = (key, value) => { if (key === 'allowTranslatorInterrupt') storedInterrupt = value; };
+element('allow-interrupt').events.change();
+assert.equal(storedInterrupt, 'false');
+run("allowInterruptToggle.checked = true");
 
 // Pausing during buffering holds newly arriving streamed audio too.
 run(`

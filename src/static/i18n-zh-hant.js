@@ -1,5 +1,8 @@
 // Traditional Chinese interface catalog. Keep keys and named placeholders aligned with i18n-zh.js.
 const UI_ZH_HANT = {
+  "Allow Interrupting Translator": "允許打斷翻譯朗讀",
+  "Allow speech to interrupt the translator. When off, microphone input is muted during translation playback. Interruption can be unreliable on mobile because echo cancellation varies.": "允許說話打斷翻譯朗讀。關閉後，朗讀翻譯時將靜音麥克風輸入。行動裝置的回音消除效果不一，打斷功能可能不可靠。",
+  "Muted": "已靜音",
   "Coordinator": "協調服務",
   "Coordinator is reachable.": "協調服務可連線。",
   "Waiting for Coordinator": "正在等待協調服務",

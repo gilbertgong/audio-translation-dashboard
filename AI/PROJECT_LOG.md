@@ -764,3 +764,33 @@ cover isolated loading, normal layering, and backend URL derivation.
   transcripts remain intact; a truncated tail with no remaining whitespace supplies no context.
 - Focused context/recovery, JavaScript syntax and whitespace checks passed, including Chinese
   comma/space boundaries, long unspaced text, unchanged short Chinese and Unicode byte limits.
+
+## 2026-11-14: Optional uninterrupted translation playback with microphone suppression
+
+- Added Allow Interrupting Translator as a native checkbox directly above the Playback speed controls,
+  enabled initially and saved in browser local storage. Tooltip explains inconsistent mobile AEC;
+  Simplified and Traditional Chinese labels, tooltip and Muted indicator are included.
+- When disabled, neither source interrupts automatic TTS. Microphone input blocks arriving during
+  received translation audio playback become zeros before detection, storage and metering; duration
+  is preserved. Captured audio continues normally. The mic meter turns white and reads Muted.
+- Existing PCM interval start/end times determine playback activity. Generation/buffering, scheduling
+  lead, network gaps, pause, stop, completion and errors leave input available. No added mute padding,
+  scheduled gain, device mute, mobile detection or AudioContext lifecycle refactor. The user accepted
+  this browser-thread approach rather than sample-accurate cross-clock synchronization.
+- Playback/microphone, context/recovery and localization suites, JS syntax and whitespace passed.
+  Checks cover suppressed manual/continuous input, active capture, pause/resume, streaming gaps,
+  end/stop/error cleanup, option changes, preference persistence/blocked storage and meter feedback.
+  No layout tests, inference services, physical audio or real mobile echo-quality tests were run.
+
+## 2026-11-14: Mobile interruption default and internal offset support
+
+- At user request, default Allow Interrupting Translator to unchecked on mobile, checked on desktop.
+  Saved browser preference overrides detection, including a mobile user choosing to allow interruption.
+  Mobile hints, common phone/tablet user agents and desktop-mode iPad touch/platform signals supply
+  a best-effort default; storage failure keeps that platform default.
+- Added offsetSeconds = 0 to internal microphone-suppression/playback-activity checks. Positive
+  offsets query ahead on the playback clock, negative offsets query back. Production uses zero;
+  no config or UI added, and no actual mute padding introduced.
+- Playback, context/recovery, localization, JS syntax and whitespace checks passed, including mobile
+  and desktop defaults, preference overrides, blocked storage and both offset signs. No physical
+  mobile audio test, model inference or service changes. Still uncommitted.

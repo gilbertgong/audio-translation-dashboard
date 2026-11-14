@@ -1,5 +1,8 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
+  "Allow Interrupting Translator": "允许打断翻译朗读",
+  "Allow speech to interrupt the translator. When off, microphone input is muted during translation playback. Interruption can be unreliable on mobile because echo cancellation varies.": "允许说话打断翻译朗读。关闭后，朗读翻译时将静音麦克风输入。移动设备的回声消除效果不一，打断功能可能不可靠。",
+  "Muted": "已静音",
   "Coordinator": "协调服务",
   "Coordinator is reachable.": "协调服务可访问。",
   "Waiting for Coordinator": "正在等待协调服务",

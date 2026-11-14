@@ -45,6 +45,11 @@ recipes good.
 
 ## Results so far
 
+- Playback's **Allow Interrupting Translator** option remembers the browser choice (mobile defaults
+  off, desktop on). When off, speech does not interrupt translation playback and microphone blocks become
+  silence while received audio plays. White/Muted mic indicator; captured audio stays active.
+  Existing scheduled PCM intervals drive this browser-thread check, without mute padding or clock changes.
+
 - Whisper transcripts join `segments[].text` directly for display, translation and prompt context;
   raw responses remain untouched. No prompt-specific newline removal or whitespace normalization.
 

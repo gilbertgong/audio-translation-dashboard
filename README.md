@@ -55,6 +55,12 @@ local execution example. This extracted path still needs target-machine verifica
   independently of the languages being translated. The conversation areas ask browser automatic
   translation to leave their bilingual content intact.
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
+- **Allow Interrupting Translator**, above the playback speed controls, defaults to unchecked on mobile
+  and checked on desktop; a saved browser choice takes precedence. Turn it off if speaker audio causes unwanted interruptions, especially
+  on mobile: detected speech won't pause the translator, and microphone input is treated as silence
+  while translation audio plays. The mic meter turns white and reads **Muted**. Captured audio
+  continues normally. Pause or stop playback to speak; generation/buffering and playback gaps leave
+  the microphone available. There is no added mute pre/post-roll.
 - The **Coordinator** light shows whether the application backend is reachable, independently of the
   three inference-engine lights, using the same health response. Even if all engines report down,
   a successful response means Coordinator is alive. Live transcription, translation and speech wait when

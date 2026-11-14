@@ -86,6 +86,13 @@ Mention a risk once at most.
 
 ### Transcription context and turn timing
 
+The user accepted lightweight, sequential microphone suppression when **Allow Interrupting
+Translator** is off. Keep the checkbox above playback speed controls, with a white/Muted mic meter.
+Use existing playback state; no mute pre/post-roll, clock mapping, device mute or AudioContext
+refactor is needed. Captured audio must stay active. Mobile defaults to interruption disabled,
+desktop enabled; a saved browser choice takes precedence. Keep the internal playback-time offset
+argument defaulted to zero and unused in production, with no config or UI around it.
+
 For Live transcription context, reuse the turn-detection speech clock and pause calculation with
 `turn_pause_ms`, separately per audio source. Processing/queue delays must not define turns; TTS
 playback does not reset context. Keep muted captured-video transcription context independent of

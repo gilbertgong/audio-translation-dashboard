@@ -5,7 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const Clock = require("./helpers/fake_clock.cjs");
 
-function fixture() {
+function fixture({ savedInterrupt = null, storageBlocked = false, browser = {} } = {}) {
   const clock = new Clock(), elements = new Map(), calls = [], listeners = new Set();
   class Element {
     constructor() {
@@ -51,8 +51,11 @@ function fixture() {
     Float32Array, Uint8Array, DataView, TextDecoder, TextEncoder, Audio,
     URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
     performance: { now: () => clock.now },
-    localStorage: { getItem() { return null; }, setItem() {} },
-    navigator: {}, window: { addEventListener() {}, dispatchEvent() {} },
+    localStorage: {
+      getItem(key) { if (storageBlocked) throw new Error('storage blocked'); return key === 'allowTranslatorInterrupt' ? savedInterrupt : null; },
+      setItem() {},
+    },
+    navigator: browser, window: { addEventListener() {}, dispatchEvent() {} },
     document: { getElementById: element, createElement: () => new Element(), querySelector: element,
       querySelectorAll: () => [], addEventListener() {}, body: new Element(), documentElement: {} },
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
@@ -90,6 +93,19 @@ function stream(chunks = [], error = null) {
 }
 
 (async () => {
+  assert.equal(fixture().run("allowInterruptToggle.checked"), true);
+  assert.equal(fixture({savedInterrupt:'false'}).run("allowInterruptToggle.checked"), false);
+  assert.equal(fixture({storageBlocked:true}).run("allowInterruptToggle.checked"), true);
+  for (const browser of [
+    {userAgentData:{mobile:true}}, {userAgent:'iPhone'}, {userAgent:'iPad'},
+    {userAgent:'Android', userAgentData:{mobile:false}}, {platform:'MacIntel', maxTouchPoints:5},
+  ]) {
+    assert.equal(fixture({browser}).run("allowInterruptToggle.checked"), false);
+    assert.equal(fixture({browser, storageBlocked:true}).run("allowInterruptToggle.checked"), false);
+    assert.equal(fixture({browser, savedInterrupt:'true'}).run("allowInterruptToggle.checked"), true);
+  }
+  assert.equal(fixture({browser:{userAgentData:{mobile:false}, platform:'MacIntel', maxTouchPoints:0}})
+    .run("allowInterruptToggle.checked"), true);
   { const f = fixture();
     assert.equal(f.run("transcriptTail('prefix '.repeat(40) + 'I think…')"), 'prefix '.repeat(13) + 'I think…');
     assert.equal(f.run("transcriptTail('a'.repeat(150))"), ''); // no partial oversized word
