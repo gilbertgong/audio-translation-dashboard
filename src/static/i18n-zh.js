@@ -1,5 +1,12 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
+  "Coordinator": "协调服务",
+  "Coordinator is reachable.": "协调服务可访问。",
+  "Waiting for Coordinator": "正在等待协调服务",
+  "Coordinator error: {error}": "协调服务错误：{error}",
+  "Coordinator access requires attention.": "请检查协调服务的访问权限。",
+  "Coordinator request failed ({status})": "协调服务请求失败（{status}）",
+  "Unexpected Coordinator response.": "协调服务返回了意外响应。",
   "{tab} (best), with {tabAudio} on: just that tab's sound, e.g. a YouTube video or a meeting in the browser. {mute} (tick it before capturing) silences it for you while it's still captured, so you hear only the translations.": "{tab}（推荐），开启{tabAudio}：仅接收该标签页的声音，例如 YouTube 视频或浏览器中的会议。在捕获前勾选{mute}，可在继续捕获的同时将其静音，让您只听到翻译。",
   "{screen}, with {systemAudio} on: everything your computer plays (Windows), e.g. a meeting app. This includes the spoken translations.": "{screen}，开启{systemAudio}：接收计算机播放的所有声音（Windows），例如会议应用。其中也包括朗读的翻译。",
   "A {window} shares no sound in most browsers.": "在大多数浏览器中，{window}不共享声音。",

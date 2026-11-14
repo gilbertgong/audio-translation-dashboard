@@ -77,7 +77,7 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 - **Capture audio** (a sidebar in the left margin; the main area keeps its size when there's room, and the sidebar moves above it on narrow screens): translates the sound of a browser tab, a window or the whole system instead of the microphone. It uses the browser's screen sharing (`getDisplayMedia`) in reverse: you share with the page, and it listens; the video is requested tiny and unused, and the audio comes unprocessed (no echo cancellation, noise suppression or gain control). A meter per channel, matching the microphone/playback meter styles, with L/R labels and dB values on the same row (M for mono); until one is chosen, the first channel with sound is (left if both start together), and clicking a meter switches. The chosen channel goes, mono, through the same pipeline as Continuous Audio Mode; its rows are noted "captured audio". **Mute captured tab**, a checkbox ticked before capturing (browsers honour `suppressLocalAudioPlayback` only when capture starts; it's locked while capturing), stops a captured tab playing here while it's still captured, so only the translations are heard; automatic playback then talks over it, waiting only for the microphone. The microphone and a capture can run at the same time (each has its own recording session, segment splitting and meters: the one by Start Recording is the microphone's, the sidebar's are the capture's; the status line notes "capturing too"); an experiment, to see how the pipeline copes. The code that made them exclusive is kept, commented out. A `?` explains which share choice gives sound (a tab with tab audio, or the entire screen with system audio; a window gives none).
 - **Playback** sits opposite Capture audio, to the right of the conversation. Matching icon buttons restart the current clip, pause/resume, stop and clear all queued audio, or skip to the next queued clip. Pausing holds streamed audio and the queue without interrupting capture or translation; automatic speech interruption does not override a user pause. Status shows buffering/speaking/paused/idle, target language, and queued clip count/duration. A seek bar shows elapsed/total clip time; a trailing + marks a duration still growing as audio streams in. Seeking uses the received audio and keeps a user pause in place. Timeline time follows the original clip duration, independent of playback speed. An analyser measures playback output in dBFS using the microphone meter colors (also for recorded-row playback). Separate sliders named for the configured languages set live translation playback speed from 0.75× to 1.5×, remembered in browser storage. Changes apply at the current audio position, including paused clips. A browser-side WSOLA prototype changes duration while preserving pitch; at 1× samples bypass processing. Queue duration reflects speed. On narrow screens both side panels move above the conversation.
 - **Controls:** Start/Stop (or Space), the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status row and the microphone's level meter aligned under the Activity column. The status row has three independent, unlabeled indicators separated by light dividers (position says which is which; tooltips spell them out): the capture (left) and the mic (middle) each show their source's state (off, calibrating, listening, speech, or recording; for the capture, "no sound yet" until a channel is chosen) and how many of its segments are still being translated; playback (right) shows what is playing, how many translations are queued for a pause, or whether automatic playback is on.
-- **Server status:** in the header, a dot per server — Transcribe, Translate, Speak — green (ok), amber (loading: llama-server while it loads its model), red (down), from `/api/health` every 10 s; the tooltip names the server, its address and what the check found.
+- **Server status:** the header shows Coordinator reachability separately from Transcribe, Translate and Speak engine health. Engine lights are green (ok), amber (loading), red (down), from `/api/health` every 10 s when ready or 2 s otherwise; tooltips show server details. The same health response determines Coordinator reachability, regardless of engine states.
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
 - **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a segment was split, temporary recording status, or the saved path when retention is enabled).
 
@@ -140,14 +140,52 @@ window.HeaderCustom = {
 
 Defaults own the page dropdown, `#ui-language` button and `#services` display. A replacement controls
 renderer can call the default or provide a `button#ui-language` to retain automatic language behavior.
-A replacement status bar can call its default or provide `#services` for shared polling; omit it to
-opt out of default polling. A fully replaced bar is also responsible for its navigation. Branding
+A replacement status bar can call its default or provide `#services` for the default status display;
+leaving it out hides the lights. Shared health polling continues independently of header customization
+so Live recovery still works when the lights are omitted. A fully replaced bar is also
+responsible for its navigation. Branding
 need not contain an h1; mock badges attach to the branding container. Custom renderers execute before
 DOMContentLoaded, so i18n can bind authored markers; dynamic copy can use `I18n.text`/`I18n.attr`.
 Maintain both catalogs for deployment-specific UI copy, and preserve keyboard/accessibility behavior.
 
 `node tests/test_header.cjs` checks section replacement/extension, page links, localization, keyboard
 dismissal, polling ownership/cleanup and legacy links without live engines.
+
+#### Live fetch retries and Coordinator
+
+`coordinator.js` owns the single `GET /api/health` poll in each application page. The header subscribes
+to its result for all four lights; it does not issue a second health request. A successful health reply
+marks Coordinator up even when all three engines report down. If the health request fails, engine
+status becomes unknown. There is no separate liveness endpoint or engine-free probe.
+
+Health requests bypass browser caching and inference queues, have a 5 s timeout, and run every 10 s
+when Coordinator and all engines are ready, or every 2 s otherwise. Concurrent checks are coalesced.
+Page exit cancels polling and waiting work. Redirects, unexpected replies and non-transient statuses
+(including 401/403) fail waiting requests visibly rather than masquerading as an indefinite outage.
+
+Live's existing `pageFetch(url, options = {})` contains the retry loop. Only `/api/recordings`,
+`/api/translate` and `/api/speak` are eligible: at most three fetch attempts for browser network errors and HTTP
+502/503/504, with 1 s/3 s delays. Before an eligible attempt, it waits for Coordinator reachability;
+waiting consumes no attempt. A failed probe does not cancel an already-running fetch. Retryable
+failures prompt a fresh health check, and navigation/caller cancellation stops further attempts.
+Other HTTP responses are returned unchanged. Discarded retry responses are cancelled; the final
+response or exception is passed back to the existing caller.
+
+There are no caller signature changes, new request options, progress callbacks or stage wrappers.
+The existing service queues still surround their original operations, so an operation keeps its
+place while pageFetch waits/retries. Upload response parsing, translation stream reading and existing
+row/error handling are unchanged. Automatic recovery stops when fetch returns a response: subsequent
+JSON/read/stream failures do not cause another request, even if no translation text or audio has appeared.
+No per-row retry counters or waiting labels are added; normal pending rows and the Coordinator
+indicator remain the UI feedback. Language recheck is excluded because an earlier attempt may have
+already consumed its temporary recording, leaving a retry unable to find it despite a lost response.
+Text/component-test operation policies remain unchanged, and there is no manual Re-fetch.
+
+A retry may duplicate inference if its response was lost; this bounded tradeoff introduces no
+exactly-once protocol or persistent audio storage. `tests/test_recovery.cjs` exercises the actual
+pageFetch/upload helpers with deterministic time/network stand-ins, including the explicit absence
+of body-read replay. `tests/test_coordinator.cjs` and `tests/test_header.cjs` cover the shared poll,
+including successful replies with every engine down and no duplicate requests for header rendering.
 
 #### Interface language
 

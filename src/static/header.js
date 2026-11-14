@@ -77,39 +77,35 @@
     (window.HeaderCustom?.[name] || defaults[name])(container, context);
   }
 
-  // Every page reports engine health independently; it does not start or stop engines.
-  // A fully replaced status bar may omit #services to opt out of the default polling.
+  // The shared health poll supplies both reachability and engine states.
+  // Custom status bars may omit #services without affecting fetch retries.
   const services = host.querySelector("#services");
   // Restore a fresh page rather than reviving closed audio resources from the back/forward cache.
   window.addEventListener("pageshow", (event) => { if (event.persisted) window.location.reload(); });
   if (!services) return;
   const labels = { stt: "Transcribe", llm: "Translate", tts: "Speak" };
-  for (const label of Object.values(labels)) services.append(node("span", "service", label));
-  const lifetime = new AbortController();
-  let timer;
-  async function checkServices() {
-    const signal = lifetime.signal;
-    let allOk = false;
-    try {
-      const response = await fetch("/api/health", { signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const result = await response.json();
-      if (signal.aborted) return;
-      services.replaceChildren(...result.services.map((service) => {
+  const coordinator = node("span", "service", "Coordinator");
+  let engines = Object.values(labels).map((label) => node("span", "service", label));
+  services.append(coordinator, ...engines);
+  Coordinator.subscribe(({ state, error, services: health }) => {
+    coordinator.className = `service ${state === "up" ? "ok" : state === "unknown" ? "loading" : "down"}`;
+    I18n.attr(coordinator, "title", error
+      ? I18n.msg("Coordinator error: {error}", { error: I18n.errorText(error) })
+      : I18n.msg(state === "up" ? "Coordinator is reachable." : "Waiting for Coordinator"));
+    if (health) {
+      engines = health.map((service) => {
         const item = node("span", `service ${service.state}`, labels[service.role] || service.role);
         item.title = `${service.name} at ${service.url}: ${service.state} (${service.detail})`;
         return item;
-      }));
-      allOk = result.services.every((service) => service.state === "ok");
-    } catch (err) {
-      if (signal.aborted) return;
-      for (const item of services.children) {
+      });
+      services.replaceChildren(coordinator, ...engines);
+    } else if (state !== "unknown") {
+      for (const item of engines) {
         item.className = "service";
-        I18n.attr(item, "title", I18n.msg("Dashboard not reachable: {error}", { error: I18n.errorText(err) }));
+        I18n.attr(item, "title", error
+          ? I18n.msg("Coordinator error: {error}", { error: I18n.errorText(error) })
+          : I18n.msg("Waiting for Coordinator"));
       }
     }
-    if (!signal.aborted) timer = setTimeout(checkServices, allOk ? 10000 : 2000);
-  }
-  window.addEventListener("pagehide", () => { lifetime.abort(); clearTimeout(timer); });
-  checkServices();
+  });
 })();

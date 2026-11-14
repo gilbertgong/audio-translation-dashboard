@@ -9,9 +9,33 @@ const activityToggle = document.getElementById("activity-toggle");
 const pageLifetime = new AbortController();
 
 // Navigation cancels requests, including speech with its own cancellation signal.
-function pageFetch(url, options = {}) {
-  return fetch(url, { ...options, signal: options.signal
-    ? AbortSignal.any([pageLifetime.signal, options.signal]) : pageLifetime.signal });
+async function pageFetch(url, options = {}) {
+  const signal = options.signal
+    ? AbortSignal.any([pageLifetime.signal, options.signal]) : pageLifetime.signal;
+  // Recheck is excluded: a previous attempt may have consumed its temporary recording,
+  // leaving a retry unable to find it even if the first response never reached the browser.
+  const retry = url === "/api/recordings" || url === "/api/translate" || url === "/api/speak";
+  for (let attempt = 0; ; attempt++) {
+    if (retry) await Coordinator.wait(signal);
+    signal.throwIfAborted();
+    try {
+      const response = await fetch(url, { ...options, signal });
+      signal.throwIfAborted();
+      if (!retry || ![502, 503, 504].includes(response.status) || attempt === 2) return response;
+      await response.body?.cancel().catch(() => {});
+    } catch (err) {
+      if (signal.aborted || err.name === "AbortError" || !(err instanceof TypeError)
+          || !retry || attempt === 2) throw err;
+    }
+    Coordinator.check();
+    await new Promise((resolve, reject) => {
+      const aborted = () => { clearTimeout(timer); reject(signal.reason); };
+      const timer = setTimeout(() => { signal.removeEventListener("abort", aborted); resolve(); },
+        attempt === 0 ? 1000 : 3000);
+      signal.addEventListener("abort", aborted, { once: true });
+      if (signal.aborted) aborted();
+    });
+  }
 }
 
 let targetSampleRate = 16000;

@@ -1,5 +1,12 @@
 // Traditional Chinese interface catalog. Keep keys and named placeholders aligned with i18n-zh.js.
 const UI_ZH_HANT = {
+  "Coordinator": "協調服務",
+  "Coordinator is reachable.": "協調服務可連線。",
+  "Waiting for Coordinator": "正在等待協調服務",
+  "Coordinator error: {error}": "協調服務錯誤：{error}",
+  "Coordinator access requires attention.": "請檢查協調服務的存取權限。",
+  "Coordinator request failed ({status})": "協調服務請求失敗（{status}）",
+  "Unexpected Coordinator response.": "協調服務傳回非預期的回應。",
   "{tab} (best), with {tabAudio} on: just that tab's sound, e.g. a YouTube video or a meeting in the browser. {mute} (tick it before capturing) silences it for you while it's still captured, so you hear only the translations.": "{tab}（推薦），開啟{tabAudio}：僅接收該分頁的聲音，例如 YouTube 影片或瀏覽器中的會議。在擷取前勾選{mute}，可在繼續擷取的同時將其靜音，讓您只聽到翻譯。",
   "{screen}, with {systemAudio} on: everything your computer plays (Windows), e.g. a meeting app. This includes the spoken translations.": "{screen}，開啟{systemAudio}：接收電腦播放的所有聲音（Windows），例如會議應用。其中也包括朗讀的翻譯。",
   "A {window} shares no sound in most browsers.": "在大多數瀏覽器中，{window}不分享聲音。",
