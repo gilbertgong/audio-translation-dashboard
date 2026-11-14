@@ -171,8 +171,8 @@ that proof. Do not start real inference stacks or change a target host without u
   response means Coordinator is alive even if all engines are down; do not add a separate liveness
   endpoint or duplicate header polling. Keep health checks outside service queues. Keep Live automatic retries inside
   pageFetch(url, options = {}), preserving its signature and existing caller/queue/parsing structure.
-  Retry initial upload/translation fetch failures and 502/503/504 only, at most three attempts. Do not
-  expand this to stage wrappers, body-read/stream replay, rechecks, speech or new Text/component-test
+  Retry initial upload/translation/speech fetch failures and 502/503/504 only, at most three attempts. Do not
+  expand this to stage wrappers, body-read/stream replay, rechecks or new Text/component-test
   recovery without explicit direction. Cancellation/access/input failures must not cause retries.
 - Keep the shared browser-side header in `header.js`/`header.css`; the three application pages load
   `header-custom.js` before the shared renderer. Use its branding, controls and statusBar hooks for

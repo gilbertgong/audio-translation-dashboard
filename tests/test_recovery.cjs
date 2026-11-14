@@ -113,10 +113,24 @@ function stream(chunks = [], error = null) {
     assert.equal(await f.run("pageFetch('/api/translate')"), response);
     assert.equal(f.calls.length, 1);
   }
-  for (const url of ["/api/recordings/recheck", "/api/speak", "/api/health"]) {
+  for (const url of ["/api/recordings/recheck", "/api/health"]) {
     const f = fixture(); f.network(async () => json(503));
     assert.equal((await f.run(`pageFetch('${url}')`)).status, 503);
     assert.equal(f.calls.length, 1);
+  }
+  { const f = fixture(); let count = 0; const audio = stream([], new TypeError("audio body lost"));
+    f.network(async () => { count++; if (count === 1) throw new TypeError("network"); return count === 2 ? json(503) : audio; });
+    const result = f.run("pageFetch('/api/speak', {method:'POST', body:'speech input'})");
+    await f.clock.flush(); await f.clock.advance(1000); await f.clock.advance(3000);
+    assert.equal(await result, audio); assert.equal(f.calls.length, 3);
+    assert.ok(f.calls.every((call) => call.options.body === "speech input"));
+    await assert.rejects(audio.body.getReader().read(), TypeError);
+    await f.clock.advance(10000); assert.equal(f.calls.length, 3); // no replay after audio response returned
+  }
+  { const f = fixture(); f.network(async () => json(503));
+    const cancelled = assert.rejects(f.run("globalThis.speechController = new AbortController(); pageFetch('/api/speak', {signal:speechController.signal})"), { name: "AbortError" });
+    await f.clock.flush(); f.run("speechController.abort()"); await cancelled;
+    await f.clock.advance(10000); assert.equal(f.calls.length, 1);
   }
   // Final HTTP response and original caller's error/body contract are unchanged.
   { const f = fixture(); const response = json(503, { error: "last error", file: "recording.wav" });

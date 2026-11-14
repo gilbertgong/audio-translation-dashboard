@@ -163,8 +163,8 @@ when Coordinator and all engines are ready, or every 2 s otherwise. Concurrent c
 Page exit cancels polling and waiting work. Redirects, unexpected replies and non-transient statuses
 (including 401/403) fail waiting requests visibly rather than masquerading as an indefinite outage.
 
-Live's existing `pageFetch(url, options = {})` contains the retry loop. Only `/api/recordings` and
-`/api/translate` are eligible: at most three fetch attempts for browser network errors and HTTP
+Live's existing `pageFetch(url, options = {})` contains the retry loop. Only `/api/recordings`,
+`/api/translate` and `/api/speak` are eligible: at most three fetch attempts for browser network errors and HTTP
 502/503/504, with 1 s/3 s delays. Before an eligible attempt, it waits for Coordinator reachability;
 waiting consumes no attempt. A failed probe does not cancel an already-running fetch. Retryable
 failures prompt a fresh health check, and navigation/caller cancellation stops further attempts.
@@ -175,10 +175,11 @@ There are no caller signature changes, new request options, progress callbacks o
 The existing service queues still surround their original operations, so an operation keeps its
 place while pageFetch waits/retries. Upload response parsing, translation stream reading and existing
 row/error handling are unchanged. Automatic recovery stops when fetch returns a response: subsequent
-JSON/read/stream failures do not cause another request, even if no translation text has appeared.
+JSON/read/stream failures do not cause another request, even if no translation text or audio has appeared.
 No per-row retry counters or waiting labels are added; normal pending rows and the Coordinator
-indicator remain the UI feedback. The consuming language recheck and speech endpoints are never
-replayed. Text/component-test operation policies remain unchanged, and there is no manual Re-fetch.
+indicator remain the UI feedback. Language recheck is excluded because an earlier attempt may have
+already consumed its temporary recording, leaving a retry unable to find it despite a lost response.
+Text/component-test operation policies remain unchanged, and there is no manual Re-fetch.
 
 A retry may duplicate inference if its response was lost; this bounded tradeoff introduces no
 exactly-once protocol or persistent audio storage. `tests/test_recovery.cjs` exercises the actual

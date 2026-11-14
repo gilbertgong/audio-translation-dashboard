@@ -12,10 +12,10 @@ const pageLifetime = new AbortController();
 async function pageFetch(url, options = {}) {
   const signal = options.signal
     ? AbortSignal.any([pageLifetime.signal, options.signal]) : pageLifetime.signal;
-  // Retry only repeatable initial uploads/translations, never the consuming recheck or speech.
-  const retry = url === "/api/recordings" || url === "/api/translate";
+  // Recheck is excluded: a previous attempt may have consumed its temporary recording,
+  // leaving a retry unable to find it even if the first response never reached the browser.
+  const retry = url === "/api/recordings" || url === "/api/translate" || url === "/api/speak";
   for (let attempt = 0; ; attempt++) {
-    signal.throwIfAborted();
     if (retry) await Coordinator.wait(signal);
     signal.throwIfAborted();
     try {

@@ -673,6 +673,16 @@ DESIGN.md).
   microphone cleanup without an abandoned upload. Browser/server stopped; scratch settings/logs used.
   No layout tests, real inference, GPU, physical microphone, screen capture or release checks run.
 
+## 2026-11-13: Unguessable recording names for rechecks
+
+Recording filenames now include a random 128-bit token, and rechecks require the complete
+returned filename. Timestamp-only names and incorrect tokens cannot consume a pending recording.
+The browser request contract is unchanged; no server-side session tracking was added.
+
+The dashboard also accepts `--standalone-config FILE` to read one complete TOML in isolation.
+Normal layered loading and project-relative path resolution remain unchanged. Offline checks
+cover isolated loading, normal layering, and backend URL derivation.
+
 ## 2026-11-13: Automatic Live fetch retries and Coordinator liveness
 
 - Coordinator reachability uses the existing /api/health reply and has a fourth header light. User
@@ -694,3 +704,11 @@ DESIGN.md).
 - Shared-poll regression checks and isolated mock browser verification passed for all engines down
   with Coordinator up, failed health requests holding uploads, bounded fetch retries and resumed
   downstream translation. The header no longer makes its own duplicate request. Backend API is unchanged.
+
+## 2026-11-13: Include Live speech in fetch retries
+
+- Added /api/speak to the existing pageFetch retry list. Audio stream failures after fetch returns
+  still do not replay speech. Recheck remains excluded: a previous attempt may have consumed its
+  temporary recording even if its response never reached the browser; the code comment explains this.
+- Focused recovery and playback checks, JavaScript syntax and whitespace checks passed, including
+  speech network/503 retries, unchanged request bodies, cancellation and no audio-body replay.

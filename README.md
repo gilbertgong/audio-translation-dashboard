@@ -46,10 +46,10 @@ local execution example. This extracted path still needs target-machine verifica
 - Whisper identifies the spoken language; translations explicitly target the other configured language.
 - The **Coordinator** light shows whether the application backend is reachable, independently of the
   three inference-engine lights, using the same health response. Even if all engines report down,
-  a successful response means Coordinator is alive. Live transcription and translation wait when
+  a successful response means Coordinator is alive. Live transcription, translation and speech wait when
   Coordinator is unavailable.
   Fetch network failures and HTTP 502/503/504 responses get up to three attempts. Failures while
-  subsequently reading JSON or translation streams use existing error handling and are not replayed.
+  subsequently reading JSON, translation streams or audio streams use existing error handling and are not replayed.
   There is no manual Re-fetch button in this version.
 - The header's page dropdown opens **Live translation**, **Text translation**, or **Component tests**.
   These are separate pages: navigating away stops the current page's recording, requests and playback;
