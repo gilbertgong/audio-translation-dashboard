@@ -157,6 +157,8 @@ dir = "models"
 # (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
 # whisper models listed here: https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md#available-models
 model = "large-v3"
+# Silero VAD filters uploaded audio before transcription; shared by all Whisper fragments.
+vad-model = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"
 
 [models.llama]
 # Full URL to a GGUF model file for llama.
@@ -236,7 +238,7 @@ assets = ["whisper-bin-{binary_type}.zip"]
 executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081
-args = ["--language", "auto"]
+args = ["--language", "auto", "--vad"]
 
 # Text-to-speech engines: one is started and used, chosen by [tts] server.
 # They start before llama because llama-server sizes itself to the GPU memory

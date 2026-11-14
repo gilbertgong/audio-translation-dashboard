@@ -18,6 +18,25 @@ loader.exec_module(launcher)
 class ConfigGeneratorTests(unittest.TestCase):
     maxDiff = None
 
+    def test_whisper_recipes_inherit_vad_download_and_startup(self):
+        from common import model_files, starts
+        from run_servers import server_argv
+        defaults, _, _ = launcher.backend_choices()
+        for name, recipe in launcher.load_recipes().items():
+            with self.subTest(recipe=name):
+                cfg = launcher.configuration.merge(defaults, tomllib.loads(launcher.assemble(name, recipe)))
+                cfg["_config_dir"] = ROOT
+                if "remote_host" in recipe:
+                    self.assertFalse(starts(cfg, "whisper"))
+                    continue
+                files = model_files(cfg, "whisper")
+                vad = next(item for item in files if item[0] == "--vad-model")
+                self.assertEqual(vad[2], ROOT / "models/whisper/ggml-silero-v6.2.0.bin")
+                self.assertEqual(vad[1], "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")
+                command = server_argv(cfg, "whisper", cfg["api_servers"]["whisper"], check_files=False)
+                self.assertIn("--vad", command)
+                self.assertEqual(command[command.index("--vad-model") + 1], str(vad[2]))
+
     def test_choices_include_both_kokoro_packages_and_group_tts(self):
         _, groups, _ = launcher.backend_choices()
         self.assertEqual(set(groups), {"Transcription", "Translation", "Speech"})
@@ -78,7 +97,9 @@ class ConfigGeneratorTests(unittest.TestCase):
                 whisper = folder / "weights" / "whisper" / "ggml-large-v3.bin"
                 whisper.parent.mkdir(parents=True)
                 whisper.write_bytes(b"d" * 1000)
-                self.assertEqual(launcher.fragment_resources("custom", data)[0], 1000 / 1e9)
+                self.assertEqual(launcher.fragment_resources("custom", data), (None, None))
+                (whisper.parent / "ggml-silero-v6.2.0.bin").write_bytes(b"v" * 200)
+                self.assertEqual(launcher.fragment_resources("custom", data)[0], 1200 / 1e9)
                 network.assert_not_called()
 
     def test_mixed_local_and_remote_uses_defaults_for_remote(self):

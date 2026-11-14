@@ -27,6 +27,10 @@ Everything runs on your own machine; nothing is sent to the cloud.
 2. **▶ Launch:** downloads the servers and models the first time (this takes a while), then starts everything.
 3. **Open dashboard:** opens <http://localhost:8080/>.
 
+Whisper setups download Silero VAD v6.2.0 and enable it when starting transcription. Existing configs
+that override Whisper `args` need regeneration or `--vad` added; the installed whisper-server must
+support this model. Remote servers need the same setup on their host.
+
 **Mac:** follow [INSTALL_MAC.md](INSTALL_MAC.md).
 
 **Linux/NVIDIA Docker:** see [INSTALL_LINUX.md](INSTALL_LINUX.md) for the service supervisor and

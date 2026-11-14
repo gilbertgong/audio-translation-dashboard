@@ -12,7 +12,6 @@ assets = ["whisper-bin-{binary_type}.zip"]
 executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081
-args = ["--language", "auto"]
 
 [models.whisper]
 model = "large-v3"

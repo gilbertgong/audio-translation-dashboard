@@ -45,6 +45,9 @@ recipes good.
 
 ## Results so far
 
+- Whisper defaults download Silero VAD v6.2.0, pass its model path and enable VAD at startup.
+  Whisper fragments inherit these settings; browser silence detection is unchanged.
+
 - Coordinator reachability has its own header light, derived from the same /api/health reply as the
   engine lights. Successful replies mean Coordinator is alive even with all engines down. Live transcription/translation/speech wait through known outages and automatically retry eligible
   fetch network/502/503/504 failures inside pageFetch, up to three attempts with 1/3 s delays.

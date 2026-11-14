@@ -318,6 +318,13 @@ Both connect to the engine before the response starts, so an unreachable engine 
 
 Stock whisper-server and llama-server binaries from the projects' GitHub releases, run as separate processes. whisper auto-detects the language, so mixed-language speech works.
 
+Whisper inherits Silero VAD v6.2.0 from `defaults.toml`: `[models.whisper].vad-model`
+downloads the GGML model and supplies `--vad-model`; startup args enable `--vad`. Whisper fragments
+inherit both settings. VAD filters speech inside uploaded clips before transcription; browser silence
+splitting is unchanged. Remote (`start = false`) servers must enable VAD themselves. Existing generated
+or local `args` lists replace the defaults, so regenerate or add `--vad` to such overrides. Existing
+Whisper binaries must support Silero v6.2.0; `ensure_version = false` does not upgrade them.
+
 #### Text-to-speech: Kokoro (`kokoro_server.py`)
 
 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) v1.1 is an 82M-parameter model built on StyleTTS 2 (without its diffusion stage), with 103 voices: 3 English, 100 Chinese. It was trained for English and Chinese; the v1.0 fragment provides stock Japanese voices. `kokoro_server.py` (ours, in `src/`) serves it: the model as [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) packages it (fp32 `model.onnx`, `voices.bin`, `tokens.txt`), run with ONNX Runtime, behind [misaki](https://github.com/hexgrad/misaki), Kokoro's own text front end:

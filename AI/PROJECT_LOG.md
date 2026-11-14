@@ -712,3 +712,14 @@ cover isolated loading, normal layering, and backend URL derivation.
   temporary recording even if its response never reached the browser; the code comment explains this.
 - Focused recovery and playback checks, JavaScript syntax and whitespace checks passed, including
   speech network/503 retries, unchanged request bodies, cancellation and no audio-body replay.
+
+## 2026-11-13: Enable Whisper Silero VAD by default
+
+- Added the Silero v6.2.0 GGML model to shared Whisper model defaults and --vad to startup args.
+  Removed redundant Whisper fragment args so recipes inherit the startup setting without duplication.
+  Existing model download/launch plumbing passes --vad-model; no Python or browser changes.
+- Remote servers remain externally managed. Existing explicit args lists override defaults; documented
+  regeneration/manual flag updates and binary compatibility. Browser silence splitting is unchanged.
+- Verification: 10 configuration-generator, 12 Docker-instance and 3 standalone-config checks passed.
+  All TOML parsed; offline previews confirmed VAD flags/model paths for all four shipped Whisper
+  machine instances, including Docker mounts. No models downloaded or inference services started.
