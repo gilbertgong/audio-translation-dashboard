@@ -865,3 +865,62 @@ Changes left uncommitted; no push performed.
 
 Mock device toggle styling: user requested the MOCK badge red/white palette and fixed
 size for both labels. Set 128px by 30px, non-shrinking; no tests for this styling-only edit.
+
+
+## 2026-11-14: szaL16 protocol proposal
+
+At user request, added docs/szaL16.md: brief low-CPU/uncompressed streaming motivation,
+formal change from Zello's Opus payload to audio/L16 mono signed 16-bit big-endian PCM,
+and an adapted copy of the streaming section plus incoming start/stop events. Existing
+four-byte codec_header and binary framing stay unchanged, including the header's LE sample
+rate. Twenty milliseconds is the intended use/example, not a required protocol duration;
+the user explicitly clarified this distinction. Whisper's existing WAV POST is unchanged.
+
+Pinned attribution to upstream revision 4658469e35701994b89e14ef5ab9d69c9c2ee712 and copied
+its MIT license verbatim to docs/zello_LICENSE. Corrected upstream example headers to agree
+with their declared 20 ms packet duration; documented that example adjustment. Broader channel,
+authentication and call workflows remain outside this proposal.
+
+Documentation checks passed: JSON examples parse, decoded headers match durations/rate,
+send/receive sections are present, included license link resolves, and whitespace is clean.
+No application tests run for documentation-only work. No implementation, commit or push.
+
+
+### Generic protocol wording
+
+At user request, removed the application-specific Whisper reference from docs/szaL16.md,
+shortened the unchanged-header description to the original base64 format, removed the
+introductory timing explanation and payload-size arithmetic, and described raw PCM payloads
+by analogy with Zello's container-free Opus frames. Detailed field definitions remain in
+the adapted reference. No protocol behavior or license changes.
+
+
+### Recommend 16 ms packets
+
+User chose 16 ms instead of 20 ms for planned use, aligning with 128-sample blocks at
+16/24/48 kHz. docs/szaL16.md now recommends one 16 ms frame per packet while retaining
+support for other durations; planned reference implementations should default to 16 ms
+and accept other durations. Updated every example/header to gD4BEA== (16 kHz, one 16 ms
+frame). Documentation checks verified JSON examples and decoded headers; no code implemented.
+
+
+### Standalone szaL16 reference code
+
+At user request, added docs/reference/szaL16.mjs (Float32 packetization, start reply handling,
+L16 decoding and basic scheduled Web Audio playback) and docs/reference/szaL16.py (one-stream
+relay, receive-to-WAV and paced WAV-to-stream). Both default to 16 ms, accept other encodable
+durations, preserve the existing codec/binary headers and leave connections/routing to callers.
+No microphone acquisition, product integration, server application or dependencies added.
+
+JS converts directly into big-endian outgoing packets, including arbitrary input-block lengths.
+Python relay sends a header plus a memoryview as fragments of one message, preserving payload
+bytes; WAV conversion uses native bulk byte operations. Final partial packets are silence-padded.
+Reference README documents usage, whole-sample/header representation limits, transport compression,
+backpressure and simple playback limitations. Linked references from docs/szaL16.md.
+
+Added tests/test_szaL16.mjs and tests/test_szaL16.py. Known samples/clipping, endian conversion,
+16/20/32 ms and two-frame packets, partial buffers, start/stop, relay packet IDs/payload reuse,
+disconnect/malformed input and playback scheduling passed. JS-to-Python WAV and Python WAV-to-JS
+interoperability passed using temporary WAVs and in-memory sockets. JS/Python syntax and whitespace
+checks passed. Windows sandbox hung on Python asyncio/subprocess tests; they passed outside it.
+No browser/physical audio/real WebSocket transport tests. No services started, commits or pushes.

@@ -45,6 +45,14 @@ recipes good.
 
 ## Results so far
 
+- `docs/szaL16.md` proposes the Zello stream subset with `audio/L16` mono big-endian PCM,
+  unchanged stream/header formats, and recommended 16 ms packets/examples (not a fixed protocol duration).
+  Includes adapted upstream send/receive reference and `docs/zello_LICENSE`.
+  Standalone JS Float32/send/decode/playback and Python relay/WAV references are in
+  `docs/reference/`, defaulting to 16 ms with other durations supported. Cross-language
+  packet/WAV tests pass; browser, physical audio and real network behavior remain untested.
+  The application is unchanged.
+
 - Mobile Live hides Capture Audio and keyboard hints, defaults Activity collapsed (saved choice
   wins), and starts in push-to-talk mode. Mock Live has a header Mobile/Desktop preview toggle
   that reloads with device defaults, including interruption, without storing those defaults.
