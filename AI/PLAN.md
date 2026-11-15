@@ -15,6 +15,10 @@ Mac).
 
 ## Current direction
 
+Vendored microweb now matches upstream 490b0ef, including shared HTTPS/local-HTTP origin
+checks for mutation requests and WS upgrades. Browser-origin integration checks cover the
+audio endpoint and HTTP input validation without inference; see DESIGN's transport provenance.
+
 The root README is a concise introduction and getting-started guide, with links to existing
 detailed documentation. Keep implementation/edge-case/release detail in its supporting docs;
 see MEMORY.md for the README scope rule.

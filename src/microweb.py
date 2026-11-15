@@ -280,6 +280,20 @@ class _WebSocketError(Exception):
         self.code, self.reason = code, reason
 
 
+def _allowed_origin(origin, host):
+    """Match HTTPS hosts, with HTTP exceptions for explicit loopback names."""
+    try:
+        parsed = urllib.parse.urlsplit("//" + host)
+        if (not parsed.hostname or parsed.username is not None or parsed.password is not None
+                or parsed.path or parsed.query or parsed.fragment):
+            return False
+        parsed.port  # reject malformed ports as well as malformed IPv6 brackets
+    except ValueError:
+        return False
+    return (origin == "https://" + host or
+            (parsed.hostname in {"localhost", "127.0.0.1", "::1"} and origin == "http://" + host))
+
+
 def _ws_close_code(code):
     return type(code) is int and (code in (1000, 1001, 1002, 1003, 1007, 1008,
                                            1009, 1010, 1011, 1012, 1013, 1014)
@@ -864,7 +878,7 @@ class App:
                 return self._websocket_handshake(req)
             if self.same_origin and req.method not in ("GET", "HEAD", "OPTIONS"):
                 origin = req.headers.get("Origin")
-                if origin and origin != "http://" + req.headers.get("Host", ""):
+                if origin and not _allowed_origin(origin, req.headers.get("Host", "")):
                     raise HTTPError(403, "cross-origin request refused")
             handlers = self.routes.get(req.path)
             if handlers:
@@ -919,7 +933,7 @@ class App:
         if allowed_origins is not None:
             if origin not in allowed_origins:
                 raise HTTPError(403, "WebSocket origin not allowed")
-        elif self.same_origin and origin and origin != "http://" + req.headers.get("Host", ""):
+        elif self.same_origin and origin and not _allowed_origin(origin, req.headers.get("Host", "")):
             raise HTTPError(403, "cross-origin WebSocket refused")
         try:
             key = req.headers.get("Sec-WebSocket-Key", "")

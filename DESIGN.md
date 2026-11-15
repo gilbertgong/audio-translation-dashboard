@@ -859,8 +859,13 @@ The project's history (milestones, measurements and the reasons behind decisions
 
 ### Vendored transport provenance
 
-`src/microweb.py` was copied unchanged from
-[gilbertgong/microweb main at de9fefb](https://github.com/gilbertgong/microweb/blob/de9fefb02b19dc30620be498998f73e07debba1d/microweb.py)
-for WebSocket support, including its embedded BSD notice. The user subsequently updated
-its version line; that edit is preserved. This revision includes the
-receive-copy optimization. Updating a consumer copy remains a deliberate maintenance action.
+`src/microweb.py` is copied unchanged from
+[gilbertgong/microweb main at 490b0ef](https://github.com/gilbertgong/microweb/blob/490b0ef6df1500ad88c08f9de47e66df26a3bd77/microweb.py),
+including its embedded BSD notice and v0.2.1 version line. It retains WebSocket support and
+the receive-copy optimization and includes upstream PR #3's shared HTTP/WebSocket origin policy.
+Origin-bearing mutation requests and WS upgrades accept an exact `https://` plus Host match;
+HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, with exact host/port matching.
+This supports TLS termination when the proxy preserves the public Host. Forwarded headers
+are not automatically trusted. Explicit WS origin allowlists override the default; missing-Origin
+behavior and `same_origin=False` are unchanged. Non-local HTTP origins are rejected by default.
+Updating a consumer copy remains a deliberate maintenance action.

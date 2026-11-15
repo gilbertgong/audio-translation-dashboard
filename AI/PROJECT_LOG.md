@@ -1133,6 +1133,24 @@ detail, and README edits only when introductory guidance changes. Verified local
 anchors, first-use button wording and whitespace. Documentation-only change; no runtime
 tests or service changes. Uncommitted; no push.
 
+### 2026-11-15 — Vendor shared HTTPS/local-HTTP origin checks
+
+Updated src/microweb.py byte-for-byte from upstream 490b0ef6df1500ad88c08f9de47e66df26a3bd77,
+the merge of gilbertgong/microweb PR #3, on a fresh branch from public main cca6d9a.
+The shared default policy accepts exact HTTPS Origin/Host matches and local HTTP for
+localhost, 127.0.0.1 and ::1, fixing browser WS upgrades behind TLS termination when the
+proxy preserves Host. The same helper covers HTTP mutations. Explicit WS allowlists,
+missing-Origin behavior and same_origin=False remain unchanged; forwarded headers are
+not implicitly trusted. Non-local HTTP origins are deliberately rejected by default.
+Embedded license and upstream v0.2.1 version are preserved; no application-specific override.
+
+Added application-level regression coverage for HTTPS/loopback acceptance, cross-host/port
+rejection and forwarded-header spoof rejection using real ephemeral HTTP/WS connections.
+HTTP checks reach empty-input validation without inference. Eleven audio/channel integration
+tests and fourteen retention checks passed; echo/header browser suites, syntax, whitespace
+and byte identity checks passed. The upstream 116-test suite passed during the preceding
+PR review. No physical audio, real inference, deployment or user service changes.
+
 ## 2026-11-15: Isolate shared-header fixtures from deployment customization
 
 Header tests now use defaults or their explicitly supplied HeaderCustom instead of loading
