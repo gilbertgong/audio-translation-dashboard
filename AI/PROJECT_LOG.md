@@ -924,3 +924,27 @@ disconnect/malformed input and playback scheduling passed. JS-to-Python WAV and 
 interoperability passed using temporary WAVs and in-memory sockets. JS/Python syntax and whitespace
 checks passed. Windows sandbox hung on Python asyncio/subprocess tests; they passed outside it.
 No browser/physical audio/real WebSocket transport tests. No services started, commits or pushes.
+
+
+### Switch to pcm_s16le and threaded Python references
+
+User chose pcm_s16le instead of RFC audio/L16 and requested threading for compatibility
+with the stack. Updated the generic specification, examples, JS sender/receiver and tests
+to signed 16-bit little-endian mono payloads. Existing codec_header and network-order packet
+headers remain unchanged; 16 ms remains the recommendation/default with other durations supported.
+Protocol/file names remain szaL16. Earlier big-endian implementation notes above are historical.
+
+Python relay(), write_wav() and read_wav() are now blocking functions for worker threads with
+websockets.sync-compatible recv/send. WAV pacing uses time.monotonic and threading.Event.wait;
+the caller may supply a stop event. On LE hosts, WAV buffers pass through without byte swapping
+or conversion copies; big-endian hosts retain a bulk conversion at the WAV boundary. WAV sender
+now sends header/payload fragments as one message, matching relay. Cleanup attempts stop events
+to all started receivers and preserves an original processing error. Updated usage/ownership
+notes: caller owns threads/connections and serializes writers when sharing a connection.
+
+JS and Python checks passed, including explicit raw LE sample bytes, unchanged packet header
+order, rejection of old codec identifiers, cross-language JS/WAV paths, a three-worker-thread
+WAV -> relay -> WAV round trip, stop-event cancellation, LE buffer identity, cleanup on errors,
+and simulated big-endian boundary conversion. Syntax, JSON examples/headers, links and whitespace
+checked. No physical audio/browser/real WebSocket network tests or product integration performed.
+No new dependencies, service starts, commits or pushes.

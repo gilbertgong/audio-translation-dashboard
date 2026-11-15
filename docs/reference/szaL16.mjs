@@ -23,7 +23,7 @@ export function codecHeader(sampleRate, frameMs = 16, framesPerPacket = 1) {
 }
 
 export function streamFormat(event) {
-  if (event.type !== "audio" || event.codec !== "audio/L16") throw new Error("Expected audio/L16");
+  if (event.type !== "audio" || event.codec !== "pcm_s16le") throw new Error("Expected pcm_s16le");
   const bytes = Uint8Array.from(atob(event.codec_header), c => c.charCodeAt(0));
   if (bytes.length !== 4) throw new Error("Expected a four-byte codec_header");
   const result = format(new DataView(bytes.buffer).getUint16(0, true), bytes[3], bytes[2]);
@@ -36,7 +36,7 @@ export function streamFormat(event) {
 export async function startStream(socket, {
   channel, sampleRate, frameMs = 16, framesPerPacket = 1, seq = 1, recipient,
 }) {
-  const request = { command: "start_stream", seq, channel, type: "audio", codec: "audio/L16",
+  const request = { command: "start_stream", seq, channel, type: "audio", codec: "pcm_s16le",
     codec_header: codecHeader(sampleRate, frameMs, framesPerPacket),
     packet_duration: frameMs * framesPerPacket };
   if (recipient !== undefined) request.for = recipient;
@@ -83,12 +83,12 @@ export class L16Sender {
   }
 
   // samples: one mono Float32Array from Web Audio, of any block length.
-  // Convert directly into the outgoing BE packet, preserving a partial packet across calls.
+  // Convert directly into the outgoing LE packet, preserving a partial packet across calls.
   push(samples) {
     if (this.closed) throw new Error("Stream is stopped");
     for (let i = 0; i < samples.length; i++) {
       const value = Math.max(-1, Math.min(1, samples[i]));
-      this.packet.setInt16(9 + this.position * 2, Math.min(32767, Math.round(value * 32768)));
+      this.packet.setInt16(9 + this.position * 2, Math.min(32767, Math.round(value * 32768)), true);
       if (++this.position === this.format.samples) {
         this.send(this.packet.buffer);
         this.packet = this.newPacket();
@@ -129,7 +129,7 @@ export class L16Receiver {
     const stream = this.streams.get(streamId);
     if (!stream || packet.byteLength !== 9 + stream.samples * 2) throw new Error("Unexpected audio packet");
     const samples = new Float32Array(stream.samples);
-    for (let i = 0; i < samples.length; i++) samples[i] = packet.getInt16(9 + i * 2) / 32768;
+    for (let i = 0; i < samples.length; i++) samples[i] = packet.getInt16(9 + i * 2, true) / 32768;
     this.onAudio(samples, { ...stream, packetId: packet.getUint32(5) });
   }
 }

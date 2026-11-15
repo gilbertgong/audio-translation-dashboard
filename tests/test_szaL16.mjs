@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { codecHeader, streamFormat, startStream, L16Sender, L16Receiver, L16Player } from "../docs/reference/szaL16.mjs";
 
 function fixture(frameMs = 16, framesPerPacket = 1) {
-  const request = { command: "start_stream", seq: 7, channel: "example", type: "audio", codec: "audio/L16",
+  const request = { command: "start_stream", seq: 7, channel: "example", type: "audio", codec: "pcm_s16le",
     codec_header: codecHeader(16000, frameMs, framesPerPacket), packet_duration: frameMs * framesPerPacket };
   const output = [];
   const sender = new L16Sender(data => output.push(data), request, 42);
@@ -36,6 +36,10 @@ if (process.argv.includes("--emit")) {
 } else {
   assert.equal(codecHeader(16000), "gD4BEA==");
   const wire = wireFixture();
+  assert.equal(wire.start.codec, "pcm_s16le");
+  const firstPacket = Buffer.from(wire.packets[0], "base64");
+  assert.deepEqual([...firstPacket.subarray(0, 9)], [1, 0, 0, 0, 42, 0, 0, 0, 0]);
+  assert.deepEqual([...firstPacket.subarray(9, 19)], [0, 128, 0, 192, 0, 0, 0, 64, 255, 127]);
   const values = [];
   const receiver = new L16Receiver((samples, stream) => {
     assert.equal(stream.sampleRate, 16000);
@@ -52,7 +56,8 @@ if (process.argv.includes("--emit")) {
   assert.equal(receiver.streams.size, 0);
   assert.throws(() => receiver.receive(new ArrayBuffer(8)), /Invalid audio packet/);
   assert.throws(() => receiver.receive(Buffer.from(wire.packets[0], "base64")), /Unexpected/);
-  assert.throws(() => streamFormat({ ...wire.start, codec: "opus" }), /Expected audio/);
+  assert.throws(() => streamFormat({ ...wire.start, codec: "opus" }), /Expected pcm_s16le/);
+  assert.throws(() => streamFormat({ ...wire.start, codec: "audio/L16" }), /Expected pcm_s16le/);
   assert.throws(() => streamFormat({ ...wire.start, packet_duration: 20 }), /Inconsistent/);
   assert.throws(() => codecHeader(44100, 16), /whole samples/);
   assert.throws(() => codecHeader(16000, 2.5), /whole samples/);

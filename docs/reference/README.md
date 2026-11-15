@@ -1,7 +1,8 @@
 # szaL16 reference implementations
 
 Small, independent examples for the [szaL16 stream specification](../szaL16.md).
-Both default to one **16 ms** frame per packet and accept other durations through
+Both use `codec: "pcm_s16le"` with mono signed 16-bit little-endian audio. They default
+to one **16 ms** frame per packet and accept other durations through
 the existing header fields. They do not implement connection setup, authentication,
 channel membership or receiver selection.
 
@@ -32,9 +33,9 @@ sender.stop();
 ```
 
 `L16Sender.push()` accepts any block length, including 128-sample AudioWorklet blocks.
-It converts floats directly into the outgoing big-endian packet, retaining a partial packet
+It converts floats directly into the outgoing little-endian packet, retaining a partial packet
 across calls. It clips to the PCM16 range, sends complete packets as samples arrive, and
-zero-pads a partial final packet on `stop()`. No resampling or intermediate LE audio is used.
+zero-pads a partial final packet on `stop()`. The float-to-PCM conversion writes little-endian samples directly, without resampling.
 Feed samples at their actual capture rate; this sender does not pace a preloaded recording.
 It uses the browser's normal WebSocket send queue; the caller monitors `bufferedAmount`
 and decides how to handle a slow connection.
@@ -63,45 +64,58 @@ This is basic playback scheduling, without adaptive jitter buffering or clock-dr
 
 ## Python: relay and WAV conversion
 
-[szaL16.py](szaL16.py) uses Python 3.11+ standard-library modules only. Supply already-open
-async WebSocket connections with `recv()` and `send()`, such as those provided by
-the [`websockets` library](https://websockets.readthedocs.io/en/stable/reference/asyncio/server.html).
-Each helper consumes **one stream** on a dedicated connection, then returns. Caller code
-manages connections, cancellation, routing and any other control messages.
+[szaL16.py](szaL16.py) uses Python 3.11+ standard-library modules only. Its three functions
+are blocking and run in ordinary worker threads. Supply already-open connections with
+synchronous `recv()` and `send()`, such as those from
+[`websockets.sync`](https://websockets.readthedocs.io/en/stable/reference/sync/server.html).
+Each helper consumes **one stream**, then returns. Caller code owns connections and threads.
 
 ```python
+import threading
 from szaL16 import relay, write_wav, read_wav
 
-# Server: publisher sends start_stream/data/stop_stream; listeners receive events/data.
+# Server: run in the publisher's connection-handler thread.
 # Select listeners and assign the unique uint32 stream ID outside this function.
-await relay(publisher, [listener], stream_id=42, sender="alice")
+relay(publisher, [listener], stream_id=42, sender="alice")
 
-# Receiving client: run on its listener connection as the stream arrives.
-samples_written = await write_wav(listener, "received.wav")
+# Receiving client: start before the publisher sends its stream.
+receiver = threading.Thread(target=write_wav, args=(listener, "received.wav"))
+receiver.start()
 
-# Sending client: the peer acknowledges start_stream before samples are transmitted.
-await read_wav(publisher, "source.wav", channel="example", frame_ms=16)
+# Sending client: the server acknowledges start_stream before samples are transmitted.
+stop = threading.Event()
+sender = threading.Thread(target=read_wav, args=(publisher, "source.wav"),
+                          kwargs={"channel": "example", "frame_ms": 16, "stop": stop})
+sender.start()
+# To end WAV playback early: stop.set()
+sender.join()
 ```
 
-These illustrate the separate server and client roles, not sequential operations on the
-same socket. A receiving client must be listening before the publisher starts.
+These illustrate separate server and client roles, rather than operations sharing one
+socket. A dedicated receive worker owns each connection's `recv()`. Serialize all sends
+on a connection if it is shared between workers, including control messages, because
+fragmented messages must finish before another send starts. Close the connection to unblock
+workers waiting in `recv()`/`send()`, then join them. Exceptions propagate in the calling
+thread; the embedding service decides how to log or report worker errors.
 
 - `relay()` forwards controls and audio to the supplied receivers, assigns downstream
   packet IDs, and sends stop events on completion or failure. It does not decode audio.
   Header bytes and a view of the original payload are sent as fragments of **one** binary
-  WebSocket message, using `send(iterable_of_buffers)` as supported by `websockets`.
+  WebSocket message, using `send(iterable_of_buffers)` as supported by `websockets.sync`.
   A transport exposing only `send(bytes)` must join those fragments instead.
-- `write_wav()` converts received big-endian samples to the format expected by Python's
-  `wave` module, writes incrementally, and finalizes the WAV header even if reception raises.
-- `read_wav()` reads mono uncompressed PCM16 WAV, converts samples to big-endian in bulk,
-  and sends packets paced against a monotonic clock. It does not convert other encodings,
-  mix channels or resample. A short final packet is silence-padded.
+- `write_wav()` passes little-endian PCM directly to Python's `wave` module on little-endian
+  hosts, writes incrementally, and finalizes the WAV header even if reception raises.
+- `read_wav()` reads mono uncompressed PCM16 WAV and forwards the sample bytes directly on
+  little-endian hosts. It paces packets against a monotonic clock using `threading.Event.wait()`;
+  the optional `stop` event interrupts pacing and ends the stream. It does not resample or mix
+  channels. A short final packet is silence-padded. On big-endian hosts, the WAV helpers use
+  a native bulk swap to bridge the `wave` module's native-endian buffers and wire LE samples.
 
-The relay awaits receivers' sends; a slow receiver therefore slows forwarding. It has no
-per-listener queues, overflow policy or reconnection machinery. The payload view avoids an
-application-level payload copy; transport/TLS processing can still allocate and copy.
+The relay sends to receivers sequentially; a slow receiver therefore slows forwarding.
+It has no per-listener queues, overflow policy or reconnection machinery. The payload view
+avoids an application-level payload copy; transport/TLS processing can still allocate and copy.
 For the low-CPU use case, configure the WebSocket transport with compression disabled
-(`compression=None` for `websockets`); the helpers do not configure the caller's transport.
+(`compression=None` for `websockets.sync`); the helpers do not configure the caller's transport.
 
 ## Duration and final-packet details
 
@@ -130,5 +144,7 @@ Checks cover known sample values and clipping, byte order, 128-sample and irregu
 blocks, alternate durations, two frames per packet, partial tails, relay payload reuse and
 packet numbering, start/stop handling, WAV header finalization and basic playback scheduling.
 Python invokes Node for JS-to-WAV and WAV-to-JS interoperability using temporary files.
+A separate round trip runs the sender, relay and WAV writer in three threads; cancellation
+checks exercise `threading.Event` and the LE-host WAV path preserves buffer identity.
 WebSockets and Web Audio are simulated; these checks do not exercise a browser, physical
 audio hardware or a real network connection.

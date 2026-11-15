@@ -1,4 +1,4 @@
-# szaL16: Stream Zello API with L16 audio
+# szaL16: Stream Zello API with little-endian PCM audio
 
 ## Motivation
 
@@ -11,12 +11,10 @@ codec processing; the trade-off is higher bandwidth than compressed audio.
 
 Within the streaming portion of the Zello Channel API, szaL16 changes the following:
 
-1. The `codec` value in `start_stream` and `on_stream_start` MUST be `"audio/L16"`
+1. The `codec` value in `start_stream` and `on_stream_start` MUST be `"pcm_s16le"`
    instead of `"opus"`.
 2. Binary audio payloads MUST contain uncompressed, signed 16-bit two's-complement PCM
-   samples in network byte order (big-endian), as defined by
-   [RFC 2586, audio/L16](https://www.rfc-editor.org/rfc/rfc2586.html).
-   Audio is mono; there is no additional channel-count field.
+   samples in little-endian byte order. Audio is mono; there is no additional channel-count field.
 
 The stream lifecycle, JSON control messages, binary packet header, stream identifiers
 and packet identifiers remain unchanged. The `codec_header` remains base64-encoded
@@ -45,7 +43,7 @@ Copyright (c) 2018 Zello, under the MIT License:
 - [Upstream MIT license](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/LICENSE).
 - [Included copy of the upstream license](zello_LICENSE).
 
-Changes comprise the L16 codec/payload definition above and internally consistent
+Changes comprise the PCM16 little-endian codec/payload definition above and internally consistent
 16 ms usage examples. The upstream examples used a 60 ms codec header alongside `packet_duration: 20`; the examples here
 use `gD4BEA==` (16 kHz, one 16 ms frame). The four-byte header format itself is unchanged.
 
@@ -53,7 +51,7 @@ use `gD4BEA==` (16 kHz, one 16 ms frame). The four-byte header format itself is 
 
 See the [reference usage notes](reference/README.md) for standalone
 [JavaScript Web Audio adapters](reference/szaL16.mjs) and
-[Python relay/WAV helpers](reference/szaL16.py). They default to 16 ms and accept other
+[Python threaded relay/WAV helpers](reference/szaL16.py). They default to 16 ms and accept other
 durations through the existing fields.
 
 ## WebSocket control messages
@@ -65,7 +63,7 @@ their own sequence counters for correlating commands with responses.
 
 ## Streaming voice messages
 
-After successfully connecting to the channel and receiving [channel status](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#on_channel_status) you can start sending voice messages. Each message is sent as stream, which begins with `start_stream` command followed by the sequence of binary packets with audio data and ends with `stop_stream` command. szaL16 carries mono [L16](https://www.rfc-editor.org/rfc/rfc2586.html) audio without compression.
+After successfully connecting to the channel and receiving [channel status](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#on_channel_status) you can start sending voice messages. Each message is sent as stream, which begins with `start_stream` command followed by the sequence of binary packets with audio data and ends with `stop_stream` command. szaL16 carries mono signed 16-bit little-endian PCM audio without compression.
 
 ### `start_stream`
 
@@ -79,7 +77,7 @@ Starts a new stream to the channel. The successful response includes `stream_id`
 | `seq` | integer | Command sequence number
 | `channel` | string | The channel to send the message to
 | `type` | string | Stream type. Only `audio` is currently supported
-| `codec` | string | The name of audio codec used. Required for `audio` streams. Must be `audio/L16`.
+| `codec` | string | The name of audio codec used. Required for `audio` streams. Must be `pcm_s16le`.
 | `codec_header` | string | base64-encoded string, representing audio encoding parameters. Required for `audio` streams. See [below](#codec_header-attribute)
 | `packet_duration` | integer | Audio packet duration in milliseconds. Values between 2.5 ms and 60 ms are supported
 | `call_id` | integer | Optional, dispatchers only: addresses the stream to a [dispatch call](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#dispatch-calls) the sender holds; the audio goes to that call's user alone
@@ -108,7 +106,7 @@ Example: value of `gD4BEA==` in base64 decodes to `{0x80, 0x3e, 0x01, 0x10}` whi
   "seq": 2,
   "channel": "Baker Street 221B",
   "type": "audio",
-  "codec": "audio/L16",
+  "codec": "pcm_s16le",
   "codec_header": "gD4BEA==",
   "packet_duration": 16
 }
@@ -122,7 +120,7 @@ or
   "seq": 2,
   "channel": "Baker Street 221B",
   "type": "audio",
-  "codec": "audio/L16",
+  "codec": "pcm_s16le",
   "codec_header": "gD4BEA==",
   "packet_duration": 16,
   "for": "mrs.hudson"
@@ -165,7 +163,7 @@ Stops outgoing stream. Send this command after you sent the last data packet.
 ```
 
 ### Stream data
-The same binary packet structure is used for any streamed data (e.g. audio) traveling both ways. The `packet_id` field is populated with the packet number for the audio packets sent from the server to a client. When streaming data to the server the `packet_id` value is ignored and should be filled with zeroes. Fields are stored in network byte order.
+The same binary packet structure is used for any streamed data (e.g. audio) traveling both ways. The `packet_id` field is populated with the packet number for the audio packets sent from the server to a client. When streaming data to the server the `packet_id` value is ignored and should be filled with zeroes. Multi-byte packet-header fields are stored in network byte order; the PCM samples in `data[]` are little-endian.
 
 `{type(8) = 0x01, stream_id(32), packet_id(32), data[]}`
 
@@ -181,8 +179,8 @@ Indicates the start of the new incoming stream. This event corresponds to `start
 |-------------------------|---------|---
 | `command`               | string  | `on_stream_start`
 | `type`                  | string  | Stream type. Only `audio` is currently supported
-| `codec`                 | string  | The name of audio codec used. Required for `audio` streams. Must be `audio/L16`
-| `codec_header`          | string  | base64-encoded codec header buffer. Required for `audio/L16` streams
+| `codec`                 | string  | The name of audio codec used. Required for `audio` streams. Must be `pcm_s16le`
+| `codec_header`          | string  | base64-encoded codec header buffer. Required for `pcm_s16le` streams
 | `packet_duration`       | integer | Audio packet duration in milliseconds. Values between 2.5 ms and 60 ms are supported
 | `stream_id `            | integer | The id of the stream that started
 | `channel `              | string  | The name of the channel
@@ -199,7 +197,7 @@ Indicates the start of the new incoming stream. This event corresponds to `start
 {
   "command": "on_stream_start",
   "type": "audio",
-  "codec": "audio/L16",
+  "codec": "pcm_s16le",
   "codec_header": "gD4BEA==",
   "packet_duration": 16,
   "stream_id": 22695,
