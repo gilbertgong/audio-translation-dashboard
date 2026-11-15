@@ -948,3 +948,64 @@ WAV -> relay -> WAV round trip, stop-event cancellation, LE buffer identity, cle
 and simulated big-endian boundary conversion. Syntax, JSON examples/headers, links and whitespace
 checked. No physical audio/browser/real WebSocket network tests or product integration performed.
 No new dependencies, service starts, commits or pushes.
+
+
+## 2026-11-14: Component WebSocket echo
+
+User narrowed implementation to echo only after discussion of a separate server-driven translation
+test. Added the component panel with Connect/Disconnect and a browser-local delay slider (0–10 s
+in 1-second steps, then Disabled). Delay changes clear queued playback; Disabled retains capture
+and networking. Uses one random channel supplied in the WS opening URL with echo=1, without
+logon/authentication, shared membership or a channel registry.
+
+Browser reuses recorder-worklet.js at 48 kHz and converts Float32 directly into 16 ms PCM16 LE
+packets with szaL16 framing. Server uses synchronous microweb multipart sends to echo unchanged
+sample bytes, assigning downstream packet IDs. Browser scheduling adds 32 ms plus selected delay.
+Disconnect/page exit releases all resources; late mic permission/worklet setup cannot restart it.
+Both Chinese catalogs and slider accessible value text updated. Existing inference panels, Live,
+Whisper POSTs and reference files were left unchanged.
+
+Vendored src/microweb.py byte-for-byte from upstream main de9fefb02b19dc30620be498998f73e07debba1d;
+that revision includes the receive-copy PR optimization. Retained its embedded license.
+No server-side delay worker or queue was introduced; the transport's bounded incoming queue remains.
+
+Validation: three real-loopback WebSocket tests cover start/stop/restart, byte-identical echo,
+packet IDs, alternate durations, echo-off/isolation and invalid-input closure. Simulated browser
+checks cover wire PCM, local delay/disable, query parameters, permission failure, page exit,
+peer disconnect and setup cancellation. All eight JS behavioral suites plus existing localization,
+header, playback, recording, Coordinator/recovery checks passed; session-retention (14) and
+standalone configuration (3) tests passed. Python socket tests required running outside the Windows
+sandbox after a socket permission denial. No physical microphone/browser audio audition or real
+inference tests; no user service starts/restarts, commits or pushes.
+
+
+### Echo mic meter, packet RTT and shorter delay range
+
+At user request, added Live-style mic dB meter (same scale/colors, smoothing, peak hold and
+clipping indication) to the echo panel. Collect RMS/peak in the existing packetization loop;
+render with requestAnimationFrame. Added packet RTT by timestamping sends and matching the
+returned server packet IDs to the local send counter. The immediate echo path returns one
+packet per input in order, so no wire-format change or server timestamp is necessary.
+RTT is send-to-receive including browser/network/server queues, not acoustic/device latency;
+local playback delay/buffering and capture/frame formation are excluded. It keeps updating
+while playback is Disabled. Disconnect resets the meter and RTT and clears pending timestamps.
+
+User revised the delay range to 0–5 seconds at 0.5-second increments with Disabled one step
+beyond 5. Updated UI/docs and both Chinese catalogs/accessibility messages. Preserved the user's
+microweb version-only update; no framework edits for these additions.
+
+Browser-controller checks verify -6 dB from 0.5-amplitude input, clipping, packet RTT with a
+controlled clock (12.5/8 ms), disabled-playback RTT, new delay values and disconnect cleanup.
+Localization and JS syntax checks pass. No physical mic or network-latency audition, commits,
+pushes or service changes.
+
+
+### Echo panel layout and averaged RTT
+
+User requested meter/timing in the empty right-hand area, matching Live meter width, and
+half-second average latency instead of per-packet display. Added a right metrics column with
+Live's meter width rule, stacking below controls on narrow screens. RTT samples now accumulate
+per 500 ms interval and the existing animation loop displays their arithmetic mean; no-sample
+intervals show a dash. Disabled playback still measures RTT. Updated both translated tooltips.
+Behavioral checks cover two-sample averaging, no immediate repaint and reset for the next interval;
+JS syntax/localization/whitespace checked. No layout tests per UI-only preference. No commits/pushes.

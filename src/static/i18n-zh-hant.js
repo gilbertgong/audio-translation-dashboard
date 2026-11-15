@@ -1,5 +1,24 @@
 // Traditional Chinese interface catalog. Keep keys and named placeholders aligned with i18n-zh.js.
 const UI_ZH_HANT = {
+  "Echo round trip": "回聲往返時間",
+  "{milliseconds} ms": "{milliseconds} 毫秒",
+  "Average audio-packet round trip over the last 0.5 seconds; excludes capture, playback buffering and echo delay.": "最近 0.5 秒內音訊封包的平均往返時間；不包括擷取、播放緩衝和回聲延遲。",
+
+  "WebSocket echo": "WebSocket 回聲",
+  "Connect": "連線",
+  "Disconnect": "中斷連線",
+  "Disconnected": "未連線",
+  "Connected": "已連線",
+  "Connecting...": "正在連線...",
+  "Echo delay": "回聲延遲",
+  "Disabled": "停用",
+  "{seconds} s": "{seconds} 秒",
+  "Echo test: {error}": "回聲測試：{error}",
+  "Echo stream could not start.": "無法啟動回聲串流。",
+  "Unexpected echo response.": "回聲回應異常。",
+  "WebSocket connection failed.": "WebSocket 連線失敗。",
+  "WebSocket connection closed.": "WebSocket 連線已關閉。",
+
   "Allow Interrupting Translator": "允許打斷翻譯朗讀",
   "Allow speech to interrupt the translator. When off, microphone input is muted during translation playback. Interruption can be unreliable on mobile because echo cancellation varies.": "允許說話打斷翻譯朗讀。關閉後，朗讀翻譯時將靜音麥克風輸入。行動裝置的回音消除效果不一，打斷功能可能不可靠。",
   "Muted": "已靜音",

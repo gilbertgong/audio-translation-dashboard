@@ -15,12 +15,14 @@ microweb.py.
 
 import argparse
 import atexit
+import base64
 import contextlib
 import itertools
 import json
 import logging
 import re
 import secrets
+import struct
 import tempfile
 import threading
 import time
@@ -354,6 +356,63 @@ app = App(static_dir=STATIC_DIR)  # request bodies up to 1 MB unless a handler a
 config = None  # the settings (see load_config)
 mock = False  # --mock: sample data instead of whisper/llama
 mock_counter = itertools.count(MOCK_PRELOAD)  # next sample line in mock mode
+
+
+@app.websocket("/api/audio", max_bytes=16384, max_queue_bytes=262144)
+def audio_socket(ws):
+    """Connection-local szaL16 echo; channel/echo come from the opening URL."""
+    channel = ws.req.query.get("channel", "")
+    echo = ws.req.query.get("echo") == "1"
+    if not channel:
+        ws.close(1008, "channel required")
+        return
+    active = None
+    packet_id = 0
+    try:
+        for message in ws:
+            if isinstance(message, str):
+                command = json.loads(message)
+                if command["command"] == "start_stream":
+                    if active is not None or command["channel"] != channel:
+                        raise ValueError("unexpected stream")
+                    if command["type"] != "audio" or command["codec"] != "pcm_s16le":
+                        raise ValueError("unsupported codec")
+                    rate, frames, frame_ms = struct.unpack("<HBB", base64.b64decode(command["codec_header"], validate=True))
+                    duration = frames * frame_ms
+                    if (not rate or frames not in (1, 2) or not 2.5 <= duration <= 60
+                            or command["packet_duration"] != duration or rate * frame_ms % 1000):
+                        raise ValueError("invalid audio format")
+                    stream_id = secrets.randbits(32)
+                    active = (stream_id, rate * duration // 1000 * 2)
+                    packet_id = 0
+                    if "seq" in command:
+                        ws.send(json.dumps(dict(seq=command["seq"], success=True, stream_id=stream_id)))
+                    if echo:
+                        ws.send(json.dumps(dict(command="on_stream_start", channel=channel,
+                            stream_id=stream_id, type="audio", codec="pcm_s16le",
+                            codec_header=command["codec_header"], packet_duration=duration,
+                            **{"from": "echo"})))
+                elif command["command"] == "stop_stream":
+                    if active is None or command["stream_id"] != active[0] or command["channel"] != channel:
+                        raise ValueError("unexpected stream")
+                    if echo:
+                        ws.send(json.dumps(dict(command="on_stream_stop", stream_id=active[0])))
+                    if "seq" in command:
+                        ws.send(json.dumps(dict(seq=command["seq"], success=True)))
+                    active = None
+                else:
+                    raise ValueError("unknown command")
+            else:
+                if active is None or len(message) != 9 + active[1]:
+                    raise ValueError("unexpected audio packet")
+                kind, stream_id, _ = struct.unpack_from("!BII", message)
+                if kind != 1 or stream_id != active[0]:
+                    raise ValueError("unexpected audio packet")
+                if echo:
+                    ws.send((struct.pack("!BII", 1, stream_id, packet_id), memoryview(message)[9:]))
+                    packet_id = (packet_id + 1) & 0xffffffff
+    except (ValueError, KeyError, TypeError, struct.error):
+        ws.close(1008, "invalid szaL16 stream")
 
 
 @app.get("/api/config")

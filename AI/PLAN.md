@@ -45,13 +45,21 @@ recipes good.
 
 ## Results so far
 
+- Component tests now include WebSocket microphone echo via `/api/audio?channel=...&echo=1`.
+  AudioWorklet -> 16 ms PCM16 LE packets -> immediate server echo -> browser playback.
+  Live-style mic meter and per-packet RTT are displayed. Local delay is 0–5 s in 0.5 s steps
+  plus Disabled; changing delay discards pending echoes.
+  Real WebSocket and simulated browser lifecycle checks pass. Physical audio remains for audition.
+  Vendored microweb main de9fefb includes WS and the receive-copy optimization. Translation-over-WS
+  is deferred; existing inference component panels and Live behavior are unchanged.
+
 - `docs/szaL16.md` proposes the Zello stream subset with `pcm_s16le` mono little-endian PCM,
   unchanged stream/header formats, and recommended 16 ms packets/examples (not a fixed protocol duration).
   Includes adapted upstream send/receive reference and `docs/zello_LICENSE`.
   Standalone JS Float32/send/decode/playback and blocking/threaded Python relay/WAV references are in
   `docs/reference/`, defaulting to 16 ms with other durations supported. Cross-language
-  packet/WAV tests pass; browser, physical audio and real network behavior remain untested.
-  The application is unchanged.
+  packet/WAV tests pass. The component echo below now exercises the same wire format;
+  the standalone references remain separate.
 
 - Mobile Live hides Capture Audio and keyboard hints, defaults Activity collapsed (saved choice
   wins), and starts in push-to-talk mode. Mock Live has a header Mobile/Desktop preview toggle

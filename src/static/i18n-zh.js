@@ -1,5 +1,24 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
+  "Echo round trip": "回声往返时间",
+  "{milliseconds} ms": "{milliseconds} 毫秒",
+  "Average audio-packet round trip over the last 0.5 seconds; excludes capture, playback buffering and echo delay.": "最近 0.5 秒内音频包的平均往返时间；不包括采集、播放缓冲和回声延迟。",
+
+  "WebSocket echo": "WebSocket 回声",
+  "Connect": "连接",
+  "Disconnect": "断开连接",
+  "Disconnected": "未连接",
+  "Connected": "已连接",
+  "Connecting...": "正在连接...",
+  "Echo delay": "回声延迟",
+  "Disabled": "禁用",
+  "{seconds} s": "{seconds} 秒",
+  "Echo test: {error}": "回声测试：{error}",
+  "Echo stream could not start.": "无法启动回声流。",
+  "Unexpected echo response.": "回声响应异常。",
+  "WebSocket connection failed.": "WebSocket 连接失败。",
+  "WebSocket connection closed.": "WebSocket 连接已关闭。",
+
   "Allow Interrupting Translator": "允许打断翻译朗读",
   "Allow speech to interrupt the translator. When off, microphone input is muted during translation playback. Interruption can be unreliable on mobile because echo cancellation varies.": "允许说话打断翻译朗读。关闭后，朗读翻译时将静音麦克风输入。移动设备的回声消除效果不一，打断功能可能不可靠。",
   "Muted": "已静音",

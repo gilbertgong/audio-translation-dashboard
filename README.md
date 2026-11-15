@@ -85,7 +85,14 @@ local execution example. This extracted path still needs target-machine verifica
   speaker pauses.
 - **Capture audio** (the left sidebar) translates a browser tab or your whole system instead of the microphone. Tick
   **Mute captured tab** first to hear only the translations.
-- The header's **Component tests** page checks each stage on its own.
+- The header's **Component tests** page checks each stage on its own. **WebSocket echo**
+  connects the microphone to an immediate audio echo without inference servers. Its **Echo delay**
+  slider adds 0–5 seconds in 0.5-second steps; one step after 5 is **Disabled**, which
+  keeps sending/receiving while silencing playback. Changing delay clears pending echoes.
+  The microphone meter uses the Live view's dB scale, colors, peak and clipping indicator.
+  **Echo round trip** shows the mean audio-packet send-to-return time for each half-second
+  interval, excluding local playback delay. The meter and timing appear to the right of the controls.
+  **Disconnect** or leaving the page stops the microphone, socket and queued playback.
 
 ## Header customization
 

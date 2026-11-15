@@ -282,7 +282,32 @@ page memory; backend logging still follows the existing app behavior.
 
 #### Component tests (`test.html`)
 
-A second page, linked from the dashboard's header, that tests one stage at a time through the dashboard's own endpoints, so a result there is what the dashboard would get:
+A second page, linked from the dashboard's header, that tests audio transport and individual
+inference stages through the application's own endpoints:
+
+- **WebSocket echo:** `echo-test.js` reuses `recorder-worklet.js` to capture mono Float32 at
+  48 kHz, writing directly into 16 ms `pcm_s16le` packets. Connect creates a random channel
+  and opens `/api/audio?channel=<name>&echo=1`, starts the stream, then requests the microphone.
+  No logon/authentication exchange or channel broadcast is involved. The browser delay slider
+  adds 0–5 seconds in 0.5-second steps; its final position disables playback while networking
+  and capture continue. Delay changes stop queued sources and begin scheduling with the new delay.
+  Playback includes a small 32 ms scheduling buffer in addition to the selected delay.
+  Disconnect/navigation discards pending playback and unsent partial audio, stops microphone
+  tracks and closes the context/socket, including late permission or worklet-setup results.
+  The mic meter uses Live's -60..0 dB scale, fast-rise/slow-fall display, -45/-10 dB color
+  boundaries, session peak hold and 1.5-second clipping indication. RMS/peak are collected
+  during the existing sample-conversion loop and rendered with requestAnimationFrame.
+  For packet RTT, the browser records performance.now() at each send and matches returned
+  downstream packet IDs to its send counter: this echo route returns every packet exactly
+  once in order. No wire-format/timestamp extension is required. It measures browser send
+  through echo receive (including network/server/event-loop queues), excluding capture/frame
+  formation and playback/buffering/user-selected delay. RTT continues while playback is disabled;
+  the displayed arithmetic mean updates every 500 ms from samples received in that interval
+  using the existing animation loop; empty intervals display a dash. Disconnect clears readings
+  and pending timestamps. Meter/timing occupy a right-hand column beside connect/delay controls,
+  stacking below on narrow screens. Meter container width uses Live's
+  `calc(var(--activity-full-width) - 28px)` rule.
+  The original MediaRecorder-based Transcribe panel is unchanged.
 
 - **Transcribe:** record, or upload any audio file the browser can decode (converted to the dashboard's WAV format in the page); shows the text, language, timings and raw response.
 - **Translate:** any text, streamed; uses a source-language selector and shows the translation, time to first token and the raw stream.
@@ -295,7 +320,20 @@ Linked from the component tests: checks that nothing broke, end to end, with the
 
 ### Backend (`src/app.py`)
 
-Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py` is just the app: config, the engine calls, and its endpoints as decorated functions:
+Serves the pages and runs the pipeline. HTTP/WebSocket plumbing lives in the vendored
+`microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py`
+contains the configuration, engine calls and decorated endpoints:
+
+- **WebSocket `/api/audio`** requires a connection-local `channel` query parameter. With
+  `echo=1`, the server acknowledges szaL16 start/stop controls, returns stream events and
+  echoes binary packets immediately. It preserves PCM payload bytes, replaces the network-order
+  packet header with downstream packet IDs, and uses multipart sends without joining payloads.
+  `echo=0` accepts stream controls/audio without returning an echo. Stream format is mono
+  signed PCM16 LE, using the unchanged base64 codec header; malformed input closes with 1008.
+  Message size is bounded to 16 KiB and queued payload to 256 KiB. Connection state remains
+  local to the handler; there is no shared channel registry or translation pipeline here.
+  The same transport operates in mock mode without inference calls.
+
 
 | Endpoint                       | Purpose                                                       |
 |--------------------------------|---------------------------------------------------------------|
@@ -767,3 +805,12 @@ The project's history (milestones, measurements and the reasons behind decisions
 - Add stages to the pipeline (summarization, glossary/terminology pass).
 - **Capture:** both sources now run at once, but their rows look alike: marking each row with its source (you vs. the other side of a meeting) and aligning by source would make two-sided transcripts; file upload as another source.
 - Add other backends behind the same STT and translation interfaces (e.g. cloud APIs).
+
+
+### Vendored transport provenance
+
+`src/microweb.py` was copied unchanged from
+[gilbertgong/microweb main at de9fefb](https://github.com/gilbertgong/microweb/blob/de9fefb02b19dc30620be498998f73e07debba1d/microweb.py)
+for WebSocket support, including its embedded BSD notice. The user subsequently updated
+its version line; that edit is preserved. This revision includes the
+receive-copy optimization. Updating a consumer copy remains a deliberate maintenance action.
