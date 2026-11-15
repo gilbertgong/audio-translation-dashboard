@@ -1,6 +1,7 @@
 """Echo endpoint checks over isolated real WebSockets; no inference or microphone."""
 import base64
 import contextlib
+import http.client
 import json
 from pathlib import Path
 import socket
@@ -85,6 +86,43 @@ class EchoTests(unittest.TestCase):
             self.assertEqual(event["codec"], codec)
             self.assertEqual(event["codec_header"], header)
         return reply["stream_id"]
+
+    def test_browser_origins_for_audio_socket_and_http_posts(self):
+        cases = [("example.test", "https://example.test", True),
+                 ("example.test:8443", "https://example.test:8443", True),
+                 ("localhost:8080", "http://localhost:8080", True),
+                 ("127.0.0.1:8080", "http://127.0.0.1:8080", True),
+                 ("[::1]:8080", "http://[::1]:8080", True),
+                 ("example.test", "http://example.test", False),
+                 ("192.168.1.10", "http://192.168.1.10", False),
+                 ("example.test", "https://other.test", False),
+                 ("example.test:8443", "https://example.test", False),
+                 ("localhost:8080", "http://localhost:8081", False),
+                 ("127.0.0.1:8080", "https://example.test", False)]
+        for index, (host, origin, allowed) in enumerate(cases):
+            with self.subTest(host=host, origin=origin):
+                with socket.create_connection(self.server.server_address, timeout=2) as sock:
+                    request = (f"GET /api/audio?channel=origin-test-{index}&echo=1 HTTP/1.1\r\n"
+                               f"Host: {host}\r\nOrigin: {origin}\r\n"
+                               "X-Forwarded-Proto: https\r\nX-Forwarded-Host: example.test\r\n"
+                               "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+                               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n")
+                    sock.sendall(request.encode())
+                    response = b""
+                    while b"\r\n\r\n" not in response:
+                        part = sock.recv(4096)
+                        self.assertTrue(part)
+                        response += part
+                    self.assertEqual(int(response.split(b" ", 2)[1]), 101 if allowed else 403)
+                with contextlib.closing(http.client.HTTPConnection(*self.server.server_address, timeout=2)) as client:
+                    # Empty text reaches input validation without invoking any inference.
+                    client.request("POST", "/api/translate", json.dumps({"text": ""}),
+                        {"Host": host, "Origin": origin, "Content-Type": "application/json",
+                         "X-Forwarded-Proto": "https", "X-Forwarded-Host": "example.test"})
+                    reply = client.getresponse()
+                    self.assertEqual(reply.status, 400 if allowed else 403)
+                    error = json.loads(reply.read())["error"]
+                    self.assertEqual(error, "no text to translate" if allowed else "cross-origin request refused")
 
     def test_echo_preserves_payload_numbers_packets_and_restarts(self):
         with connection(self.server, "channel=one&echo=1") as sock:
