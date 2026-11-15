@@ -1,6 +1,11 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
   "Channel translation": "频道翻译",
+  "Use Opus": "使用 Opus",
+  "Connected: {codec}": "已连接：{codec}",
+  "Checking Opus…": "正在检查 Opus…",
+  "Opus available": "Opus 可用",
+  "Opus unavailable": "Opus 不可用",
   "Audio test: {error}": "音频测试：{error}",
   "Audio stream could not start.": "无法启动音频流。",
   "Unexpected audio response.": "音频响应异常。",

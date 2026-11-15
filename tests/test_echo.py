@@ -71,9 +71,9 @@ class EchoTests(unittest.TestCase):
         self.worker.join(3)
         self.assertFalse(self.worker.is_alive())
 
-    def start(self, sock, channel, rate=48000, frame_ms=16, echo=True):
+    def start(self, sock, channel, rate=48000, frame_ms=16, echo=True, codec="pcm_s16le"):
         header = base64.b64encode(struct.pack("<HBB", rate, 1, frame_ms)).decode()
-        send(sock, dict(command="start_stream", seq=1, channel=channel, type="audio", codec="pcm_s16le",
+        send(sock, dict(command="start_stream", seq=1, channel=channel, type="audio", codec=codec,
                         codec_header=header, packet_duration=frame_ms))
         reply = receive(sock)
         self.assertTrue(reply["success"])
@@ -82,7 +82,7 @@ class EchoTests(unittest.TestCase):
             event = receive(sock)
             self.assertEqual(event["command"], "on_stream_start")
             self.assertEqual(event["channel"], channel)
-            self.assertEqual(event["codec"], "pcm_s16le")
+            self.assertEqual(event["codec"], codec)
             self.assertEqual(event["codec_header"], header)
         return reply["stream_id"]
 
@@ -111,6 +111,32 @@ class EchoTests(unittest.TestCase):
             send(second, dict(command="stop_stream", seq=2, channel="two", stream_id=second_id))
             # There are no echo events/data and no audio leaked from the other connection.
             self.assertEqual(receive(second), dict(seq=2, success=True))
+
+    def test_opus_echo_is_opaque_variable_length_and_can_switch_back_to_pcm(self):
+        with connection(self.server, "channel=opus&echo=1") as sock:
+            stream_id = self.start(sock, "opus", 16000, 20, codec="opus")
+            # Deliberately opaque bytes: server must never invoke an Opus decoder.
+            for number, payload in enumerate((b"\xf8\xff\xfe", bytes(range(200)), b"\0")):
+                send(sock, struct.pack("!BII", 1, stream_id, 999) + payload)
+                result = receive(sock)
+                self.assertEqual(struct.unpack_from("!BII", result), (1, stream_id, number))
+                self.assertEqual(result[9:], payload)
+            send(sock, dict(command="stop_stream", seq=2, channel="opus", stream_id=stream_id))
+            self.assertEqual(receive(sock)["command"], "on_stream_stop")
+            self.assertTrue(receive(sock)["success"])
+            stream_id = self.start(sock, "opus", 16000, 16)
+            send(sock, struct.pack("!BII", 1, stream_id, 0) + bytes(512))
+            self.assertEqual(len(receive(sock)), 521)
+
+    def test_bad_opus_duration_or_empty_payload_closes(self):
+        with connection(self.server, "channel=opus&echo=1") as sock:
+            send(sock, dict(command="start_stream", channel="opus", type="audio", codec="opus",
+                codec_header=base64.b64encode(struct.pack("<HBB", 16000, 1, 16)).decode(), packet_duration=16))
+            self.assertEqual(struct.unpack_from("!H", receive(sock))[0], 1008)
+        with connection(self.server, "channel=opus&echo=1") as sock:
+            stream_id = self.start(sock, "opus", 16000, 20, codec="opus")
+            send(sock, struct.pack("!BII", 1, stream_id, 0))
+            self.assertEqual(struct.unpack_from("!H", receive(sock))[0], 1008)
 
     def test_missing_channel_wrong_channel_and_bad_packet_close(self):
         with connection(self.server, "echo=1") as sock:

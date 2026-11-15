@@ -1,6 +1,11 @@
 // Traditional Chinese interface catalog. Keep keys and named placeholders aligned with i18n-zh.js.
 const UI_ZH_HANT = {
   "Channel translation": "頻道翻譯",
+  "Use Opus": "使用 Opus",
+  "Connected: {codec}": "已連線：{codec}",
+  "Checking Opus…": "正在檢查 Opus…",
+  "Opus available": "Opus 可用",
+  "Opus unavailable": "Opus 不可用",
   "Audio test: {error}": "音訊測試：{error}",
   "Audio stream could not start.": "無法啟動音訊串流。",
   "Unexpected audio response.": "音訊回應異常。",

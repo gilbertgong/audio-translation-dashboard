@@ -6,14 +6,14 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/static/component-audio.js'), 'utf8');
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-function fixture(splitSettings = { pre_roll_ms: 0 }) {
+function fixture(splitSettings = { pre_roll_ms: 0 }, codecSupport) {
   class Events {
     events = {};
     addEventListener(name, fn) { (this.events[name] ??= []).push(fn); }
     fire(name, event = {}) { return this.events[name]?.map(fn => fn(event)); }
   }
   const elements = {};
-  for (const id of ['echo-connect', 'echo-delay', 'echo-delay-value', 'echo-meter', 'echo-db', 'echo-rtt', 'channel-connect', 'channel-meter', 'channel-db', 'channel-results']) {
+  for (const id of ['echo-connect', 'echo-delay', 'echo-delay-value', 'echo-meter', 'echo-db', 'echo-rtt', 'echo-opus', 'echo-opus-status', 'channel-connect', 'channel-meter', 'channel-db', 'channel-results']) {
     const classes = new Set(), children = {};
     elements[id] = Object.assign(new Events(), { value: '0', style: {},
       querySelector: name => children[name] ??= { style: {} },
@@ -64,6 +64,38 @@ function fixture(splitSettings = { pre_roll_ms: 0 }) {
   }
   const window = Object.assign(new Events(), { location: { href: 'https://example.test/test.html' } });
   const requests = [];
+  const encoders = [], decoders = [];
+  class AudioData {
+    constructor(options) { Object.assign(this, options); this.data = new Float32Array(options.data); }
+    close() { this.closed = true; }
+    copyTo(target) { target.set(this.data); }
+  }
+  class AudioEncoder {
+    static async isConfigSupported(config) { return { supported: codecSupport?.encode, config }; }
+    constructor(callbacks) { Object.assign(this, callbacks); this.frames = []; encoders.push(this); }
+    configure(config) { this.config = config; this.state = 'configured'; }
+    encode(audio) {
+      this.frames.push({ timestamp: audio.timestamp, data: new Float32Array(audio.data) });
+      const bytes = new Uint8Array([0xf8, Math.round(audio.data[0] * 100), 0]);
+      this.output({ byteLength: bytes.length, copyTo: target => target.set(bytes) });
+    }
+    flush() { return new Promise((resolve, reject) => { this.finish = resolve; this.reject = reject; }); }
+    close() { this.state = 'closed'; }
+  }
+  class EncodedAudioChunk { constructor(options) { Object.assign(this, options); } }
+  class AudioDecoder {
+    static async isConfigSupported(config) { return { supported: codecSupport?.decode, config }; }
+    constructor(callbacks) { Object.assign(this, callbacks); this.chunks = []; this.pending = []; decoders.push(this); }
+    configure(config) { this.config = config; this.state = 'configured'; }
+    decode(chunk) {
+      this.chunks.push(chunk);
+      const output = () => this.output(new AudioData({ timestamp: chunk.timestamp,
+        numberOfFrames: 960, sampleRate: 48000, data: new Float32Array(960).fill(chunk.data[1] / 100) }));
+      if (this.deferOutput) this.pending.push(output); else output();
+    }
+    flush() { return new Promise(resolve => { this.finish = () => { this.pending.splice(0).forEach(fn => fn()); resolve(); }; }); }
+    close() { this.state = 'closed'; }
+  }
   const sandbox = vm.createContext({ console, Blob, URL, DataView, ArrayBuffer, Uint8Array, Math, Set,
     WebSocket: Socket, AudioContext: Context, AudioWorkletNode: Worklet, window,
     document: { getElementById: id => elements[id], createElement: () => ({ children: [],
@@ -84,10 +116,11 @@ function fixture(splitSettings = { pre_roll_ms: 0 }) {
       error: message => new Error(message), errorText: error => error.message },
     setStatus: (id, message, error) => { status[id] = { message, error }; },
   });
+  if (codecSupport) Object.assign(sandbox, { AudioData, AudioEncoder, AudioDecoder, EncodedAudioChunk });
   for (const file of ['audio-utils.js', 'segment-splitter.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/static/' + file), 'utf8'), sandbox);
   sandbox.resample = async samples => samples; // conversion is separately exercised; focus here on serialization
   vm.runInContext(source, sandbox);
-  return { elements, sockets, contexts, nodes, get audio() { return audio; }, status, window, frames, requests,
+  return { elements, sockets, contexts, nodes, encoders, decoders, get audio() { return audio; }, status, window, frames, requests,
     advance: ms => { now += ms; },
     draw() { for (const [id, fn] of [...frames]) { frames.delete(id); fn(now); } },
     click: (prefix = 'echo') => elements[prefix + '-connect'].fire('click'),
@@ -116,11 +149,14 @@ function fixture(splitSettings = { pre_roll_ms: 0 }) {
 
 (async () => {
   const f = fixture(); f.click();
+  assert.equal(f.elements['echo-opus-status'].message.key, 'Opus unavailable');
+  assert.equal(f.elements['echo-opus'].disabled, true);
   assert.equal(f.sockets[0].url.protocol, 'wss:');
   assert.equal(f.sockets[0].url.searchParams.get('channel'), 'random-channel');
   assert.equal(f.sockets[0].url.searchParams.get('echo'), '1');
   f.acknowledge(); await settle(); f.permit(); await settle();
-  assert.equal(f.status['echo-status'].message.key, 'Connected');
+  assert.equal(f.status['echo-status'].message.key, 'Connected: {codec}');
+  assert.equal(f.status['echo-status'].message.values.codec, 'PCM');
   const node = f.nodes[0], socket = f.sockets[0], context = f.contexts[0];
   assert.equal(context.sampleRate, 16000);
   for (let i = 0; i < 60; i++) node.port.onmessage({ data: new Float32Array(128) });
@@ -297,5 +333,121 @@ function fixture(splitSettings = { pre_roll_ms: 0 }) {
   assert.equal(delayedWs.readyState, 1);
   assert.equal(delayed.audio.tracks[0].stopped, false);
   delayed.window.fire('pagehide');
+
+  for (const support of [{ encode: true, decode: false }, { encode: false, decode: true }]) {
+    const unavailable = fixture(undefined, support); await settle();
+    assert.equal(unavailable.elements['echo-opus'].disabled, true);
+    assert.equal(unavailable.elements['echo-opus-status'].message.key, 'Opus unavailable');
+  }
+  const opus = fixture({ pre_roll_ms: 0, split_pause_ms: 16 }, { encode: true, decode: true });
+  await settle();
+  assert.equal(opus.elements['echo-opus-status'].message.key, 'Opus available');
+  assert.equal(opus.elements['echo-opus'].disabled, false);
+  opus.elements['echo-opus'].fire('click');
+  opus.click(); opus.acknowledge(); await settle(); opus.permit(); await settle();
+  assert.equal(opus.status['echo-status'].message.values.codec, 'opus');
+  assert.equal(opus.elements['echo-opus'].disabled, false);
+  const opusNode = opus.nodes[0], opusWs = opus.sockets[0];
+  const opusPush = (value, n) => {
+    for (let i = 0; i < n; i++) opusNode.port.onmessage({ data: new Float32Array(128).fill(value) });
+  };
+  opusPush(0, 60); opusPush(0.5, 3);
+  assert.equal(opusWs.sent.length, 1); // wait for stream ID before encoding/sending
+  const opusStart = JSON.parse(opusWs.sent[0]);
+  assert.equal(opusStart.codec, 'opus'); assert.equal(opusStart.packet_duration, 20);
+  assert.deepEqual([...Buffer.from(opusStart.codec_header, 'base64')], [0x80, 0x3e, 1, 20]);
+  opus.ackStream(201);
+  const encoded = opusWs.sent[1];
+  assert.equal(encoded.byteLength, 12); // variable-size compressed payload, not PCM
+  assert.deepEqual([...new Uint8Array(encoded, 9)], [0xf8, 50, 0]);
+  assert.equal(opus.encoders[0].frames[0].data.length, 320);
+  assert.equal(opus.encoders[0].frames[0].timestamp, 0);
+  opus.advance(12); opusWs.fire('message', { data: encoded }); await settle();
+  assert.equal(opus.contexts[0].sources[0].buffer.sampleRate, 48000); // decoder's actual rate
+  assert.equal(opus.contexts[0].sources[0].buffer.duration, 0.02);
+  assert.equal(opus.contexts[0].sources[0].buffer.getChannelData(0)[0], 0.5);
+  opusPush(0, 2); // 640 samples, two 20 ms frames, then asynchronous encoder flush
+  assert.equal(opusWs.sent.filter(item => typeof item === 'string').length, 1);
+  opusPush(0.25, 3); // new speech queues while previous encoder is flushing
+  opus.encoders[0].finish(); await settle();
+  assert.equal(opus.encoders[0].state, 'closed');
+  const opusCommands = opusWs.sent.filter(item => typeof item === 'string').map(item => JSON.parse(item));
+  assert.deepEqual(opusCommands.map(item => item.command), ['start_stream', 'stop_stream', 'start_stream']);
+  assert.equal(opus.encoders[0].frames[1].timestamp, 20000);
+  opus.decoders[0].deferOutput = true;
+  opusWs.fire('message', { data: encoded }); await settle();
+  opus.elements['echo-delay'].value = '1'; opus.elements['echo-delay'].fire('input');
+  opusWs.fire('message', { data: JSON.stringify({ command: 'on_stream_stop', stream_id: 201 }) });
+  await settle(); opus.decoders[0].finish(); await settle();
+  assert.equal(opus.contexts[0].sources.length, 1); // old pending decoded audio discarded on delay change
+  opus.ackStream(202);
+  opusPush(0, 2); // second encoder has a partial final frame to pad
+  assert.equal(opus.encoders[1].frames.at(-1).data.at(-1), 0);
+  opus.click(); // disconnect during encoder flush
+  assert.equal(opus.encoders[1].state, 'closed');
+  const beforeLateFlush = opusWs.sent.length;
+  opus.encoders[1].finish(); await settle();
+  assert.equal(opusWs.sent.length, beforeLateFlush);
+  assert.equal(opus.decoders[1].state, 'closed');
+  assert.equal(opus.elements['echo-opus'].disabled, false);
+  opus.elements['echo-opus'].fire('click');
+  opus.click(); opus.acknowledge(); await settle(); opus.permit(); await settle();
+  for (let i = 0; i < 60; i++) opus.nodes.at(-1).port.onmessage({ data: new Float32Array(128) });
+  opus.nodes.at(-1).port.onmessage({ data: new Float32Array(128).fill(0.5) });
+  const pcmAgain = JSON.parse(opus.sockets.at(-1).sent[0]);
+  assert.equal(pcmAgain.codec, 'pcm_s16le'); assert.equal(pcmAgain.packet_duration, 16);
+  opus.window.fire('pagehide');
+
+  // Codec changes during speech apply after the natural pause, on the same socket. A pending
+  // acknowledgement or native encoder/decoder flush must preserve their ordering.
+  const hot = fixture({ pre_roll_ms: 0 }, { encode: true, decode: true });
+  await settle(); hot.click(); hot.acknowledge(); await settle(); hot.permit(); await settle();
+  const hotWs = hot.sockets[0], hotNode = hot.nodes[0];
+  const hotPush = (value, n) => {
+    for (let i = 0; i < n; i++) hotNode.port.onmessage({ data: new Float32Array(128).fill(value) });
+  };
+  const hotCommands = () => hotWs.sent.filter(item => typeof item === 'string').map(item => JSON.parse(item));
+  hotPush(0, 60); hotPush(0.5, 3);
+  hot.elements['echo-opus'].fire('click'); // PCM stream's acknowledgement is still pending
+  assert.equal(hot.elements['echo-opus']['aria-pressed'], 'true');
+  assert.equal(hot.status['echo-status'].message.values.codec, 'PCM');
+  hotPush(0.5, 3);
+  assert.equal(hotCommands().length, 1); // toggling does not cut speech into a new stream
+  hotPush(0, 32);
+  hotPush(0.25, 3);
+  assert.equal(hotCommands().length, 1);
+  hot.ackStream(301);
+  assert.deepEqual(hotCommands().map(item => item.command), ['start_stream', 'stop_stream', 'start_stream']);
+  assert.equal(hotCommands()[0].codec, 'pcm_s16le');
+  assert.equal(hotCommands()[2].codec, 'opus');
+  assert.equal(hotCommands()[2].packet_duration, 20);
+  assert.equal(hot.status['echo-status'].message.values.codec, 'opus');
+  hotWs.fire('message', { data: JSON.stringify({ command: 'on_stream_stop', stream_id: 301 }) });
+  hot.ackStream(302);
+  const hotOpus = hotWs.sent.find(item => item instanceof ArrayBuffer && new DataView(item).getUint32(1) === 302);
+  hot.decoders[0].deferOutput = true;
+  hotWs.fire('message', { data: hotOpus }); await settle();
+  hot.elements['echo-opus'].fire('click'); // selection changes; current speech remains Opus
+  assert.equal(hot.status['echo-status'].message.values.codec, 'opus');
+  assert.equal(hot.elements['echo-opus']['aria-pressed'], 'false');
+  hotPush(0, 32);
+  hotPush(0.75, 2);
+  assert.equal(hotCommands().length, 3);
+  hot.encoders[0].finish(); await settle();
+  assert.equal(hot.status['echo-status'].message.values.codec, 'PCM');
+  assert.deepEqual(hotCommands().map(item => item.command), ['start_stream', 'stop_stream', 'start_stream', 'stop_stream', 'start_stream']);
+  assert.equal(hotCommands()[4].codec, 'pcm_s16le');
+  assert.equal(hotCommands()[4].packet_duration, 16);
+  hotWs.fire('message', { data: JSON.stringify({ command: 'on_stream_stop', stream_id: 302 }) });
+  await settle(); hot.ackStream(303);
+  const hotPcm = hotWs.sent.find(item => item instanceof ArrayBuffer && new DataView(item).getUint32(1) === 303);
+  hotWs.fire('message', { data: hotPcm }); await settle();
+  assert.equal(hot.contexts[0].sources.length, 0); // PCM waits for earlier decoded Opus
+  hot.decoders[0].finish(); await settle();
+  assert.equal(hot.contexts[0].sources[0].buffer.getChannelData(0)[0], 0.25);
+  assert.equal(hot.contexts[0].sources[1].buffer.getChannelData(0)[0], 0.75);
+  assert.equal(hot.sockets.length, 1); assert.equal(hot.contexts.length, 1);
+  assert.equal(hotWs.readyState, 1); assert.equal(hot.audio.tracks[0].stopped, false);
+  hot.window.fire('pagehide');
   console.log('Echo browser checks passed: PCM, local delay/disable, query parameters and setup/disconnect races.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

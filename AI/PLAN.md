@@ -15,8 +15,12 @@ Mac).
 
 ## Current direction
 
-szaL16 wire documentation now permits `pcm_s16le` and `opus`, without requiring endpoints
-to implement either codec or defining negotiation/fallback. Existing code remains PCM-only.
+szaL16 wire documentation permits `pcm_s16le` and `opus`, without requiring endpoints
+to implement either codec or defining negotiation/fallback. Echo now offers an optional
+WebCodecs Opus toggle with encoder/decoder availability indication. PCM is the default;
+selection can change while connected and takes effect at the next speech stream. Connection
+status retains the active stream's codec until it ends. Channel translation stays PCM.
+Native Chrome codec-path and mocked transport checks pass.
 
 Channel translation component test is implemented for review. Echo and translation share one
 browser mic/WS lifecycle and one server WS send worker per connection. Translation sends both

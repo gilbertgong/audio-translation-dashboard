@@ -93,11 +93,17 @@ local execution example. This extracted path still needs target-machine verifica
   **Echo round trip** shows the mean audio-packet send-to-return time for each half-second
   interval, excluding local playback delay. The meter and timing appear to the right of the controls.
   **Disconnect** or leaving the page stops the microphone, socket and queued playback.
+  Echo defaults to PCM. Its **PCM/Opus** toggle selects the codec for the next speech stream;
+  the toggle is enabled when browser checks report both Opus encoding and decoding support,
+  with **Opus available/unavailable** shown in the middle of the panel. It works while connected:
+  current speech finishes using its original codec, and the next stream uses the new selection.
+  **Connected: PCM** / **Connected: opus** reflects the current stream until it finishes.
   **Channel translation** sends live microphone PCM over WebSocket while the same continuous
   speech splitter as Live queues WAV uploads, one at a time. The server returns completed
   transcript/translation JSON and streams generated speech back over WebSocket. Connecting
   either audio test automatically disconnects the other and discards its pending work.
-  Both tests send 16 kHz mono microphone audio in 16 ms packets; translated speech returns
+  Both tests capture 16 kHz mono microphone audio: PCM uses 16 ms packets, and echo's optional
+  Opus mode uses 20 ms packets. Translated speech returns
   at the TTS engine's native 24 kHz rate. Local speech detection starts each mic stream and
   ends it after a pause (250 ms by default). The mic and connection remain open during silence.
 

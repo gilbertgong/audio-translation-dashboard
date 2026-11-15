@@ -398,21 +398,25 @@ def audio_socket(ws):
                 if command["command"] == "start_stream":
                     if active is not None or command["channel"] != channel:
                         raise ValueError("unexpected stream")
-                    if command["type"] != "audio" or command["codec"] != "pcm_s16le":
+                    codec = command["codec"]
+                    if command["type"] != "audio" or codec not in ("pcm_s16le", "opus"):
                         raise ValueError("unsupported codec")
                     rate, frames, frame_ms = struct.unpack("<HBB", base64.b64decode(command["codec_header"], validate=True))
                     duration = frames * frame_ms
                     if (not rate or frames not in (1, 2) or not 2.5 <= duration <= 60
                             or command["packet_duration"] != duration or rate * frame_ms % 1000):
                         raise ValueError("invalid audio format")
+                    if codec == "opus" and (rate not in (8000, 12000, 16000, 24000, 48000)
+                                             or frame_ms not in (5, 10, 20, 40, 60)):
+                        raise ValueError("invalid Opus format")
                     stream_id = secrets.randbits(32)
-                    active = (stream_id, rate * duration // 1000 * 2)
+                    active = (stream_id, rate * duration // 1000 * 2 if codec == "pcm_s16le" else None)
                     packet_id = 0
                     if "seq" in command:
                         send(json.dumps(dict(seq=command["seq"], success=True, stream_id=stream_id)))
                     if echo:
                         send(json.dumps(dict(command="on_stream_start", channel=channel,
-                            stream_id=stream_id, type="audio", codec="pcm_s16le",
+                            stream_id=stream_id, type="audio", codec=codec,
                             codec_header=command["codec_header"], packet_duration=duration,
                             **{"from": "echo"})))
                 elif command["command"] == "stop_stream":
@@ -426,7 +430,8 @@ def audio_socket(ws):
                 else:
                     raise ValueError("unknown command")
             else:
-                if active is None or len(message) != 9 + active[1]:
+                if (active is None or len(message) <= 9
+                        or (active[1] is not None and len(message) != 9 + active[1])):
                     raise ValueError("unexpected audio packet")
                 kind, stream_id, _ = struct.unpack_from("!BII", message)
                 if kind != 1 or stream_id != active[0]:

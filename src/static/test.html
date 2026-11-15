@@ -20,7 +20,7 @@
   <!-- Each panel tests an audio transport or inference stage through the app's endpoints. -->
   <main class="tests">
     <section class="test" id="echo">
-      <h2><span data-i18n="WebSocket echo">WebSocket echo</span> <span class="via">pcm_s16le · /api/audio</span></h2>
+      <h2><span data-i18n="WebSocket echo">WebSocket echo</span> <span class="via">pcm_s16le / opus · /api/audio</span></h2>
       <div class="row echo-connect-row">
         <button type="button" id="echo-connect" data-i18n="Connect">Connect</button>
         <span class="status" id="echo-status" role="status" data-i18n="Disconnected">Disconnected</span>
@@ -40,6 +40,10 @@
         <label for="echo-delay" data-i18n="Echo delay">Echo delay</label>
         <input type="range" id="echo-delay" min="0" max="5.5" step="0.5" value="0">
         <output id="echo-delay-value" for="echo-delay"></output>
+      </div>
+      <div class="row echo-codec-row">
+        <button type="button" id="echo-opus" aria-pressed="false" aria-label="Use Opus" data-i18n-aria-label="Use Opus" disabled>PCM</button>
+        <span class="status" id="echo-opus-status" role="status" data-i18n="Checking Opus…">Checking Opus…</span>
       </div>
     </section>
 

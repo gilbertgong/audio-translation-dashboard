@@ -294,6 +294,23 @@ inference stages through the application's own endpoints:
   `split_pause_ms` of silence (250 ms by default), the final partial packet is zero-padded
   and `stop_stream` is sent. The mic/socket remain open, sending no audio until speech resumes
   in a fresh stream. Maximum WAV phrase length does not end a WS stream during speech.
+  The **PCM/Opus** toggle button selects the next speech stream's codec for echo only, including
+  while connected. PCM remains the default. Each queued stream captures its own codec/header
+  and frame size. Toggling does not interrupt speech; the active stream ends on silence and
+  flushes normally before the next starts. The status displays **Connected: PCM** or
+  **Connected: opus**, retaining the active stream's codec until it finishes; while idle it
+  reflects the selection. The button and availability indicator occupy the middle column
+  between connection/delay controls and metrics, stacking on narrow screens.
+  On page load, WebCodecs `AudioEncoder.isConfigSupported`
+  and `AudioDecoder.isConfigSupported` check mono 16 kHz Opus, with the encoder configured
+  for raw Opus, 20 ms frames and 24 kbit/s. The panel displays Opus available/unavailable;
+  the toggle stays disabled if either codec direction/API is unavailable or a check fails.
+  Opus encoding uses 320-sample Float32 `AudioData` frames and one native encoder per speech
+  stream. Encoder flush completes before `stop_stream` and the next stream start. The echo
+  server returns raw encoded payloads unchanged. A native decoder per received Opus stream
+  produces Web Audio buffers at its actual output sample rate. Decoder flushes preserve stream
+  order; delay changes discard pending old decoded audio, and disconnect closes all codecs.
+  See the [WebCodecs Opus registration](https://www.w3.org/TR/webcodecs-opus-codec-registration/).
   No logon/authentication exchange or channel broadcast is involved. The browser delay slider
   adds 0–5 seconds in 0.5-second steps; its final position disables playback while networking
   and capture continue. Delay changes stop queued sources and begin scheduling with the new delay.
@@ -302,7 +319,7 @@ inference stages through the application's own endpoints:
   tracks and closes the context/socket, including late permission or worklet-setup results.
   The mic meter uses Live's -60..0 dB scale, fast-rise/slow-fall display, -45/-10 dB color
   boundaries, session peak hold and 1.5-second clipping indication. RMS/peak are collected
-  during the existing sample-conversion loop and rendered with requestAnimationFrame.
+  during the input block loop and rendered with requestAnimationFrame.
   For packet RTT, the browser records performance.now() at each send and matches returned
   stream IDs and downstream packet IDs: this echo route returns every packet exactly
   once in order. No wire-format/timestamp extension is required. It measures browser send
@@ -345,10 +362,12 @@ contains the configuration, engine calls and decorated endpoints:
 
 - **WebSocket `/api/audio`** requires a `channel` query parameter, unique among active connections. With
   `echo=1`, the server acknowledges szaL16 start/stop controls, returns stream events and
-  echoes binary packets immediately. It preserves PCM payload bytes, replaces the network-order
+  echoes binary packets immediately. It preserves PCM or Opus payload bytes, replaces the network-order
   packet header with downstream packet IDs, and uses multipart sends without joining payloads.
-  `echo=0` accepts stream controls/audio without returning an echo. Stream format is mono
-  signed PCM16 LE, using the unchanged base64 codec header; malformed input closes with 1008.
+  `echo=0` accepts stream controls/audio without returning an echo. Stream formats are mono
+  signed PCM16 LE or raw Opus, using the unchanged base64 codec header; malformed input closes
+  with 1008. PCM payload lengths follow the declared rate/duration; Opus payloads are variable
+  length and nonempty. The server checks framing/control fields but never decodes Opus.
   Incoming message size is bounded to 16 KiB and queued payload to 256 KiB. A small registry
   associates WAV POSTs with their active connection. Each connection has one ordered WS send
   worker and a bounded outbound job queue, shared by echo and generated speech. Text results

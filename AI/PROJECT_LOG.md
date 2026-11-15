@@ -1077,3 +1077,44 @@ fallback and unsupported-codec handling are outside scope. Reference implementat
 identified as PCM-only. No runtime/reference-code changes. Reviewed diff/whitespace and
 decoded both example headers to confirm rate/frame/duration consistency. No tests needed for
 this documentation-only edit. Changes uncommitted; no push.
+
+### 2026-11-15 — Optional native Opus in the echo component test
+
+Committed the spec edits as f13bcb8 at user request, without pushing. Added echo-only
+Use Opus toggle, default off and locked during a connection. The panel reports native
+encoder/decoder availability after WebCodecs configuration checks; missing/rejected support
+leaves PCM available. Both Chinese catalogs updated. Mic capture remains 16 kHz with the
+same local speech boundaries. PCM remains 16 ms; Opus uses 20 ms / 320-sample frames,
+raw packet output and 24 kbit/s. No multi-client capability negotiation/fallback added.
+
+Each speech stream owns an encoder; flush finishes before stream stop and next start.
+Native decoders convert returned Opus to Web Audio buffers at the decoder's output rate.
+Flush/order, old pending audio on delay changes, disconnect and codec cleanup are handled.
+The server accepts variable-length Opus payloads and echoes their bytes unchanged through
+the shared WS send worker, without a codec dependency. Channel translation/TTS stay PCM.
+
+Validation: browser-controller checks cover availability (including one missing direction),
+16/20 ms choice, compressed packets, float framing/timestamps/padding, async flush ordering,
+decoded rate, pending-audio discard, disconnect cleanup and switching back to PCM. Ten
+real HTTP/WS loopback tests with stubbed inference pass, including opaque variable-length
+Opus echo, malformed durations/empty payloads and Opus-to-PCM restart. Shared audio, Live
+playback/mobile, recovery and localization checks pass; syntax/whitespace checked.
+An isolated headless Chrome run exercised the actual component code with native WebCodecs,
+generated samples and mocked transport/mic, confirming Opus encoding and decoded 48 kHz
+audio. Temporary profile removed; audio muted. No physical microphone/audible audition or
+real inference; no user service changes. Implementation remains uncommitted; no push.
+
+### Echo codec button, placement and switching while connected
+
+Replaced the checkbox with a PCM/Opus toggle button and moved it with availability text into
+the panel's middle column. User clarified that toggling during speech should keep the
+connection status on the active codec until the stream finishes. Selection now applies to
+the next natural speech stream, without interrupting speech or disconnecting mic/socket.
+Queued streams capture their own codec/header/frame size. Status shows Connected: PCM or
+Connected: opus (localized in both Chinese catalogs). While idle it reflects the selection.
+PCM playback waits for preceding Opus decoder flushes when crossing codec boundaries.
+
+Browser tests pass switching in both directions on one connection, pending acknowledgements,
+encoder/decoder flush ordering, unchanged speech boundaries, accurate status and preserved
+mic/socket. Localization, JS syntax and whitespace checks pass. No layout tests per preference.
+Implementation remains uncommitted; no push.
