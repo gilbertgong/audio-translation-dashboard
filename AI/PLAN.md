@@ -15,6 +15,10 @@ Mac).
 
 ## Current direction
 
+The root README is a concise introduction and getting-started guide, with links to existing
+detailed documentation. Keep implementation/edge-case/release detail in its supporting docs;
+see MEMORY.md for the README scope rule.
+
 szaL16 wire documentation permits `pcm_s16le` and `opus`, without requiring endpoints
 to implement either codec or defining negotiation/fallback. Echo now offers an optional
 WebCodecs Opus toggle with encoder/decoder availability indication. PCM is the default;

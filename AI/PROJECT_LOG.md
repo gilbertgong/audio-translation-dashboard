@@ -1118,3 +1118,17 @@ Browser tests pass switching in both directions on one connection, pending ackno
 encoder/decoder flush ordering, unchanged speech boundaries, accurate status and preserved
 mic/socket. Localization, JS syntax and whitespace checks pass. No layout tests per preference.
 Implementation remains uncommitted; no push.
+
+### 2026-11-15 — Concise root README and documentation guidance
+
+At user request, reduced the root README from roughly 2,200 words to about 540. It now
+covers purpose/features, requirements, Windows quick start with platform guide links,
+basic usage, configuration pointers, focused documentation links and license. Removed
+duplicated control/locale/mobile/retry details, protocol/testing internals, advanced config
+mechanics and release instructions, whose homes already exist in DESIGN and focused guides.
+Removed the trailing mock-preview note after License; its behavior is documented in DESIGN.
+
+AI/MEMORY.md now explicitly prefers a short GitHub-style introduction, links over duplicated
+detail, and README edits only when introductory guidance changes. Verified local links and
+anchors, first-use button wording and whitespace. Documentation-only change; no runtime
+tests or service changes. Uncommitted; no push.

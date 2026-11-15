@@ -40,12 +40,26 @@ workflow, feature plans and history go in `AI/PRIVATE.md` when present.
 *Why:* the next session may be another assistant, account or computer; only the repo travels.
 
 ### Keep the docs current without asking
-Each change includes updating what it affects: `DESIGN.md` (it describes the code in detail, so most changes touch
-it), `README.md`, `config/defaults.toml` comments, the plan, the log and this file.
+Each change includes updating the docs it affects: `DESIGN.md` (it describes the code in detail, so most changes
+touch it), relevant configuration comments, the plan, the log and this file. Update `README.md` only when its
+overview, requirements, getting-started steps or other introductory guidance actually change.
 *Why:* a stale doc misleads the next session more than a missing one.
 
 ### README for people, `AI/` for assistants
 `README.md`, `DESIGN.md` and `INSTALL_MAC.md` are for people; reasons, history and working rules go in `AI/`.
+
+### Keep the root README concise
+Treat `README.md` as a typical GitHub project introduction: purpose, a short feature overview, requirements,
+quick start, basic usage, configuration pointers, documentation links and license. Prefer shorter, clearer
+copy over exhaustive coverage. A feature change does not automatically need a new README paragraph.
+
+Keep detailed controls, edge cases, implementation/protocol behavior, diagnostics, migration notes, testing,
+customization and release procedures in the appropriate supporting docs. When information already lives in
+`DESIGN.md`, an installation guide, configuration comments or another focused document, link there instead
+of repeating it. Briefly repeat a fact only when it helps a new reader understand the project or get started.
+Check for an existing documentation home before adding a new file, and preserve useful unique details there
+when trimming the README. Do not append development notes after the license or let it grow into a changelog.
+*Why:* the README should make the project easy to understand and try; detailed docs should own the details.
 
 ### Keep the shared docs self-contained
 Nothing local or outside the repo in shared docs: no local paths, machine setup or neighbouring folders. That goes in
