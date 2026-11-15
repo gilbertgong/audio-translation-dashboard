@@ -1065,3 +1065,15 @@ speech, pause/stop order, padding, packet ID reset, RTT isolation, mic/socket re
 existing cancellation/upload behavior. Shared splitter, Live playback/mobile, recovery and
 localization checks pass, as do JS syntax/whitespace checks. No physical audio audition or
 service changes. This follow-up remains uncommitted; no pushes.
+
+### szaL16 wire specification permits PCM and Opus
+
+After committing silence-delimited mic streams as c6e063a, updated the spec at user request
+to retain original Opus alongside added pcm_s16le. Defined mono/container-free payloads by
+codec, updated start/event field tables and added a consistent 20 ms Opus request example.
+Existing framing/base64 codec header unchanged; 16 ms recommendation applies only to PCM.
+Explicitly imposes no endpoint codec-support requirements; capability selection, negotiation,
+fallback and unsupported-codec handling are outside scope. Reference implementations are
+identified as PCM-only. No runtime/reference-code changes. Reviewed diff/whitespace and
+decoded both example headers to confirm rate/frame/duration consistency. No tests needed for
+this documentation-only edit. Changes uncommitted; no push.

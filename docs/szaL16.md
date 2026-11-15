@@ -1,37 +1,47 @@
-# szaL16: Stream Zello API with little-endian PCM audio
+# szaL16: Stream Zello API with PCM and Opus audio
 
 ## Motivation
 
-szaL16 is a low-overhead, low-CPU audio streaming protocol using uncompressed audio.
-It borrows the Zello Channel API's compact WebSocket stream control and binary framing,
-replacing its Opus codec with linear 16-bit PCM. Relays can forward audio payloads without
-codec processing; the trade-off is higher bandwidth than compressed audio.
+szaL16 is a low-overhead audio streaming protocol that borrows the Zello Channel API's
+compact WebSocket stream control and binary framing. It adds uncompressed linear 16-bit
+PCM alongside the original Opus format. PCM avoids codec processing at audio endpoints;
+Opus reduces bandwidth. Relays can forward either format without codec processing.
 
 ## Protocol difference
 
-Within the streaming portion of the Zello Channel API, szaL16 changes the following:
+Within the streaming portion of the Zello Channel API, szaL16 extends the accepted
+audio formats as follows:
 
-1. The `codec` value in `start_stream` and `on_stream_start` MUST be `"pcm_s16le"`
-   instead of `"opus"`.
-2. Binary audio payloads MUST contain uncompressed, signed 16-bit two's-complement PCM
-   samples in little-endian byte order. Audio is mono; there is no additional channel-count field.
+1. The `codec` value in `start_stream` and `on_stream_start` MUST be either `"pcm_s16le"`
+   or `"opus"`.
+2. For `"pcm_s16le"`, binary audio payloads MUST contain uncompressed, signed 16-bit
+   two's-complement PCM samples in little-endian byte order.
+3. For `"opus"`, binary audio payloads MUST contain raw Opus packets, following the
+   original Zello stream format.
+
+Audio is mono; there is no additional channel-count field. Neither format uses a container
+such as WAV, Ogg or WebM.
+
+This specification defines the wire representation of both formats. It does not require
+an endpoint to encode, decode, accept or relay either format. Codec availability, selection,
+negotiation, fallback and handling of unsupported codecs are outside its scope.
 
 The stream lifecycle, JSON control messages, binary packet header, stream identifiers
 and packet identifiers remain unchanged. The `codec_header` remains base64-encoded
 with the same format as the original specification.
 
-Audio payloads consist only of PCM samples, mirroring Zello's use of raw Opus frames
-without a container.
-
-For live audio, **16 ms packets with one frame per packet are recommended** and used
-in the examples below. This aligns with 128-sample processing blocks at 16, 24 and 48 kHz.
-Other durations remain supported through the existing duration fields.
+For live PCM audio, **16 ms packets with one frame per packet are recommended** and used
+in the PCM examples below. This aligns with 128-sample processing blocks at 16, 24 and 48 kHz.
+Other durations remain supported through the existing duration fields. Opus uses its
+[codec-defined frame durations](https://www.rfc-editor.org/rfc/rfc6716.html#section-2.1.4);
+the Opus example below uses one 20 ms frame per packet. The 16 ms PCM recommendation does
+not apply to Opus.
 
 This document specifies the stream portion only. Connection establishment, authentication,
 channel membership, dispatch and other channel features remain outside its scope.
 Inherited channel/routing fields are retained in the adapted reference below; their presence
 is not a definition of those wider workflows. Existing Zello services are not presumed to
-accept this replacement codec.
+accept the added PCM codec.
 
 ## Source and license
 
@@ -43,15 +53,18 @@ Copyright (c) 2018 Zello, under the MIT License:
 - [Upstream MIT license](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/LICENSE).
 - [Included copy of the upstream license](zello_LICENSE).
 
-Changes comprise the PCM16 little-endian codec/payload definition above and internally consistent
-16 ms usage examples. The upstream examples used a 60 ms codec header alongside `packet_duration: 20`; the examples here
-use `gD4BEA==` (16 kHz, one 16 ms frame). The four-byte header format itself is unchanged.
+Changes comprise the added PCM16 little-endian codec/payload definition, the endpoint-support
+scope clarification and internally consistent usage examples. The upstream examples used a
+60 ms codec header alongside `packet_duration: 20`; the examples here use `gD4BEA==`
+(16 kHz, one 16 ms frame) for PCM and `gD4BFA==` (16 kHz, one 20 ms frame) for Opus.
+The four-byte header format itself is unchanged.
 
 ## Reference implementations
 
 See the [reference usage notes](reference/README.md) for standalone
 [JavaScript Web Audio adapters](reference/szaL16.mjs) and
-[Python threaded relay/WAV helpers](reference/szaL16.py). They default to 16 ms and accept other
+[Python threaded relay/WAV helpers](reference/szaL16.py). These are PCM-only examples; they
+do not implement Opus encoding or decoding. They default to 16 ms and accept other PCM
 durations through the existing fields.
 
 ## WebSocket control messages
@@ -63,7 +76,7 @@ their own sequence counters for correlating commands with responses.
 
 ## Streaming voice messages
 
-After successfully connecting to the channel and receiving [channel status](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#on_channel_status) you can start sending voice messages. Each message is sent as stream, which begins with `start_stream` command followed by the sequence of binary packets with audio data and ends with `stop_stream` command. szaL16 carries mono signed 16-bit little-endian PCM audio without compression.
+After successfully connecting to the channel and receiving [channel status](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#on_channel_status) you can start sending voice messages. Each message is sent as stream, which begins with `start_stream` command followed by the sequence of binary packets with audio data and ends with `stop_stream` command. The `codec` field identifies the stream's mono audio format: `pcm_s16le` or `opus`.
 
 ### `start_stream`
 
@@ -77,7 +90,7 @@ Starts a new stream to the channel. The successful response includes `stream_id`
 | `seq` | integer | Command sequence number
 | `channel` | string | The channel to send the message to
 | `type` | string | Stream type. Only `audio` is currently supported
-| `codec` | string | The name of audio codec used. Required for `audio` streams. Must be `pcm_s16le`.
+| `codec` | string | The name of audio codec used. Required for `audio` streams. Either `pcm_s16le` or `opus`.
 | `codec_header` | string | base64-encoded string, representing audio encoding parameters. Required for `audio` streams. See [below](#codec_header-attribute)
 | `packet_duration` | integer | Audio packet duration in milliseconds. Values between 2.5 ms and 60 ms are supported
 | `call_id` | integer | Optional, dispatchers only: addresses the stream to a [dispatch call](https://github.com/zelloptt/zello-channel-api/blob/4658469e35701994b89e14ef5ab9d69c9c2ee712/API.md#dispatch-calls) the sender holds; the audio goes to that call's user alone
@@ -112,7 +125,7 @@ Example: value of `gD4BEA==` in base64 decodes to `{0x80, 0x3e, 0x01, 0x10}` whi
 }
 ```
 
-or
+Or, using Opus with a specific recipient:
 
 ```json
 {
@@ -120,9 +133,9 @@ or
   "seq": 2,
   "channel": "Baker Street 221B",
   "type": "audio",
-  "codec": "pcm_s16le",
-  "codec_header": "gD4BEA==",
-  "packet_duration": 16,
+  "codec": "opus",
+  "codec_header": "gD4BFA==",
+  "packet_duration": 20,
   "for": "mrs.hudson"
 }
 ```
@@ -163,7 +176,7 @@ Stops outgoing stream. Send this command after you sent the last data packet.
 ```
 
 ### Stream data
-The same binary packet structure is used for any streamed data (e.g. audio) traveling both ways. The `packet_id` field is populated with the packet number for the audio packets sent from the server to a client. When streaming data to the server the `packet_id` value is ignored and should be filled with zeroes. Multi-byte packet-header fields are stored in network byte order; the PCM samples in `data[]` are little-endian.
+The same binary packet structure is used for any streamed data (e.g. audio) traveling both ways. The `packet_id` field is populated with the packet number for the audio packets sent from the server to a client. When streaming data to the server the `packet_id` value is ignored and should be filled with zeroes. Multi-byte packet-header fields are stored in network byte order. The stream's `codec` determines the contents of `data[]`: little-endian PCM16 samples for `pcm_s16le`, or a raw Opus packet for `opus`.
 
 `{type(8) = 0x01, stream_id(32), packet_id(32), data[]}`
 
@@ -179,8 +192,8 @@ Indicates the start of the new incoming stream. This event corresponds to `start
 |-------------------------|---------|---
 | `command`               | string  | `on_stream_start`
 | `type`                  | string  | Stream type. Only `audio` is currently supported
-| `codec`                 | string  | The name of audio codec used. Required for `audio` streams. Must be `pcm_s16le`
-| `codec_header`          | string  | base64-encoded codec header buffer. Required for `pcm_s16le` streams
+| `codec`                 | string  | The name of audio codec used. Required for `audio` streams. Either `pcm_s16le` or `opus`
+| `codec_header`          | string  | base64-encoded codec header buffer. Required for `audio` streams
 | `packet_duration`       | integer | Audio packet duration in milliseconds. Values between 2.5 ms and 60 ms are supported
 | `stream_id `            | integer | The id of the stream that started
 | `channel `              | string  | The name of the channel

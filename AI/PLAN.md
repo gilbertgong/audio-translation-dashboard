@@ -15,6 +15,9 @@ Mac).
 
 ## Current direction
 
+szaL16 wire documentation now permits `pcm_s16le` and `opus`, without requiring endpoints
+to implement either codec or defining negotiation/fallback. Existing code remains PCM-only.
+
 Channel translation component test is implemented for review. Echo and translation share one
 browser mic/WS lifecycle and one server WS send worker per connection. Translation sends both
 raw PCM and serial queued WAV POSTs; completed text returns over WS before independently queued

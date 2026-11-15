@@ -6,6 +6,8 @@ to one **16 ms** frame per packet and accept other durations through
 the existing header fields. They do not implement connection setup, authentication,
 channel membership or receiver selection.
 
+These examples implement only the PCM format; they do not implement Opus encoding or decoding.
+
 The code is original to this reference; the adapted protocol documentation attributes
 Zello and includes its [upstream license](../zello_LICENSE).
 
