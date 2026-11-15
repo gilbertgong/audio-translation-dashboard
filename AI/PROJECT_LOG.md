@@ -1009,3 +1009,41 @@ per 500 ms interval and the existing animation loop displays their arithmetic me
 intervals show a dash. Disabled playback still measures RTT. Updated both translated tooltips.
 Behavioral checks cover two-sample averaging, no immediate repaint and reset for the next interval;
 JS syntax/localization/whitespace checked. No layout tests per UI-only preference. No commits/pushes.
+
+### 2026-11-14 — Channel translation component test
+
+Added the second audio component test with mutually exclusive echo/translation connections.
+Both send 48 kHz mono PCM16 LE in 16 ms szaL16 packets. Translation also uses Live's continuous
+speech splitter to queue WAV POSTs, exactly one in flight. Extracted the existing splitter and
+resample/WAV primitives into shared scripts; Live retains its original callbacks and behavior.
+Renamed echo-test.js to component-audio.js for the shared mic/socket/meter/playback controller.
+
+The channel route reuses transcription, forced-language recheck, direction/prompt construction
+and TTS helpers. It delivers completed transcript/translation JSON over WS, then returns the
+POST response while speech remains queued. llama is nonstreaming only for this route. A shared
+WS send worker per connection handles both echo messages and generated TTS streams; text results
+can send promptly from the POST thread using microweb's existing message-write serialization.
+TTS native 24 kHz PCM is packetized directly, without an intermediate WAV. Disconnect removes
+the channel, aborts browser work and drops queued speech; an executing engine call may finish
+on its normal timeout but cannot publish into a new connection. Both Chinese catalogs updated.
+
+Validation: eight real-loopback HTTP/WS tests with stubbed inference cover serial speech,
+POST completion before speech, completed JSON, direction/recheck, packet boundaries, errors,
+mock mode and disconnect isolation/discard. Shared-audio tests cover WAV sample values and
+speech splitting. Browser-controller tests cover mutually exclusive connections, raw PCM plus
+serial WAV uploads, completed results, 24 kHz playback and queued upload cancellation. Existing
+localization, playback/mobile and request-recovery checks pass; Python/JS syntax and whitespace
+checks pass. Loopback tests ran outside the Windows sandbox. No physical mic/real-engine audition,
+user service changes, commits or pushes. Preserved the user's microweb version update.
+
+### Component microphone WS rate changed to 16 kHz
+
+At user request, both audio component tests now create a 16 kHz AudioContext. Web Audio
+resamples microphone input before the worklet; outgoing szaL16 remains mono PCM16 LE with
+16 ms packets (256 samples / 512 payload bytes). Segmentation uses that same context rate;
+the separate WAV upload still uses the configured Whisper rate. Server echo preserves input
+rate and generated TTS stays native 24 kHz. No Live capture changes.
+
+Browser-controller checks verify the requested context rate, both outgoing codec headers,
+packet size/duration and unchanged 24 kHz TTS playback, along with queue/lifecycle behavior.
+JS syntax and whitespace checks pass. Physical audio audition remains pending. No commit/push.

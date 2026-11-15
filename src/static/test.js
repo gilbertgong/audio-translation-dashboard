@@ -11,6 +11,8 @@ function pageFetch(url, options = {}) {
 }
 let sampleRate = 16000; // what the dashboard sends whisper; from /api/config
 let audioProcessing = {};
+let splitSettings = {};
+let playbackBufferMs = 800;
 
 const SAMPLES = [
   ["English", "Hello, this is a test. The meeting has moved to three o'clock this afternoon, so please don't be late."],
@@ -117,25 +119,6 @@ async function toWav(blob) {
   src.start();
   const samples = (await offline.startRendering()).getChannelData(0);
   return encodeWav(samples, sampleRate);
-}
-
-function encodeWav(samples, rate) {
-  const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
-  const text = (offset, s) => [...s].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
-  text(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  text(8, "WAVEfmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, rate, true);
-  view.setUint32(28, rate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  text(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  samples.forEach((s, i) => view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
-  return new Blob([view], { type: "audio/wav" });
 }
 
 async function transcribe(blob) {
@@ -367,6 +350,8 @@ async function init() {
     }
     sampleRate = config.sample_rate;
     audioProcessing = config.audio_processing || {};
+    splitSettings = config.auto_split || {};
+    playbackBufferMs = config.playback_buffer_ms ?? 800;
     if (config.playback_buffer_ms !== undefined) $("tts-buffer").value = config.playback_buffer_ms / 1000;
     if (config.mock) {
       const badge = document.createElement("span");

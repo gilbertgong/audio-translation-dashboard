@@ -106,3 +106,5 @@ main.smoke { max-width: 1200px; }
   #echo { grid-template-columns: minmax(0, 1fr); }
   #echo .echo-metrics { grid-column: 1; grid-row: 4; align-items: flex-start; }
 }
+
+#channel .channel-level { margin-left: auto; width: calc(var(--activity-full-width) - 28px); }

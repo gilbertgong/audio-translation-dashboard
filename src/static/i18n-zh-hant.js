@@ -1,5 +1,11 @@
 // Traditional Chinese interface catalog. Keep keys and named placeholders aligned with i18n-zh.js.
 const UI_ZH_HANT = {
+  "Channel translation": "頻道翻譯",
+  "Audio test: {error}": "音訊測試：{error}",
+  "Audio stream could not start.": "無法啟動音訊串流。",
+  "Unexpected audio response.": "音訊回應異常。",
+  "{language} \u00b7 whisper {stt}s \u00b7 llama {llm}s": "{language} · whisper {stt}秒 · llama {llm}秒",
+
   "Echo round trip": "回聲往返時間",
   "{milliseconds} ms": "{milliseconds} 毫秒",
   "Average audio-packet round trip over the last 0.5 seconds; excludes capture, playback buffering and echo delay.": "最近 0.5 秒內音訊封包的平均往返時間；不包括擷取、播放緩衝和回聲延遲。",

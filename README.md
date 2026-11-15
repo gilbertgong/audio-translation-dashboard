@@ -93,6 +93,12 @@ local execution example. This extracted path still needs target-machine verifica
   **Echo round trip** shows the mean audio-packet send-to-return time for each half-second
   interval, excluding local playback delay. The meter and timing appear to the right of the controls.
   **Disconnect** or leaving the page stops the microphone, socket and queued playback.
+  **Channel translation** sends live microphone PCM over WebSocket while the same continuous
+  speech splitter as Live queues WAV uploads, one at a time. The server returns completed
+  transcript/translation JSON and streams generated speech back over WebSocket. Connecting
+  either audio test automatically disconnects the other and discards its pending work.
+  Both tests send 16 kHz mono microphone audio in 16 ms packets; translated speech returns
+  at the TTS engine's native 24 kHz rate.
 
 ## Header customization
 

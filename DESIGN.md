@@ -285,8 +285,9 @@ page memory; backend logging still follows the existing app behavior.
 A second page, linked from the dashboard's header, that tests audio transport and individual
 inference stages through the application's own endpoints:
 
-- **WebSocket echo:** `echo-test.js` reuses `recorder-worklet.js` to capture mono Float32 at
-  48 kHz, writing directly into 16 ms `pcm_s16le` packets. Connect creates a random channel
+- **WebSocket echo:** `component-audio.js` reuses `recorder-worklet.js` to capture mono Float32 at
+  16 kHz, using the browser's AudioContext resampling for microphone input, and writes directly
+  into 16 ms `pcm_s16le` packets (256 samples, 512 payload bytes). Connect creates a random channel
   and opens `/api/audio?channel=<name>&echo=1`, starts the stream, then requests the microphone.
   No logon/authentication exchange or channel broadcast is involved. The browser delay slider
   adds 0–5 seconds in 0.5-second steps; its final position disables playback while networking
@@ -309,6 +310,17 @@ inference stages through the application's own endpoints:
   `calc(var(--activity-full-width) - 28px)` rule.
   The original MediaRecorder-based Transcribe panel is unchanged.
 
+- **Channel translation:** shares echo's microphone, framing, playback and connection lifecycle.
+  Connecting either test disconnects the other. A random channel opens with `echo=0`; raw mic
+  PCM continues upstream while Live's extracted `segment-splitter.js` creates speech segments.
+  Shared `audio-utils.js` supplies resampling and WAV encoding for Live and component tests.
+  WAVs queue in the browser, with exactly one `/api/channel/translate?channel=...&seq=...` POST
+  in flight. Completed `on_transcription` and `on_translation` JSON messages arrive over WS,
+  carrying the usual result, timing and raw exchange data. llama uses a completed response here,
+  rather than token streaming. Rows show both texts and raw responses; generated speech plays
+  from the server's szaL16 stream using the configured playback buffer. Disconnect aborts uploads,
+  clears queued segments/playback and prevents stale results from entering a new connection.
+
 - **Transcribe:** record, or upload any audio file the browser can decode (converted to the dashboard's WAV format in the page); shows the text, language, timings and raw response.
 - **Translate:** any text, streamed; uses a source-language selector and shows the translation, time to first token and the raw stream.
 - **Speak:** any text in any of the TTS server's voices (a picker from `/api/voices`); shows time to first audio, with Play again and a WAV download.
@@ -324,15 +336,27 @@ Serves the pages and runs the pipeline. HTTP/WebSocket plumbing lives in the ven
 `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py`
 contains the configuration, engine calls and decorated endpoints:
 
-- **WebSocket `/api/audio`** requires a connection-local `channel` query parameter. With
+- **WebSocket `/api/audio`** requires a `channel` query parameter, unique among active connections. With
   `echo=1`, the server acknowledges szaL16 start/stop controls, returns stream events and
   echoes binary packets immediately. It preserves PCM payload bytes, replaces the network-order
   packet header with downstream packet IDs, and uses multipart sends without joining payloads.
   `echo=0` accepts stream controls/audio without returning an echo. Stream format is mono
   signed PCM16 LE, using the unchanged base64 codec header; malformed input closes with 1008.
-  Message size is bounded to 16 KiB and queued payload to 256 KiB. Connection state remains
-  local to the handler; there is no shared channel registry or translation pipeline here.
+  Incoming message size is bounded to 16 KiB and queued payload to 256 KiB. A small registry
+  associates WAV POSTs with their active connection. Each connection has one ordered WS send
+  worker and a bounded outbound job queue, shared by echo and generated speech. Text results
+  send directly from the POST handler so they do not wait behind speech; microweb serializes
+  message writes. Disconnect removes the registry entry and discards queued jobs. An executing
+  engine call may finish or time out, but its results cannot reach a replacement connection.
   The same transport operates in mock mode without inference calls.
+
+- **POST `/api/channel/translate`** takes a WAV plus `channel` and `seq` query values. It reuses
+  recording/transcription and forced-language recheck helpers, then makes one nonstreaming llama
+  request. Completed transcript and translation JSON go to that captured WS connection. After
+  delivering text, it queues speech and returns, allowing the next browser WAV upload while
+  speech runs. The WS send worker calls the existing TTS PCM helper and frames its native
+  24 kHz mono PCM16 LE into 16 ms szaL16 packets, padding only the final partial packet. No
+  intermediate WAV is created. Speech jobs stay ordered; errors return `on_speech_error` JSON.
 
 
 | Endpoint                       | Purpose                                                       |

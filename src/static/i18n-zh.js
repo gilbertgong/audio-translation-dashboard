@@ -1,5 +1,11 @@
 // Simplified Chinese interface catalog. English messages are the fallback keys.
 const UI_ZH_HANS = {
+  "Channel translation": "频道翻译",
+  "Audio test: {error}": "音频测试：{error}",
+  "Audio stream could not start.": "无法启动音频流。",
+  "Unexpected audio response.": "音频响应异常。",
+  "{language} \u00b7 whisper {stt}s \u00b7 llama {llm}s": "{language} · whisper {stt}秒 · llama {llm}秒",
+
   "Echo round trip": "回声往返时间",
   "{milliseconds} ms": "{milliseconds} 毫秒",
   "Average audio-packet round trip over the last 0.5 seconds; excludes capture, playback buffering and echo delay.": "最近 0.5 秒内音频包的平均往返时间；不包括采集、播放缓冲和回声延迟。",

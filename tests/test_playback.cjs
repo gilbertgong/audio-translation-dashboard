@@ -64,7 +64,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/time-stretch
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh-hant.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n.js"), "utf8"), sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/app.js"), "utf8"), sandbox);
+for (const file of ["audio-utils.js", "segment-splitter.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/" + file), "utf8"), sandbox);
 vm.runInContext(`
   language1 = "English"; language2 = "Chinese";
   function fixture(language = "english", done = true) {

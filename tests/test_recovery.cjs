@@ -66,7 +66,7 @@ function fixture({ savedInterrupt = null, storageBlocked = false, browser = {} }
       calls.push({ url, options }); return network(url, options);
     },
   });
-  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "translation-actions.js", "app.js"]) {
+  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "translation-actions.js", "audio-utils.js", "segment-splitter.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static", file), "utf8"), sandbox);
   }
   const run = (code) => vm.runInContext(code, sandbox);

@@ -43,6 +43,20 @@
       </div>
     </section>
 
+    <section class="test" id="channel">
+      <h2><span data-i18n="Channel translation">Channel translation</span> <span class="via">whisper → llama → TTS · /api/audio</span></h2>
+      <div class="row">
+        <button type="button" id="channel-connect" data-i18n="Connect">Connect</button>
+        <span class="status" id="channel-status" role="status" data-i18n="Disconnected">Disconnected</span>
+        <div class="level channel-level">
+          <div id="channel-meter" class="meter" role="meter" aria-label="Microphone level" data-i18n-aria-label="Microphone level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60">
+            <div class="meter-fill"></div><div class="meter-peak"></div>
+          </div><span id="channel-db" class="meter-db">-∞ dB</span>
+        </div>
+      </div>
+      <div id="channel-results" hidden translate="no"></div>
+    </section>
+
     <section class="test" id="stt">
       <h2><span data-i18n="Transcribe">Transcribe</span> <span class="via">whisper · /api/recordings</span></h2>
       <div class="row">
@@ -100,7 +114,9 @@
     </section>
   </main>
 
+  <script src="audio-utils.js"></script>
+  <script src="segment-splitter.js"></script>
   <script src="test.js"></script>
-  <script src="echo-test.js"></script>
+  <script src="component-audio.js"></script>
 </body>
 </html>

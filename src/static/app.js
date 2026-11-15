@@ -186,104 +186,18 @@ function stopMeter() {
 // manual recording. Settings come from [auto_split] in the config.
 
 const autoSplitToggle = document.getElementById("auto-split");
-const autoSplit = {
-  split_pause_ms: 250, threshold_db: 12, min_threshold_db: -50, pre_roll_ms: 300,
-  tail_ms: 200, min_speech_ms: 100, max_phrase_s: 25,
-};
-const CALIBRATION_MS = 400; // measure background noise only, at the start
-const NOISE_FALL_MS = 50; // background estimate follows quieter levels quickly...
-const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-segment)
-
-// label: where the audio comes from, noted with each segment ("continuous
-// mode" for the microphone, "captured audio").
-// source: "mic" or "capture", for the status row.
+const autoSplit = { ...SegmentSplitter.defaults };
+// Keep Live's status, turn tracking and upload callbacks around the shared splitter.
 function createSegmentSplitter(sampleRate, label = "continuous mode", source = "mic") {
-  return {
-    sampleRate,
-    label,
-    source,
-    elapsedMs: 0,
-    calibrating: true,
-    noiseDb: null, // background level estimate
-    thresholdDb: autoSplit.min_threshold_db,
-    speaking: false,
-    preRoll: [], // recent blocks kept while waiting for speech
-    preRollSamples: 0,
-    blocks: [], // the current segment
-    segmentSamples: 0,
-    speechMs: 0, // loud time in the current segment
-    silenceMs: 0, // quiet time since the last loud block
-  };
+  return Object.assign(SegmentSplitter.create(sampleRate, autoSplit, {
+    onChange: updateStatus,
+    onSpeech: continuing => noteSpeech(continuing, source),
+    onSegment: (samples, reason) => sendAudioSegment(samples, sampleRate,
+      I18n.msg("{label} ({reason})", { label: I18n.msg(label), reason: I18n.msg(reason) }), source),
+  }), { label, source });
 }
-
-// Feed one audio block (Float32Array) and its RMS level.
-function segmentSplitterBlock(sp, block, rms) {
-  const ms = (block.length / sp.sampleRate) * 1000;
-  const db = toDb(rms);
-  sp.elapsedMs += ms;
-
-  // Track the background noise level.
-  if (sp.noiseDb === null) sp.noiseDb = db;
-  const tau = db < sp.noiseDb ? NOISE_FALL_MS : NOISE_RISE_MS * (sp.speaking ? 4 : 1);
-  sp.noiseDb += (db - sp.noiseDb) * (1 - Math.exp(-ms / tau));
-  sp.thresholdDb = Math.max(sp.noiseDb + autoSplit.threshold_db, autoSplit.min_threshold_db);
-
-  if (sp.calibrating) {
-    if (sp.elapsedMs < CALIBRATION_MS) return;
-    sp.calibrating = false;
-    updateStatus();
-  }
-  const loud = db > sp.thresholdDb;
-  // For automatic playback: speech now; sustained (past a cough) mid-segment.
-  // A muted captured tab isn't heard here, so the translations talk over it.
-  if (loud) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms, sp.source);
-
-  if (!sp.speaking) {
-    sp.preRoll.push(block);
-    sp.preRollSamples += block.length;
-    const keep = (autoSplit.pre_roll_ms / 1000) * sp.sampleRate;
-    while (sp.preRoll.length > 1 && sp.preRollSamples - sp.preRoll[0].length >= keep) {
-      sp.preRollSamples -= sp.preRoll.shift().length;
-    }
-    if (loud) {
-      Object.assign(sp, { speaking: true, blocks: sp.preRoll, segmentSamples: sp.preRollSamples,
-                          speechMs: ms, silenceMs: 0, preRoll: [], preRollSamples: 0 });
-      updateStatus();
-    }
-    return;
-  }
-
-  sp.blocks.push(block);
-  sp.segmentSamples += block.length;
-  if (loud) {
-    sp.speechMs += ms;
-    sp.silenceMs = 0;
-  } else {
-    sp.silenceMs += ms;
-  }
-  if (sp.silenceMs >= autoSplit.split_pause_ms) endSegment(sp, "pause");
-  else if (sp.segmentSamples / sp.sampleRate >= autoSplit.max_phrase_s) endSegment(sp, "max length");
-}
-
-// Finish the current segment and send it (if it had enough speech).
-// reason: "pause", "max length" (speech continues into a new segment) or "stop".
-function endSegment(sp, reason) {
-  if (!sp.speaking) return;
-  let samples = concat(sp.blocks);
-  if (reason === "pause") {
-    // Keep only tail_ms of the trailing silence.
-    const extraMs = Math.max(0, sp.silenceMs - autoSplit.tail_ms);
-    const extra = Math.floor((extraMs / 1000) * sp.sampleRate);
-    samples = samples.subarray(0, Math.max(0, samples.length - extra));
-  }
-  const speechMs = sp.speechMs;
-  const continuing = reason === "max length";
-  Object.assign(sp, { speaking: continuing, blocks: [], segmentSamples: 0, speechMs: 0, silenceMs: 0 });
-  updateStatus();
-
-  if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
-  sendAudioSegment(samples, sp.sampleRate, I18n.msg("{label} ({reason})", { label: I18n.msg(sp.label), reason: I18n.msg(reason) }), sp.source);
-}
+function segmentSplitterBlock(sp, block, rms) { SegmentSplitter.push(sp, block, rms); }
+function endSegment(sp, reason) { SegmentSplitter.end(sp, reason); }
 
 async function sendAudioSegment(samples, sampleRate, note, source, context = transcriptContext(source)) {
   try {
@@ -1225,60 +1139,6 @@ async function stopRecording(recording = micRecording) {
   if (samples.length === 0) throw I18n.error("No audio captured");
   const resampled = await resample(samples, inputRate, targetSampleRate);
   return encodeWav(resampled, targetSampleRate);
-}
-
-function concat(chunks) {
-  const total = chunks.reduce((n, c) => n + c.length, 0);
-  const out = new Float32Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.length;
-  }
-  return out;
-}
-
-// Let the browser's own resampler convert to the target rate.
-async function resample(samples, fromRate, toRate) {
-  if (fromRate === toRate) return samples;
-  const length = Math.ceil((samples.length * toRate) / fromRate);
-  const offline = new OfflineAudioContext(1, length, toRate);
-  const buffer = offline.createBuffer(1, samples.length, fromRate);
-  buffer.copyToChannel(samples, 0);
-  const src = offline.createBufferSource();
-  src.buffer = buffer;
-  src.connect(offline.destination);
-  src.start();
-  return (await offline.startRendering()).getChannelData(0);
-}
-
-// Mono 16-bit PCM WAV.
-function encodeWav(samples, sampleRate) {
-  const dataSize = samples.length * 2;
-  const view = new DataView(new ArrayBuffer(44 + dataSize));
-  const writeStr = (offset, s) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
-  };
-
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);             // fmt chunk size
-  view.setUint16(20, 1, true);              // PCM
-  view.setUint16(22, 1, true);              // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // byte rate
-  view.setUint16(32, 2, true);              // block align
-  view.setUint16(34, 16, true);             // bits per sample
-  writeStr(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([view], { type: "audio/wav" });
 }
 
 // Each server gets one request at a time from this page, in the order they're
