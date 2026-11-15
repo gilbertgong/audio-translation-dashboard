@@ -1132,3 +1132,11 @@ AI/MEMORY.md now explicitly prefers a short GitHub-style introduction, links ove
 detail, and README edits only when introductory guidance changes. Verified local links and
 anchors, first-use button wording and whitespace. Documentation-only change; no runtime
 tests or service changes. Uncommitted; no push.
+
+## 2026-11-15: Isolate shared-header fixtures from deployment customization
+
+Header tests now use defaults or their explicitly supplied HeaderCustom instead of loading
+header-custom.js. Deployments can replace that file without changing the shared-header tests'
+assumptions. No runtime changes or deployment-specific branding assertions are included.
+All JavaScript suites passed; a guarded file-read check also confirmed header fixtures never
+load the deployment override. The whitespace check passed.

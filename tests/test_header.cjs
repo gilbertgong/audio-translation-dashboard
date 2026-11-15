@@ -49,7 +49,9 @@ function fixture(page, custom, hash = "", engineState = "ok") {
         ({ role, name: role, state: engineState, detail: "test", url: "http://test" })) }) };
     },
   });
-  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "coordinator.js", "header-custom.js", "header.js"]) {
+  // Fixtures select defaults or the supplied HeaderCustom explicitly; a deployment's
+  // header-custom.js must not replace those choices or require extra DOM capabilities.
+  for (const file of ["i18n-zh.js", "i18n-zh-hant.js", "i18n.js", "coordinator.js", "header.js"]) {
     vm.runInContext(fs.readFileSync(path.join(staticDir, file), "utf8"), sandbox);
   }
   for (const fn of documentEvents.DOMContentLoaded || []) fn();
