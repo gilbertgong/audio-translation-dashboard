@@ -98,7 +98,8 @@ local execution example. This extracted path still needs target-machine verifica
   transcript/translation JSON and streams generated speech back over WebSocket. Connecting
   either audio test automatically disconnects the other and discards its pending work.
   Both tests send 16 kHz mono microphone audio in 16 ms packets; translated speech returns
-  at the TTS engine's native 24 kHz rate.
+  at the TTS engine's native 24 kHz rate. Local speech detection starts each mic stream and
+  ends it after a pause (250 ms by default). The mic and connection remain open during silence.
 
 ## Header customization
 

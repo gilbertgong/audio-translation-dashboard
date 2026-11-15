@@ -66,8 +66,9 @@
     clearPlayback(state);
     if (state.ctx.state !== "closed") state.ctx.close().catch(() => {});
     try {
-      if (state.socket.readyState === WebSocket.OPEN && state.streamId !== undefined) {
-        state.socket.send(JSON.stringify({ command: "stop_stream", channel: state.channel, stream_id: state.streamId }));
+      const outgoing = state.micStreams[0];
+      if (state.socket.readyState === WebSocket.OPEN && outgoing?.id !== undefined) {
+        state.socket.send(JSON.stringify({ command: "stop_stream", channel: state.channel, stream_id: outgoing.id }));
       }
     } catch {} // the peer may already have disconnected
     state.socket.close();
@@ -150,13 +151,59 @@
     } finally { state.posting = false; }
   }
 
+  // Speech streams wait for their own start acknowledgement before sending PCM.
+  // A pause can finish one while its acknowledgement is still in flight.
+  function sendMic(state) {
+    const stream = state.micStreams[0];
+    if (!stream) return;
+    if (!stream.requested) {
+      stream.requested = true;
+      state.socket.send(JSON.stringify({ command: "start_stream", seq: stream.seq,
+        channel: state.channel, type: "audio", codec: "pcm_s16le", codec_header: state.header, packet_duration: 16 }));
+    }
+    if (stream.id === undefined) return;
+    const sendPacket = () => {
+      stream.packet.setUint8(0, 1);
+      stream.packet.setUint32(1, stream.id);
+      stream.packet.setUint32(5, stream.packetId);
+      if (state.panel.echo) state.sentAt.set(`${stream.id}:${stream.packetId}`, performance.now());
+      state.socket.send(stream.packet.buffer);
+      stream.packetId = (stream.packetId + 1) >>> 0;
+      stream.packet = new DataView(new ArrayBuffer(9 + state.samples * 2));
+      stream.position = 0;
+    };
+    for (const block of stream.blocks) for (const sample of block) {
+      const value = Math.max(-1, Math.min(1, sample));
+      stream.packet.setInt16(9 + stream.position * 2, Math.min(32767, Math.round(value * 32768)), true);
+      if (++stream.position === state.samples) sendPacket();
+    }
+    stream.blocks.length = 0;
+    if (stream.ended) {
+      if (stream.position) sendPacket(); // zero-pad only the final partial packet
+      state.socket.send(JSON.stringify({ command: "stop_stream", channel: state.channel, stream_id: stream.id }));
+      state.micStreams.shift();
+      sendMic(state);
+    }
+  }
+
+  function micAudio(state, block) {
+    let stream = state.micStreams.at(-1);
+    if (!stream || stream.ended) {
+      stream = { seq: state.nextStreamSeq++, blocks: [], position: 0, packetId: 0,
+        packet: new DataView(new ArrayBuffer(9 + state.samples * 2)) };
+      state.micStreams.push(stream);
+    }
+    stream.blocks.push(block);
+    sendMic(state);
+  }
+
   function receive(state, data) {
     if (typeof data === "string") {
       const event = JSON.parse(data);
-      if (event.seq === 1 && !event.command) {
+      if (event.seq === state.micStreams[0]?.seq && !event.command) {
         if (!event.success || !Number.isInteger(event.stream_id)) throw I18n.error("Audio stream could not start.");
-        state.streamId = event.stream_id;
-        state.ready();
+        state.micStreams[0].id = event.stream_id;
+        sendMic(state);
       } else if (event.command === "on_stream_start") {
         const header = Uint8Array.from(atob(event.codec_header), c => c.charCodeAt(0));
         const rate = new DataView(header.buffer).getUint16(0, true);
@@ -175,9 +222,10 @@
         packet.getUint32(1) !== state.receiving.id) throw I18n.error("Unexpected audio response.");
     // This echo route returns exactly one numbered packet per send, in order.
     const id = packet.getUint32(5);
-    const sent = state.sentAt.get(id);
+    const key = `${packet.getUint32(1)}:${id}`;
+    const sent = state.sentAt.get(key);
     if (sent !== undefined) {
-      state.sentAt.delete(id);
+      state.sentAt.delete(key);
       state.rttSum += performance.now() - sent;
       state.rttCount++;
     }
@@ -212,7 +260,7 @@
       socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
       state = { panel, ctx, socket, abort: new AbortController(), uploads: [], rows: new Map(), nextSeq: 1, posting: false, channel: url.searchParams.get("channel"), playing: new Set(), next: 0,
-        samples: ctx.sampleRate * 16 / 1000, position: 0, sentAt: new Map(), sentCount: 0,
+        samples: ctx.sampleRate * 16 / 1000, micStreams: [], nextStreamSeq: 1, sentAt: new Map(),
         rttSum: 0, rttCount: 0, rttAt: 0,
         meter: { rms: 0, peak: 0, shown: -60, max: -60, clipUntil: 0, frame: 0 } };
       current = state;
@@ -230,9 +278,7 @@
       header.setUint8(3, 16);
       state.header = btoa(String.fromCharCode(...new Uint8Array(header.buffer)));
       await Promise.all([resumed, new Promise((resolve, reject) => {
-        state.ready = resolve;
-        socket.addEventListener("open", () => socket.send(JSON.stringify({ command: "start_stream", seq: 1,
-          channel: state.channel, type: "audio", codec: "pcm_s16le", codec_header: state.header, packet_duration: 16 })));
+        socket.addEventListener("open", resolve);
         socket.addEventListener("message", ({ data }) => {
           if (current !== state) return;
           try { receive(state, data); } catch (error) { reject(error); fail(state, error); }
@@ -254,15 +300,13 @@
       if (current !== state) return;
       state.source = ctx.createMediaStreamSource(stream);
       state.node = new AudioWorkletNode(ctx, "recorder");
-      const newPacket = () => {
-        state.packet = new DataView(new ArrayBuffer(9 + state.samples * 2));
-        state.packet.setUint8(0, 1);
-        state.packet.setUint32(1, state.streamId);
-      };
-      newPacket();
-      if (!panel.echo) state.splitter = SegmentSplitter.create(ctx.sampleRate,
+      state.splitter = SegmentSplitter.create(ctx.sampleRate,
         { ...SegmentSplitter.defaults, ...splitSettings }, {
-          onSegment: samples => { state.uploads.push({ samples, seq: String(state.nextSeq++) }); uploadNext(state); },
+          onAudio: block => micAudio(state, block),
+          onPause: () => { state.micStreams.at(-1).ended = true; sendMic(state); },
+          onSegment: panel.echo ? undefined : samples => {
+            state.uploads.push({ samples, seq: String(state.nextSeq++) }); uploadNext(state);
+          },
         });
       state.node.port.onmessage = ({ data }) => {
         if (current !== state) return;
@@ -271,20 +315,9 @@
           for (const sample of data) {
             sum += sample * sample;
             peak = Math.max(peak, Math.abs(sample));
-            const value = Math.max(-1, Math.min(1, sample));
-            state.packet.setInt16(9 + state.position * 2, Math.min(32767, Math.round(value * 32768)), true);
-            if (++state.position === state.samples) {
-              if (panel.echo) {
-                state.sentAt.set(state.sentCount, performance.now());
-                state.sentCount = (state.sentCount + 1) >>> 0;
-              }
-              socket.send(state.packet.buffer);
-              state.position = 0;
-              newPacket();
-            }
           }
           const rms = Math.sqrt(sum / data.length);
-          if (state.splitter) SegmentSplitter.push(state.splitter, data, rms);
+          SegmentSplitter.push(state.splitter, data, rms);
           state.meter.rms = Math.max(state.meter.rms, rms);
           state.meter.peak = Math.max(state.meter.peak, peak);
         } catch (error) { fail(state, error); }

@@ -288,7 +288,12 @@ inference stages through the application's own endpoints:
 - **WebSocket echo:** `component-audio.js` reuses `recorder-worklet.js` to capture mono Float32 at
   16 kHz, using the browser's AudioContext resampling for microphone input, and writes directly
   into 16 ms `pcm_s16le` packets (256 samples, 512 payload bytes). Connect creates a random channel
-  and opens `/api/audio?channel=<name>&echo=1`, starts the stream, then requests the microphone.
+  and opens `/api/audio?channel=<name>&echo=1`, then requests the microphone. The shared Live
+  detector calibrates and waits for speech before starting a stream. Existing pre-roll is
+  included; audio buffers until the start acknowledgement supplies its stream ID. After
+  `split_pause_ms` of silence (250 ms by default), the final partial packet is zero-padded
+  and `stop_stream` is sent. The mic/socket remain open, sending no audio until speech resumes
+  in a fresh stream. Maximum WAV phrase length does not end a WS stream during speech.
   No logon/authentication exchange or channel broadcast is involved. The browser delay slider
   adds 0–5 seconds in 0.5-second steps; its final position disables playback while networking
   and capture continue. Delay changes stop queued sources and begin scheduling with the new delay.
@@ -299,7 +304,7 @@ inference stages through the application's own endpoints:
   boundaries, session peak hold and 1.5-second clipping indication. RMS/peak are collected
   during the existing sample-conversion loop and rendered with requestAnimationFrame.
   For packet RTT, the browser records performance.now() at each send and matches returned
-  downstream packet IDs to its send counter: this echo route returns every packet exactly
+  stream IDs and downstream packet IDs: this echo route returns every packet exactly
   once in order. No wire-format/timestamp extension is required. It measures browser send
   through echo receive (including network/server/event-loop queues), excluding capture/frame
   formation and playback/buffering/user-selected delay. RTT continues while playback is disabled;
@@ -312,7 +317,9 @@ inference stages through the application's own endpoints:
 
 - **Channel translation:** shares echo's microphone, framing, playback and connection lifecycle.
   Connecting either test disconnects the other. A random channel opens with `echo=0`; raw mic
-  PCM continues upstream while Live's extracted `segment-splitter.js` creates speech segments.
+  PCM uses the same speech/pause stream boundaries as echo, while Live's extracted
+  `segment-splitter.js` independently creates WAV speech segments. WS includes silence through
+  the pause decision; WAVs retain their existing tail trimming and minimum-speech filtering.
   Shared `audio-utils.js` supplies resampling and WAV encoding for Live and component tests.
   WAVs queue in the browser, with exactly one `/api/channel/translate?channel=...&seq=...` POST
   in flight. Completed `on_transcription` and `on_translation` JSON messages arrive over WS,

@@ -6,10 +6,10 @@ const SegmentSplitter = (() => {
   const NOISE_FALL_MS = 50;
   const NOISE_RISE_MS = 2000;
   const toDb = x => x > 0 ? Math.max(-60, 20 * Math.log10(x)) : -60;
-  function create(sampleRate, settings, { onSegment, onSpeech, onChange } = {}) {
+  function create(sampleRate, settings, { onSegment, onSpeech, onChange, onAudio, onPause } = {}) {
     return {
       sampleRate,
-      settings, onSegment, onSpeech, onChange,
+      settings, onSegment, onSpeech, onChange, onAudio, onPause,
       elapsedMs: 0,
       calibrating: true,
       noiseDb: null, // background level estimate
@@ -57,11 +57,13 @@ const SegmentSplitter = (() => {
         Object.assign(sp, { speaking: true, blocks: sp.preRoll, segmentSamples: sp.preRollSamples,
                             speechMs: ms, silenceMs: 0, preRoll: [], preRollSamples: 0 });
         sp.onChange?.();
+        for (const audio of sp.blocks) sp.onAudio?.(audio);
       }
       return;
     }
 
     sp.blocks.push(block);
+    sp.onAudio?.(block);
     sp.segmentSamples += block.length;
     if (loud) {
       sp.speechMs += ms;
@@ -88,6 +90,7 @@ const SegmentSplitter = (() => {
     const continuing = reason === "max length";
     Object.assign(sp, { speaking: continuing, blocks: [], segmentSamples: 0, speechMs: 0, silenceMs: 0 });
     sp.onChange?.();
+    if (reason === "pause") sp.onPause?.();
 
     if (speechMs < sp.settings.min_speech_ms) return; // too little speech: a click or cough
     sp.onSegment?.(samples, reason);

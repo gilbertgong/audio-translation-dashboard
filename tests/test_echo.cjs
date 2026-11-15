@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/static/component-audio.js'), 'utf8');
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-function fixture() {
+function fixture(splitSettings = { pre_roll_ms: 0 }) {
   class Events {
     events = {};
     addEventListener(name, fn) { (this.events[name] ??= []).push(fn); }
@@ -77,7 +77,7 @@ function fixture() {
       requests.push({ url, options, resolve });
       options.signal.addEventListener('abort', () => reject(Error('aborted')));
     }), errorMessage: async () => 'request failed',
-    sampleRate: 16000, splitSettings: {}, playbackBufferMs: 800,
+    sampleRate: 16000, splitSettings, playbackBufferMs: 800,
     audioProcessing: {}, navigator: { mediaDevices: { getUserMedia: () => new Promise((resolve, reject) => { permit = resolve; deny = reject; }) } },
     I18n: { msg: (key, values) => ({ key, values }), text: (element, value) => { element.message = value; },
       attr: (element, name, value) => { element[name] = value; },
@@ -93,12 +93,16 @@ function fixture() {
     click: (prefix = 'echo') => elements[prefix + '-connect'].fire('click'),
     acknowledge() {
       const socket = sockets.at(-1); socket.readyState = 1; socket.fire('open');
-      // A new mic request is made only after the stream acknowledgement.
-      assert.equal(sockets.at(-1).sent.length, 1);
-      const request = JSON.parse(socket.sent[0]);
+      assert.equal(socket.sent.length, 0); // opening a socket does not start an audio stream
+    },
+    ackStream(id = 42) {
+      const socket = sockets.at(-1);
+      const request = socket.sent.filter(item => typeof item === 'string')
+        .map(item => JSON.parse(item)).filter(item => item.command === 'start_stream').at(-1);
       const { seq, ...metadata } = request;
-      socket.fire('message', { data: JSON.stringify({ seq: 1, success: true, stream_id: 42 }) });
-      socket.fire('message', { data: JSON.stringify({ ...metadata, command: 'on_stream_start', stream_id: 42 }) });
+      socket.fire('message', { data: JSON.stringify({ seq, success: true, stream_id: id }) });
+      if (socket.url.searchParams.get('echo') === '1') socket.fire('message', {
+        data: JSON.stringify({ ...metadata, command: 'on_stream_start', stream_id: id }) });
     },
     permit: () => {
       if (audio.tracks[0].stopped) audio = { tracks: [{ stopped: false, stop() { this.stopped = true; } }], getTracks() { return this.tracks; } };
@@ -119,11 +123,15 @@ function fixture() {
   assert.equal(f.status['echo-status'].message.key, 'Connected');
   const node = f.nodes[0], socket = f.sockets[0], context = f.contexts[0];
   assert.equal(context.sampleRate, 16000);
+  for (let i = 0; i < 60; i++) node.port.onmessage({ data: new Float32Array(128) });
+  assert.equal(socket.sent.length, 0); // calibration and silence transmit nothing
+  const block = new Float32Array(128).fill(0.5);
+  for (let i = 0; i < 2; i++) node.port.onmessage({ data: block });
   const start = JSON.parse(socket.sent[0]);
   assert.equal(Buffer.from(start.codec_header, 'base64').readUInt16LE(0), 16000);
   assert.equal(start.packet_duration, 16);
-  const block = new Float32Array(128).fill(0.5);
-  for (let i = 0; i < 2; i++) node.port.onmessage({ data: block });
+  assert.equal(socket.sent.length, 1); // PCM waits for the start acknowledgement
+  f.ackStream();
   const packet = socket.sent[1];
   assert.equal(packet.byteLength, 521); // 9-byte header + 256 mono PCM16 samples
   assert.equal(new DataView(packet).getUint32(1), 42);
@@ -213,12 +221,12 @@ function fixture() {
   channel.acknowledge(); await settle(); channel.permit(); await settle();
   const ws = channel.sockets.at(-1), capture = channel.nodes.at(-1);
   assert.equal(ws.url.searchParams.get('echo'), '0');
-  assert.equal(Buffer.from(JSON.parse(ws.sent[0]).codec_header, 'base64').readUInt16LE(0), 16000);
   const quiet = new Float32Array(128), loud = new Float32Array(128).fill(0.1);
   const feed = (data, n) => { for (let i = 0; i < n; i++) capture.port.onmessage({ data }); };
   feed(quiet, 160);
-  feed(loud, 120); feed(quiet, 120); await settle();
-  feed(loud, 120); feed(quiet, 120); await settle();
+  feed(loud, 120); channel.ackStream(); feed(quiet, 120); await settle();
+  assert.equal(Buffer.from(JSON.parse(ws.sent[0]).codec_header, 'base64').readUInt16LE(0), 16000);
+  feed(loud, 120); channel.ackStream(43); feed(quiet, 120); await settle();
   assert.equal(channel.requests.length, 1); // second WAV is queued, never parallel
   assert.ok(ws.sent.some(item => item instanceof ArrayBuffer)); // raw PCM path also runs
   channel.requests[0].resolve({ ok: true, json: async () => ({ seq: '1' }) });
@@ -244,5 +252,50 @@ function fixture() {
   await settle(); assert.equal(channel.requests.length, 2);
   assert.equal(channel.contexts[1].sources[0].stopped, true);
   channel.window.fire('pagehide'); await settle();
+
+  // A whole phrase can end before its start acknowledgement; a later phrase must
+  // wait its turn without losing pre-roll, tail, or the final partial packet.
+  const delayed = fixture({ pre_roll_ms: 24, max_phrase_s: 0.05, split_pause_ms: 16 });
+  delayed.click(); delayed.acknowledge(); await settle(); delayed.permit(); await settle();
+  const delayedNode = delayed.nodes[0], delayedWs = delayed.sockets[0];
+  const push = (value, n) => {
+    for (let i = 0; i < n; i++) delayedNode.port.onmessage({ data: new Float32Array(128).fill(value) });
+  };
+  const commands = () => delayedWs.sent.filter(item => typeof item === 'string').map(item => JSON.parse(item));
+  push(0, 60); push(0.25, 10);
+  assert.equal(commands().length, 1); // maximum WAV phrase length does not stop WS speech
+  push(0, 32); // configured silence ends the first speech stream, even before its ack
+  push(0.5, 3); push(0, 32);
+  assert.equal(delayedWs.sent.length, 1); // second start must follow first audio + stop
+  delayed.ackStream(101);
+  assert.deepEqual(commands().map(item => item.command), ['start_stream', 'stop_stream', 'start_stream']);
+  assert.equal(commands()[1].stream_id, 101);
+  assert.equal(commands()[2].seq, 2);
+  const firstAudio = delayedWs.sent.filter(item => item instanceof ArrayBuffer);
+  assert.equal(new DataView(firstAudio[0]).getInt16(9, true), 0); // retained pre-roll
+  assert.equal(new DataView(firstAudio[1]).getInt16(9, true), 8192); // speech starts after 16 ms
+  delayed.ackStream(102);
+  assert.deepEqual(commands().map(item => item.command), ['start_stream', 'stop_stream', 'start_stream', 'stop_stream']);
+  const secondAudio = delayedWs.sent.filter(item => item instanceof ArrayBuffer && new DataView(item).getUint32(1) === 102);
+  assert.equal(secondAudio.length, 4); // 7 worklet blocks -> 3 full packets + one padded
+  assert.equal(new DataView(secondAudio[0]).getUint32(5), 0); // packet IDs restart per stream
+  assert.equal(new DataView(secondAudio.at(-1)).getUint32(5), 3);
+  assert.equal(new DataView(secondAudio.at(-1)).getInt16(519, true), 0);
+  // Packet zero from two different streams must retain distinct RTT timestamps.
+  delayed.advance(20);
+  const receiveAudio = (packet, streamId) => {
+    delayedWs.fire('message', { data: JSON.stringify({ ...commands()[0], command: 'on_stream_start', stream_id: streamId }) });
+    delayedWs.fire('message', { data: packet });
+  };
+  receiveAudio(firstAudio[0], 101);
+  delayed.advance(10); receiveAudio(secondAudio[0], 102);
+  delayed.advance(470); delayed.draw();
+  assert.equal(delayed.elements['echo-rtt'].message.values.milliseconds, '25.0');
+  const afterPause = delayedWs.sent.length;
+  push(0, 100);
+  assert.equal(delayedWs.sent.length, afterPause); // stay connected without sending silence
+  assert.equal(delayedWs.readyState, 1);
+  assert.equal(delayed.audio.tracks[0].stopped, false);
+  delayed.window.fire('pagehide');
   console.log('Echo browser checks passed: PCM, local delay/disable, query parameters and setup/disconnect races.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

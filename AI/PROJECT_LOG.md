@@ -1047,3 +1047,21 @@ rate and generated TTS stays native 24 kHz. No Live capture changes.
 Browser-controller checks verify the requested context rate, both outgoing codec headers,
 packet size/duration and unchanged 24 kHz TTS playback, along with queue/lifecycle behavior.
 JS syntax and whitespace checks pass. Physical audio audition remains pending. No commit/push.
+
+### Silence-delimited microphone WS streams
+
+Committed the channel component test and 16 kHz mic change as 890a375 at user request,
+without pushing. Then implemented the agreed silence-delimited WS lifecycle for both tests.
+Mic/socket remain open; the shared Live detector starts streams on speech with pre-roll and
+ends them after configured silence. Audio is buffered until each start acknowledgement,
+including when speech ends or resumes before it arrives. Flush/pad the final packet before
+stop, and serialize new starts behind preceding streams. Maximum WAV phrase length does
+not split an ongoing WS stream. WAV uploads retain their existing filtering/tail behavior.
+RTT timestamps now use stream ID plus packet ID, avoiding collisions across stream restarts.
+No server, Live UI, codec or native TTS-rate changes.
+
+Browser checks cover idle/calibration silence, acknowledgement buffering, pre-roll, repeated
+speech, pause/stop order, padding, packet ID reset, RTT isolation, mic/socket retention and
+existing cancellation/upload behavior. Shared splitter, Live playback/mobile, recovery and
+localization checks pass, as do JS syntax/whitespace checks. No physical audio audition or
+service changes. This follow-up remains uncommitted; no pushes.

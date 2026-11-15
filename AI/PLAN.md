@@ -18,7 +18,8 @@ Mac).
 Channel translation component test is implemented for review. Echo and translation share one
 browser mic/WS lifecycle and one server WS send worker per connection. Translation sends both
 raw PCM and serial queued WAV POSTs; completed text returns over WS before independently queued
-speech finishes. Mic WS audio is 16 kHz/16 ms; TTS remains native 24 kHz. Shared Live
+speech finishes. Mic WS audio is 16 kHz/16 ms with local speech/pause stream boundaries;
+the mic/socket remain open during silence. TTS remains native 24 kHz. Shared Live
 segmentation/resampling/WAV helpers preserve existing behavior.
 Mocked HTTP/WS pipeline, browser queue/cancellation and Live regression checks pass; physical
 microphone playback and real-engine audition remain for user review. Changes are uncommitted.
