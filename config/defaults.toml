@@ -56,7 +56,8 @@ echo_cancellation = true
 [auto_split]
 # Automatic splitting on pauses, switched on/off on the page ("Continuous Audio
 # Mode"). When on, one Start/Stop keeps the microphone open and each segment
-# is sent as its own recording when you pause. "Speech" is anything clearly
+# is sent as its own recording when you pause. When off, hold the recording
+# button, Space or backtick to record one clip and release to send it. "Speech" is anything clearly
 # louder than the background noise, which is measured continuously.
 # Whether the switch starts out on when the page loads.
 enabled = true
@@ -132,6 +133,7 @@ auto_play = false
 # and resumes about 100 ms before the interruption at the next turn's end.
 # (The ▶ buttons
 # play at once.)
+# Also resets Live's preceding-transcript context per source, using the same speech pause.
 turn_pause_ms = 1000
 # At most this much speech (ms) waits to be spoken: the translations waiting
 # (not the one playing), counting each once its audio has come back from the
@@ -157,6 +159,8 @@ dir = "models"
 # (from huggingface.co/ggerganov/whisper.cpp), or a full URL to a ggml .bin file.
 # whisper models listed here: https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md#available-models
 model = "large-v3"
+# Silero VAD filters uploaded audio before transcription; shared by all Whisper fragments.
+vad-model = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"
 
 [models.llama]
 # Full URL to a GGUF model file for llama.
@@ -236,7 +240,7 @@ assets = ["whisper-bin-{binary_type}.zip"]
 executable = "whisper-server"
 host = "127.0.0.1"
 port = 8081
-args = ["--language", "auto"]
+args = ["--language", "auto", "--vad"]
 
 # Text-to-speech engines: one is started and used, chosen by [tts] server.
 # They start before llama because llama-server sizes itself to the GPU memory

@@ -712,3 +712,423 @@ cover isolated loading, normal layering, and backend URL derivation.
   temporary recording even if its response never reached the browser; the code comment explains this.
 - Focused recovery and playback checks, JavaScript syntax and whitespace checks passed, including
   speech network/503 retries, unchanged request bodies, cancellation and no audio-body replay.
+
+## 2026-11-13: Enable Whisper Silero VAD by default
+
+- Added the Silero v6.2.0 GGML model to shared Whisper model defaults and --vad to startup args.
+  Removed redundant Whisper fragment args so recipes inherit the startup setting without duplication.
+  Existing model download/launch plumbing passes --vad-model; no Python or browser changes.
+- Remote servers remain externally managed. Existing explicit args lists override defaults; documented
+  regeneration/manual flag updates and binary compatibility. Browser silence splitting is unchanged.
+- Verification: 10 configuration-generator, 12 Docker-instance and 3 standalone-config checks passed.
+  All TOML parsed; offline previews confirmed VAD flags/model paths for all four shipped Whisper
+  machine instances, including Docker mounts. No models downloaded or inference services started.
+
+## 2026-11-14: Preceding transcript context for Live Whisper requests
+
+- Keep the preceding original transcript tail separately for microphone and captured audio. Reuse
+  the existing speech-activity clock and a shared turnWait calculation with turn_pause_ms for both
+  playback turns and context reset. Processing/queue delays and TTS playback do not reset context.
+  Muted video capture still tracks transcription turns without delaying automatic playback.
+- Cap the tail at 100 Unicode characters and 200 UTF-8 bytes, dropping an initial partial word
+  in space-delimited text; Chinese needs no space boundary. Short continuations remain intact.
+- Snapshot predecessors before resampling and read their text within the Whisper queue. Older-turn
+  results cannot seed new turns. Empty/failed results provide no prompt; successful language recheck
+  can correct its own context entry when available. No global/server conversation memory.
+- Keep WAV uploads unchanged; carry URI-encoded UTF-8 context in optional X-Whisper-Prompt, decoded
+  into Whisper's multipart prompt field and visible in raw request details. Recheck inference is
+  unprompted. No new setting, language prediction or second inference pass added.
+- Recovery/context, playback, localization and 13 Python recording-retention/prompt checks passed,
+  along with JS/Python syntax and whitespace. Covers source isolation, exact turn threshold, long
+  processing delays, muted capture, Unicode caps/word boundaries and prompt forwarding. No real
+  inference/audio quality checks or service starts; accuracy improvement assumed for this first cut.
+
+## 2026-11-14: Use joined Whisper segment text throughout the pipeline
+
+- Build the canonical transcript by joining segments[].text with no separator, then trimming only
+  outer whitespace. Preserve existing word spaces and genuine newlines inside segment text; do not
+  inherit formatting newlines added by whisper-server's combined text. Fall back to combined text
+  when no segments are returned. Applies to initial transcription and forced-language rechecks.
+- Display, translation and subsequent context use the joined transcript. Browser text wrapping
+  handles display width; raw Whisper responses remain untouched. Removed the interim prompt-only
+  newline/whitespace cleanup. Inference timestamp options were not changed.
+- Fourteen Python retention/transcription/prompt checks and JS context/recovery, playback and
+  localization suites passed, plus syntax and whitespace checks. Covers split words, preserved
+  spaces, Chinese, genuine segment newlines, empty/missing segments and untouched raw responses.
+  No services or real inference started; changes remain uncommitted.
+
+## 2026-11-14: One whitespace-boundary rule for transcript context
+
+- At the user's request, removed the Chinese exception from tail trimming. After applying the
+  100-character/200-byte limits, drop a partial space-delimited span for every language. Short
+  transcripts remain intact; a truncated tail with no remaining whitespace supplies no context.
+- Focused context/recovery, JavaScript syntax and whitespace checks passed, including Chinese
+  comma/space boundaries, long unspaced text, unchanged short Chinese and Unicode byte limits.
+
+## 2026-11-14: Optional uninterrupted translation playback with microphone suppression
+
+- Added Allow Interrupting Translator as a native checkbox directly above the Playback speed controls,
+  enabled initially and saved in browser local storage. Tooltip explains inconsistent mobile AEC;
+  Simplified and Traditional Chinese labels, tooltip and Muted indicator are included.
+- When disabled, neither source interrupts automatic TTS. Microphone input blocks arriving during
+  received translation audio playback become zeros before detection, storage and metering; duration
+  is preserved. Captured audio continues normally. The mic meter turns white and reads Muted.
+- Existing PCM interval start/end times determine playback activity. Generation/buffering, scheduling
+  lead, network gaps, pause, stop, completion and errors leave input available. No added mute padding,
+  scheduled gain, device mute, mobile detection or AudioContext lifecycle refactor. The user accepted
+  this browser-thread approach rather than sample-accurate cross-clock synchronization.
+- Playback/microphone, context/recovery and localization suites, JS syntax and whitespace passed.
+  Checks cover suppressed manual/continuous input, active capture, pause/resume, streaming gaps,
+  end/stop/error cleanup, option changes, preference persistence/blocked storage and meter feedback.
+  No layout tests, inference services, physical audio or real mobile echo-quality tests were run.
+
+## 2026-11-14: Mobile interruption default and internal offset support
+
+- At user request, default Allow Interrupting Translator to unchecked on mobile, checked on desktop.
+  Saved browser preference overrides detection, including a mobile user choosing to allow interruption.
+  Mobile hints, common phone/tablet user agents and desktop-mode iPad touch/platform signals supply
+  a best-effort default; storage failure keeps that platform default.
+- Added offsetSeconds = 0 to internal microphone-suppression/playback-activity checks. Positive
+  offsets query ahead on the playback clock, negative offsets query back. Production uses zero;
+  no config or UI added, and no actual mute padding introduced.
+- Playback, context/recovery, localization, JS syntax and whitespace checks passed, including mobile
+  and desktop defaults, preference overrides, blocked storage and both offset signs. No physical
+  mobile audio test, model inference or service changes. Still uncommitted.
+
+
+## 2026-11-14: Push-to-talk when continuous mode is off
+
+At user request, replaced non-continuous click-to-start/stop with hold-to-record,
+release-to-send using pointer input or the existing Space shortcut. Idle/held button labels
+are Hold to Talk / Release to send; the hint is Hold Space to talk. Continuous mode and
+Space shortcut exclusions remain unchanged; no additional Space override policy was added.
+Both Chinese catalogs and the mode tooltip were updated. Release during microphone startup,
+pointer cancellation and window blur end the hold so recording cannot remain latched.
+
+Verification: offline recording interactions (including deferred startup, permission failure,
+continuous toggling and native Space exclusions), playback and i18n suites passed; browser JS
+syntax and git diff whitespace checks passed. Physical microphone/touch-device behavior has
+not been tested. No services started, commits made or pushes performed.
+
+
+### Additional backtick push-to-talk key
+
+User agreed to try backtick alongside Space and the button. Only non-continuous mode
+accepts an unmodified backtick; text/editable fields, selects, header/playback controls
+and the raw viewer keep their normal behavior. Shift/tilde, modified shortcuts and IME
+composition do not start recording. Release is honored even if focus changes during startup.
+Updated hint, tooltip, both Chinese catalogs and usage docs. Recording/i18n suites,
+JS syntax and whitespace checks passed; no physical keyboard/microphone audition performed.
+
+
+### Push-to-talk hint key outlines
+
+At user request, Space and backtick in the push-to-talk hint use the existing kbd
+outline style. Reused i18n rich-message slots to preserve key elements in both Chinese
+variants. No recording behavior changed. Tests skipped per preference for UI-only edits.
+
+
+### Synchronize push-to-talk button feedback
+
+User observed label/color changes occurring separately. The held label changed immediately,
+while the recording class was added only after asynchronous mic startup. Push-to-talk now
+updates the class and label in the same UI update on press/release; late startup cannot
+reapply the held color after release. Startup failure clears the held input and resets both.
+Continuous-mode class timing is unchanged. Tests skipped for this UI feedback adjustment.
+
+
+### Same keys in continuous mode
+
+At user request, Space and backtick now both toggle listening in continuous mode.
+Key repeat and key release do not toggle again; existing typing/control exclusions remain.
+The continuous hint shows both outlined keys, with matching localized tooltip/catalog entries.
+Recording and localization suites, JS syntax and whitespace checks passed.
+
+
+## 2026-11-14: Mobile defaults and mock device preview
+
+At user request, reused existing mobile detection to hide the entire Capture Audio panel and
+keyboard hint, default the Activity column collapsed (respecting a saved explicit choice),
+and default Continuous Audio Mode off. Narrow layouts let Playback fill the space left by
+hidden Capture Audio. Desktop configuration behavior is preserved.
+
+Mock Live adds a button immediately left of the language switch: Mock Mobile on desktop,
+Mock Desktop on mobile. It reloads with a mock-only query override and reapplies the device
+defaults, including Allow Interrupting Translator, without saving those defaults over browser
+preferences. Explicit user changes continue using existing persistence. The override/button
+are confined to mock Live; previewing does not resize the browser viewport.
+
+Recording, i18n, playback and new mobile/mock config-path checks passed, as did JS syntax and
+whitespace checks. Fixed a stale playback assertion referencing the pre-PTT shortcut helper
+name. No real-device/browser visual verification or physical audio tests; no services started.
+Changes left uncommitted; no push performed.
+
+Mock device toggle styling: user requested the MOCK badge red/white palette and fixed
+size for both labels. Set 128px by 30px, non-shrinking; no tests for this styling-only edit.
+
+
+## 2026-11-14: szaL16 protocol proposal
+
+At user request, added docs/szaL16.md: brief low-CPU/uncompressed streaming motivation,
+formal change from Zello's Opus payload to audio/L16 mono signed 16-bit big-endian PCM,
+and an adapted copy of the streaming section plus incoming start/stop events. Existing
+four-byte codec_header and binary framing stay unchanged, including the header's LE sample
+rate. Twenty milliseconds is the intended use/example, not a required protocol duration;
+the user explicitly clarified this distinction. Whisper's existing WAV POST is unchanged.
+
+Pinned attribution to upstream revision 4658469e35701994b89e14ef5ab9d69c9c2ee712 and copied
+its MIT license verbatim to docs/zello_LICENSE. Corrected upstream example headers to agree
+with their declared 20 ms packet duration; documented that example adjustment. Broader channel,
+authentication and call workflows remain outside this proposal.
+
+Documentation checks passed: JSON examples parse, decoded headers match durations/rate,
+send/receive sections are present, included license link resolves, and whitespace is clean.
+No application tests run for documentation-only work. No implementation, commit or push.
+
+
+### Generic protocol wording
+
+At user request, removed the application-specific Whisper reference from docs/szaL16.md,
+shortened the unchanged-header description to the original base64 format, removed the
+introductory timing explanation and payload-size arithmetic, and described raw PCM payloads
+by analogy with Zello's container-free Opus frames. Detailed field definitions remain in
+the adapted reference. No protocol behavior or license changes.
+
+
+### Recommend 16 ms packets
+
+User chose 16 ms instead of 20 ms for planned use, aligning with 128-sample blocks at
+16/24/48 kHz. docs/szaL16.md now recommends one 16 ms frame per packet while retaining
+support for other durations; planned reference implementations should default to 16 ms
+and accept other durations. Updated every example/header to gD4BEA== (16 kHz, one 16 ms
+frame). Documentation checks verified JSON examples and decoded headers; no code implemented.
+
+
+### Standalone szaL16 reference code
+
+At user request, added docs/reference/szaL16.mjs (Float32 packetization, start reply handling,
+L16 decoding and basic scheduled Web Audio playback) and docs/reference/szaL16.py (one-stream
+relay, receive-to-WAV and paced WAV-to-stream). Both default to 16 ms, accept other encodable
+durations, preserve the existing codec/binary headers and leave connections/routing to callers.
+No microphone acquisition, product integration, server application or dependencies added.
+
+JS converts directly into big-endian outgoing packets, including arbitrary input-block lengths.
+Python relay sends a header plus a memoryview as fragments of one message, preserving payload
+bytes; WAV conversion uses native bulk byte operations. Final partial packets are silence-padded.
+Reference README documents usage, whole-sample/header representation limits, transport compression,
+backpressure and simple playback limitations. Linked references from docs/szaL16.md.
+
+Added tests/test_szaL16.mjs and tests/test_szaL16.py. Known samples/clipping, endian conversion,
+16/20/32 ms and two-frame packets, partial buffers, start/stop, relay packet IDs/payload reuse,
+disconnect/malformed input and playback scheduling passed. JS-to-Python WAV and Python WAV-to-JS
+interoperability passed using temporary WAVs and in-memory sockets. JS/Python syntax and whitespace
+checks passed. Windows sandbox hung on Python asyncio/subprocess tests; they passed outside it.
+No browser/physical audio/real WebSocket transport tests. No services started, commits or pushes.
+
+
+### Switch to pcm_s16le and threaded Python references
+
+User chose pcm_s16le instead of RFC audio/L16 and requested threading for compatibility
+with the stack. Updated the generic specification, examples, JS sender/receiver and tests
+to signed 16-bit little-endian mono payloads. Existing codec_header and network-order packet
+headers remain unchanged; 16 ms remains the recommendation/default with other durations supported.
+Protocol/file names remain szaL16. Earlier big-endian implementation notes above are historical.
+
+Python relay(), write_wav() and read_wav() are now blocking functions for worker threads with
+websockets.sync-compatible recv/send. WAV pacing uses time.monotonic and threading.Event.wait;
+the caller may supply a stop event. On LE hosts, WAV buffers pass through without byte swapping
+or conversion copies; big-endian hosts retain a bulk conversion at the WAV boundary. WAV sender
+now sends header/payload fragments as one message, matching relay. Cleanup attempts stop events
+to all started receivers and preserves an original processing error. Updated usage/ownership
+notes: caller owns threads/connections and serializes writers when sharing a connection.
+
+JS and Python checks passed, including explicit raw LE sample bytes, unchanged packet header
+order, rejection of old codec identifiers, cross-language JS/WAV paths, a three-worker-thread
+WAV -> relay -> WAV round trip, stop-event cancellation, LE buffer identity, cleanup on errors,
+and simulated big-endian boundary conversion. Syntax, JSON examples/headers, links and whitespace
+checked. No physical audio/browser/real WebSocket network tests or product integration performed.
+No new dependencies, service starts, commits or pushes.
+
+
+## 2026-11-14: Component WebSocket echo
+
+User narrowed implementation to echo only after discussion of a separate server-driven translation
+test. Added the component panel with Connect/Disconnect and a browser-local delay slider (0–10 s
+in 1-second steps, then Disabled). Delay changes clear queued playback; Disabled retains capture
+and networking. Uses one random channel supplied in the WS opening URL with echo=1, without
+logon/authentication, shared membership or a channel registry.
+
+Browser reuses recorder-worklet.js at 48 kHz and converts Float32 directly into 16 ms PCM16 LE
+packets with szaL16 framing. Server uses synchronous microweb multipart sends to echo unchanged
+sample bytes, assigning downstream packet IDs. Browser scheduling adds 32 ms plus selected delay.
+Disconnect/page exit releases all resources; late mic permission/worklet setup cannot restart it.
+Both Chinese catalogs and slider accessible value text updated. Existing inference panels, Live,
+Whisper POSTs and reference files were left unchanged.
+
+Vendored src/microweb.py byte-for-byte from upstream main de9fefb02b19dc30620be498998f73e07debba1d;
+that revision includes the receive-copy PR optimization. Retained its embedded license.
+No server-side delay worker or queue was introduced; the transport's bounded incoming queue remains.
+
+Validation: three real-loopback WebSocket tests cover start/stop/restart, byte-identical echo,
+packet IDs, alternate durations, echo-off/isolation and invalid-input closure. Simulated browser
+checks cover wire PCM, local delay/disable, query parameters, permission failure, page exit,
+peer disconnect and setup cancellation. All eight JS behavioral suites plus existing localization,
+header, playback, recording, Coordinator/recovery checks passed; session-retention (14) and
+standalone configuration (3) tests passed. Python socket tests required running outside the Windows
+sandbox after a socket permission denial. No physical microphone/browser audio audition or real
+inference tests; no user service starts/restarts, commits or pushes.
+
+
+### Echo mic meter, packet RTT and shorter delay range
+
+At user request, added Live-style mic dB meter (same scale/colors, smoothing, peak hold and
+clipping indication) to the echo panel. Collect RMS/peak in the existing packetization loop;
+render with requestAnimationFrame. Added packet RTT by timestamping sends and matching the
+returned server packet IDs to the local send counter. The immediate echo path returns one
+packet per input in order, so no wire-format change or server timestamp is necessary.
+RTT is send-to-receive including browser/network/server queues, not acoustic/device latency;
+local playback delay/buffering and capture/frame formation are excluded. It keeps updating
+while playback is Disabled. Disconnect resets the meter and RTT and clears pending timestamps.
+
+User revised the delay range to 0–5 seconds at 0.5-second increments with Disabled one step
+beyond 5. Updated UI/docs and both Chinese catalogs/accessibility messages. Preserved the user's
+microweb version-only update; no framework edits for these additions.
+
+Browser-controller checks verify -6 dB from 0.5-amplitude input, clipping, packet RTT with a
+controlled clock (12.5/8 ms), disabled-playback RTT, new delay values and disconnect cleanup.
+Localization and JS syntax checks pass. No physical mic or network-latency audition, commits,
+pushes or service changes.
+
+
+### Echo panel layout and averaged RTT
+
+User requested meter/timing in the empty right-hand area, matching Live meter width, and
+half-second average latency instead of per-packet display. Added a right metrics column with
+Live's meter width rule, stacking below controls on narrow screens. RTT samples now accumulate
+per 500 ms interval and the existing animation loop displays their arithmetic mean; no-sample
+intervals show a dash. Disabled playback still measures RTT. Updated both translated tooltips.
+Behavioral checks cover two-sample averaging, no immediate repaint and reset for the next interval;
+JS syntax/localization/whitespace checked. No layout tests per UI-only preference. No commits/pushes.
+
+### 2026-11-14 — Channel translation component test
+
+Added the second audio component test with mutually exclusive echo/translation connections.
+Both send 48 kHz mono PCM16 LE in 16 ms szaL16 packets. Translation also uses Live's continuous
+speech splitter to queue WAV POSTs, exactly one in flight. Extracted the existing splitter and
+resample/WAV primitives into shared scripts; Live retains its original callbacks and behavior.
+Renamed echo-test.js to component-audio.js for the shared mic/socket/meter/playback controller.
+
+The channel route reuses transcription, forced-language recheck, direction/prompt construction
+and TTS helpers. It delivers completed transcript/translation JSON over WS, then returns the
+POST response while speech remains queued. llama is nonstreaming only for this route. A shared
+WS send worker per connection handles both echo messages and generated TTS streams; text results
+can send promptly from the POST thread using microweb's existing message-write serialization.
+TTS native 24 kHz PCM is packetized directly, without an intermediate WAV. Disconnect removes
+the channel, aborts browser work and drops queued speech; an executing engine call may finish
+on its normal timeout but cannot publish into a new connection. Both Chinese catalogs updated.
+
+Validation: eight real-loopback HTTP/WS tests with stubbed inference cover serial speech,
+POST completion before speech, completed JSON, direction/recheck, packet boundaries, errors,
+mock mode and disconnect isolation/discard. Shared-audio tests cover WAV sample values and
+speech splitting. Browser-controller tests cover mutually exclusive connections, raw PCM plus
+serial WAV uploads, completed results, 24 kHz playback and queued upload cancellation. Existing
+localization, playback/mobile and request-recovery checks pass; Python/JS syntax and whitespace
+checks pass. Loopback tests ran outside the Windows sandbox. No physical mic/real-engine audition,
+user service changes, commits or pushes. Preserved the user's microweb version update.
+
+### Component microphone WS rate changed to 16 kHz
+
+At user request, both audio component tests now create a 16 kHz AudioContext. Web Audio
+resamples microphone input before the worklet; outgoing szaL16 remains mono PCM16 LE with
+16 ms packets (256 samples / 512 payload bytes). Segmentation uses that same context rate;
+the separate WAV upload still uses the configured Whisper rate. Server echo preserves input
+rate and generated TTS stays native 24 kHz. No Live capture changes.
+
+Browser-controller checks verify the requested context rate, both outgoing codec headers,
+packet size/duration and unchanged 24 kHz TTS playback, along with queue/lifecycle behavior.
+JS syntax and whitespace checks pass. Physical audio audition remains pending. No commit/push.
+
+### Silence-delimited microphone WS streams
+
+Committed the channel component test and 16 kHz mic change as 890a375 at user request,
+without pushing. Then implemented the agreed silence-delimited WS lifecycle for both tests.
+Mic/socket remain open; the shared Live detector starts streams on speech with pre-roll and
+ends them after configured silence. Audio is buffered until each start acknowledgement,
+including when speech ends or resumes before it arrives. Flush/pad the final packet before
+stop, and serialize new starts behind preceding streams. Maximum WAV phrase length does
+not split an ongoing WS stream. WAV uploads retain their existing filtering/tail behavior.
+RTT timestamps now use stream ID plus packet ID, avoiding collisions across stream restarts.
+No server, Live UI, codec or native TTS-rate changes.
+
+Browser checks cover idle/calibration silence, acknowledgement buffering, pre-roll, repeated
+speech, pause/stop order, padding, packet ID reset, RTT isolation, mic/socket retention and
+existing cancellation/upload behavior. Shared splitter, Live playback/mobile, recovery and
+localization checks pass, as do JS syntax/whitespace checks. No physical audio audition or
+service changes. This follow-up remains uncommitted; no pushes.
+
+### szaL16 wire specification permits PCM and Opus
+
+After committing silence-delimited mic streams as c6e063a, updated the spec at user request
+to retain original Opus alongside added pcm_s16le. Defined mono/container-free payloads by
+codec, updated start/event field tables and added a consistent 20 ms Opus request example.
+Existing framing/base64 codec header unchanged; 16 ms recommendation applies only to PCM.
+Explicitly imposes no endpoint codec-support requirements; capability selection, negotiation,
+fallback and unsupported-codec handling are outside scope. Reference implementations are
+identified as PCM-only. No runtime/reference-code changes. Reviewed diff/whitespace and
+decoded both example headers to confirm rate/frame/duration consistency. No tests needed for
+this documentation-only edit. Changes uncommitted; no push.
+
+### 2026-11-15 — Optional native Opus in the echo component test
+
+Committed the spec edits as f13bcb8 at user request, without pushing. Added echo-only
+Use Opus toggle, default off and locked during a connection. The panel reports native
+encoder/decoder availability after WebCodecs configuration checks; missing/rejected support
+leaves PCM available. Both Chinese catalogs updated. Mic capture remains 16 kHz with the
+same local speech boundaries. PCM remains 16 ms; Opus uses 20 ms / 320-sample frames,
+raw packet output and 24 kbit/s. No multi-client capability negotiation/fallback added.
+
+Each speech stream owns an encoder; flush finishes before stream stop and next start.
+Native decoders convert returned Opus to Web Audio buffers at the decoder's output rate.
+Flush/order, old pending audio on delay changes, disconnect and codec cleanup are handled.
+The server accepts variable-length Opus payloads and echoes their bytes unchanged through
+the shared WS send worker, without a codec dependency. Channel translation/TTS stay PCM.
+
+Validation: browser-controller checks cover availability (including one missing direction),
+16/20 ms choice, compressed packets, float framing/timestamps/padding, async flush ordering,
+decoded rate, pending-audio discard, disconnect cleanup and switching back to PCM. Ten
+real HTTP/WS loopback tests with stubbed inference pass, including opaque variable-length
+Opus echo, malformed durations/empty payloads and Opus-to-PCM restart. Shared audio, Live
+playback/mobile, recovery and localization checks pass; syntax/whitespace checked.
+An isolated headless Chrome run exercised the actual component code with native WebCodecs,
+generated samples and mocked transport/mic, confirming Opus encoding and decoded 48 kHz
+audio. Temporary profile removed; audio muted. No physical microphone/audible audition or
+real inference; no user service changes. Implementation remains uncommitted; no push.
+
+### Echo codec button, placement and switching while connected
+
+Replaced the checkbox with a PCM/Opus toggle button and moved it with availability text into
+the panel's middle column. User clarified that toggling during speech should keep the
+connection status on the active codec until the stream finishes. Selection now applies to
+the next natural speech stream, without interrupting speech or disconnecting mic/socket.
+Queued streams capture their own codec/header/frame size. Status shows Connected: PCM or
+Connected: opus (localized in both Chinese catalogs). While idle it reflects the selection.
+PCM playback waits for preceding Opus decoder flushes when crossing codec boundaries.
+
+Browser tests pass switching in both directions on one connection, pending acknowledgements,
+encoder/decoder flush ordering, unchanged speech boundaries, accurate status and preserved
+mic/socket. Localization, JS syntax and whitespace checks pass. No layout tests per preference.
+Implementation remains uncommitted; no push.
+
+### 2026-11-15 — Concise root README and documentation guidance
+
+At user request, reduced the root README from roughly 2,200 words to about 540. It now
+covers purpose/features, requirements, Windows quick start with platform guide links,
+basic usage, configuration pointers, focused documentation links and license. Removed
+duplicated control/locale/mobile/retry details, protocol/testing internals, advanced config
+mechanics and release instructions, whose homes already exist in DESIGN and focused guides.
+Removed the trailing mock-preview note after License; its behavior is documented in DESIGN.
+
+AI/MEMORY.md now explicitly prefers a short GitHub-style introduction, links over duplicated
+detail, and README edits only when introductory guidance changes. Verified local links and
+anchors, first-use button wording and whitespace. Documentation-only change; no runtime
+tests or service changes. Uncommitted; no push.

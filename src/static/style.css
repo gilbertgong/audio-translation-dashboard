@@ -737,6 +737,11 @@ kbd {
 
 .playback-panel { grid-column: 3; grid-row: 1; justify-self: start; margin: 16px 16px 0 0; }
 .playback-controls { margin: 0; gap: 8px; }
+.playback-interrupt { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer; }
+.playback-interrupt input { margin: 0; accent-color: var(--accent); }
+#level-meter.muted { background: #fff; }
+#level-meter.muted .meter-fill, #level-meter.muted .meter-peak,
+#level-meter.muted .meter-threshold { visibility: hidden; }
 .playback-controls .row-btn:disabled { opacity: 0.35; cursor: default; border-color: var(--border); }
 .playback-panel .level { width: 100%; align-self: center; }
 .playback-timeline input { width: 100%; margin: 0; accent-color: var(--accent); }
@@ -823,4 +828,22 @@ kbd {
   .utterance { padding: 8px 10px; }
   .activity { padding: 8px 10px; }
   .timing .secs { font-size: 1rem; }
+}
+
+/* Keep touch holds on the recording button from becoming scroll gestures. */
+#record-btn { touch-action: none; user-select: none; -webkit-user-select: none; }
+
+/* Mobile capture is unavailable; keyboard shortcuts need no visible hint. */
+body.mobile #capture, body.mobile .shortcut-hint { display: none; }
+@media (max-width: 1000px) {
+  body.mobile .playback-panel { grid-column: 1 / -1; margin-left: 16px; }
+}
+
+#app-header .mock-device {
+  background: var(--recording);
+  color: #fff;
+  width: 128px;
+  height: 30px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }

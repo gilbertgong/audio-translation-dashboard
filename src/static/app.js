@@ -133,6 +133,8 @@ const toDb = (x) => (x > 0 ? Math.max(METER_FLOOR_DB, 20 * Math.log10(x)) : METE
 const dbToPercent = (db) => ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100;
 
 function drawMeter(now) {
+  const muted = micInputSuppressed();
+  meterEl.classList.toggle("muted", muted);
   const db = toDb(meter.rms);
   meter.shownDb = db > meter.shownDb ? db : Math.max(db, meter.shownDb - 1); // fall ~60 dB/s
   meter.maxDb = Math.max(meter.maxDb, toDb(meter.peak)); // highest peak this recording
@@ -148,7 +150,7 @@ function drawMeter(now) {
   meterEl.classList.toggle("quiet", meter.shownDb < METER_QUIET_DB);
   meterEl.setAttribute("aria-valuenow", String(Math.round(meter.shownDb)));
   meterDb.classList.toggle("clip", clipping);
-  meterDb.textContent = clipping ? I18n.t("CLIP")
+  meterDb.textContent = muted ? I18n.t("Muted") : clipping ? I18n.t("CLIP")
     : meter.shownDb <= METER_FLOOR_DB ? "-∞ dB" : `${Math.round(meter.shownDb)} dB`;
 
   // Auto-split: show the current speech threshold and whether speech is detected.
@@ -169,7 +171,7 @@ function startMeter() {
 
 function stopMeter() {
   cancelAnimationFrame(meter.frame);
-  meterEl.classList.remove("active", "quiet", "hot", "clip", "auto", "speaking");
+  meterEl.classList.remove("active", "quiet", "hot", "clip", "auto", "speaking", "muted");
   meterEl.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
   meterFill.style.width = "0";
   meterDb.classList.remove("clip");
@@ -184,109 +186,23 @@ function stopMeter() {
 // manual recording. Settings come from [auto_split] in the config.
 
 const autoSplitToggle = document.getElementById("auto-split");
-const autoSplit = {
-  split_pause_ms: 250, threshold_db: 12, min_threshold_db: -50, pre_roll_ms: 300,
-  tail_ms: 200, min_speech_ms: 100, max_phrase_s: 25,
-};
-const CALIBRATION_MS = 400; // measure background noise only, at the start
-const NOISE_FALL_MS = 50; // background estimate follows quieter levels quickly...
-const NOISE_RISE_MS = 2000; // ...and louder ones slowly (more slowly mid-segment)
-
-// label: where the audio comes from, noted with each segment ("continuous
-// mode" for the microphone, "captured audio").
-// source: "mic" or "capture", for the status row.
+const autoSplit = { ...SegmentSplitter.defaults };
+// Keep Live's status, turn tracking and upload callbacks around the shared splitter.
 function createSegmentSplitter(sampleRate, label = "continuous mode", source = "mic") {
-  return {
-    sampleRate,
-    label,
-    source,
-    elapsedMs: 0,
-    calibrating: true,
-    noiseDb: null, // background level estimate
-    thresholdDb: autoSplit.min_threshold_db,
-    speaking: false,
-    preRoll: [], // recent blocks kept while waiting for speech
-    preRollSamples: 0,
-    blocks: [], // the current segment
-    segmentSamples: 0,
-    speechMs: 0, // loud time in the current segment
-    silenceMs: 0, // quiet time since the last loud block
-  };
+  return Object.assign(SegmentSplitter.create(sampleRate, autoSplit, {
+    onChange: updateStatus,
+    onSpeech: continuing => noteSpeech(continuing, source),
+    onSegment: (samples, reason) => sendAudioSegment(samples, sampleRate,
+      I18n.msg("{label} ({reason})", { label: I18n.msg(label), reason: I18n.msg(reason) }), source),
+  }), { label, source });
 }
+function segmentSplitterBlock(sp, block, rms) { SegmentSplitter.push(sp, block, rms); }
+function endSegment(sp, reason) { SegmentSplitter.end(sp, reason); }
 
-// Feed one audio block (Float32Array) and its RMS level.
-function segmentSplitterBlock(sp, block, rms) {
-  const ms = (block.length / sp.sampleRate) * 1000;
-  const db = toDb(rms);
-  sp.elapsedMs += ms;
-
-  // Track the background noise level.
-  if (sp.noiseDb === null) sp.noiseDb = db;
-  const tau = db < sp.noiseDb ? NOISE_FALL_MS : NOISE_RISE_MS * (sp.speaking ? 4 : 1);
-  sp.noiseDb += (db - sp.noiseDb) * (1 - Math.exp(-ms / tau));
-  sp.thresholdDb = Math.max(sp.noiseDb + autoSplit.threshold_db, autoSplit.min_threshold_db);
-
-  if (sp.calibrating) {
-    if (sp.elapsedMs < CALIBRATION_MS) return;
-    sp.calibrating = false;
-    updateStatus();
-  }
-  const loud = db > sp.thresholdDb;
-  // For automatic playback: speech now; sustained (past a cough) mid-segment.
-  // A muted captured tab isn't heard here, so the translations talk over it.
-  if (loud && !(sp.source === "capture" && capture?.muted)) noteSpeech(sp.speaking && sp.speechMs + ms >= autoSplit.min_speech_ms);
-
-  if (!sp.speaking) {
-    sp.preRoll.push(block);
-    sp.preRollSamples += block.length;
-    const keep = (autoSplit.pre_roll_ms / 1000) * sp.sampleRate;
-    while (sp.preRoll.length > 1 && sp.preRollSamples - sp.preRoll[0].length >= keep) {
-      sp.preRollSamples -= sp.preRoll.shift().length;
-    }
-    if (loud) {
-      Object.assign(sp, { speaking: true, blocks: sp.preRoll, segmentSamples: sp.preRollSamples,
-                          speechMs: ms, silenceMs: 0, preRoll: [], preRollSamples: 0 });
-      updateStatus();
-    }
-    return;
-  }
-
-  sp.blocks.push(block);
-  sp.segmentSamples += block.length;
-  if (loud) {
-    sp.speechMs += ms;
-    sp.silenceMs = 0;
-  } else {
-    sp.silenceMs += ms;
-  }
-  if (sp.silenceMs >= autoSplit.split_pause_ms) endSegment(sp, "pause");
-  else if (sp.segmentSamples / sp.sampleRate >= autoSplit.max_phrase_s) endSegment(sp, "max length");
-}
-
-// Finish the current segment and send it (if it had enough speech).
-// reason: "pause", "max length" (speech continues into a new segment) or "stop".
-function endSegment(sp, reason) {
-  if (!sp.speaking) return;
-  let samples = concat(sp.blocks);
-  if (reason === "pause") {
-    // Keep only tail_ms of the trailing silence.
-    const extraMs = Math.max(0, sp.silenceMs - autoSplit.tail_ms);
-    const extra = Math.floor((extraMs / 1000) * sp.sampleRate);
-    samples = samples.subarray(0, Math.max(0, samples.length - extra));
-  }
-  const speechMs = sp.speechMs;
-  const continuing = reason === "max length";
-  Object.assign(sp, { speaking: continuing, blocks: [], segmentSamples: 0, speechMs: 0, silenceMs: 0 });
-  updateStatus();
-
-  if (speechMs < autoSplit.min_speech_ms) return; // too little speech: a click or cough
-  sendAudioSegment(samples, sp.sampleRate, I18n.msg("{label} ({reason})", { label: I18n.msg(sp.label), reason: I18n.msg(reason) }), sp.source);
-}
-
-async function sendAudioSegment(samples, sampleRate, note, source) {
+async function sendAudioSegment(samples, sampleRate, note, source, context = transcriptContext(source)) {
   try {
     const resampled = await resample(samples, sampleRate, targetSampleRate);
-    processAudioSegment(encodeWav(resampled, targetSampleRate), note, source);
+    processAudioSegment(encodeWav(resampled, targetSampleRate), note, source, context);
   } catch (err) {
     console.error(err);
     addNote(I18n.msg("Error: {error}", { error: I18n.errorText(err) }), true);
@@ -494,6 +410,25 @@ const SPEECH_LEAD_S = 0.1; // head start before the first piece plays, to absorb
 const SPEECH_RESUME_REWIND_S = 0.1; // replay a little context after an interruption
 let playbackBufferS = 0.8;
 const toTts = oneAtATime();
+const allowInterruptToggle = document.getElementById("allow-interrupt");
+function isMobileBrowser() {
+  return !!navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+let mobileBrowser = isMobileBrowser();
+document.body.classList.toggle("mobile", mobileBrowser);
+allowInterruptToggle.checked = !mobileBrowser;
+try {
+  const saved = localStorage.getItem("allowTranslatorInterrupt");
+  if (saved !== null) allowInterruptToggle.checked = saved === "true";
+} catch {}
+allowInterruptToggle.addEventListener("change", () => {
+  try { localStorage.setItem("allowTranslatorInterrupt", String(allowInterruptToggle.checked)); } catch {}
+});
+
+function micInputSuppressed(offsetSeconds = 0) {
+  return !allowInterruptToggle.checked && !!speech?.isPlaying(offsetSeconds);
+}
 
 function setSpeakButton(btn, state) {
   const looks = {
@@ -618,7 +553,14 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
   analyser.fftSize = 2048;
   analyser.connect(ctx.destination);
   const scheduled = []; // context times mapped to positions in the original audio
-  const current = { ctx, btn, row, text, item, audio, analyser, speed, update: null, position: () => {
+  const current = { ctx, btn, row, text, item, audio, analyser, speed, update: null,
+    isPlaying: (offsetSeconds = 0) => {
+      // Positive offsets look ahead on the playback clock; production callers use zero.
+      const now = ctx.currentTime + offsetSeconds;
+      return !playbackPaused && ctx.state === "running" &&
+        scheduled.some((segment) => now >= segment.start && now < segment.end);
+    },
+    position: () => {
     const now = ctx.currentTime;
     for (let i = scheduled.length - 1; i >= 0; i--) {
       const segment = scheduled[i];
@@ -645,7 +587,7 @@ function speakTranslation(row, btn, text, item = null, resume = null) {
     if (!last) setSpeakButton(btn, "playing");
     playAt = Math.max(playAt, ctx.currentTime + (last ? 0 : SPEECH_LEAD_S));
     source.start(playAt, skip);
-    scheduled.push({ start: playAt, offset, duration });
+    scheduled.push({ start: playAt, end: playAt + buffer.duration - skip, offset, duration });
     playAt += buffer.duration - skip;
     last = source;
   };
@@ -709,12 +651,44 @@ let turnPauseMs = 2000;
 let maxBacklogS = 30;
 let lastSpeechAt = 0; // performance.now() of the last speech from any source
 let turnTimer = null;
+const transcriptSources = Object.fromEntries(["mic", "capture"].map((source) =>
+  [source, { lastSpeechAt: -Infinity, turn: { last: null } }]));
+
+// Both playback and transcription context use the same speech-activity pause rule.
+function turnWait(lastAt) {
+  return turnPauseMs - (performance.now() - lastAt);
+}
+
+function transcriptContext(source) {
+  const turn = transcriptSources[source].turn;
+  const context = { previous: turn.last, text: "" };
+  turn.last = context;
+  return context;
+}
+
+function transcriptTail(text) {
+  const characters = Array.from(text || "");
+  let start = Math.max(0, characters.length - 100);
+  // Byte-level BPE cannot use more tokens than UTF-8 bytes; leave room below 224 tokens.
+  while (new TextEncoder().encode(characters.slice(start).join("")).length > 200) start++;
+  let tail = characters.slice(start).join("");
+  // If the size cutoff lands inside a space-delimited span, discard that partial span.
+  if (start > 0 && !/\s/u.test(characters[start - 1]) && !/\s/u.test(characters[start])) {
+    tail = tail.replace(/^\S+\s*/u, "");
+  }
+  return tail.trimStart();
+}
 
 // Called by the sources as they hear speech. sustained: speech that should
 // interrupt automatic playback (not just a cough or a click).
-function noteSpeech(sustained) {
+function noteSpeech(sustained, source = "mic") {
+  const state = transcriptSources[source];
+  if (turnWait(state.lastSpeechAt) <= 0) state.turn = { last: null };
+  state.lastSpeechAt = performance.now();
+  // Muted capture still has transcription turns, but does not hold back playback.
+  if (source === "capture" && capture?.muted) return;
   lastSpeechAt = performance.now();
-  if (sustained && speech?.item && !playbackPaused) {
+  if (allowInterruptToggle.checked && sustained && speech?.item && !playbackPaused) {
     const item = speech.item;
     const position = speech.position();
     // Don't repeatedly rewind when interrupted before resumed audio starts.
@@ -762,7 +736,7 @@ function trimBacklog() {
 function playNextSpeech() {
   clearTimeout(turnTimer);
   if (playbackPaused || speech || playingBtn || !speechQueue.length) return;
-  const wait = turnPauseMs - (performance.now() - lastSpeechAt);
+  const wait = turnWait(lastSpeechAt);
   if (wait > 0) {
     turnTimer = setTimeout(playNextSpeech, wait + 20);
     return;
@@ -1002,14 +976,14 @@ function addNote(text, isError = false) {
 
 // Activity column visibility, remembered per browser.
 
-function setActivityHidden(hidden) {
+function setActivityHidden(hidden, remember = true) {
   document.body.classList.toggle("activity-hidden", hidden);
   activityToggle.setAttribute("aria-expanded", String(!hidden));
   const label = hidden ? "Show activity" : "Hide activity";
   I18n.attr(activityToggle, "aria-label", I18n.msg(label));
   I18n.attr(activityToggle, "title", I18n.msg(label));
   try {
-    localStorage.setItem("activityHidden", hidden ? "1" : "0");
+    if (remember) localStorage.setItem("activityHidden", hidden ? "1" : "0");
   } catch {}
 }
 
@@ -1017,14 +991,35 @@ activityToggle.addEventListener("click", () => {
   setActivityHidden(!document.body.classList.contains("activity-hidden"));
 });
 
+setActivityHidden(mobileBrowser, false);
 try {
-  setActivityHidden(localStorage.getItem("activityHidden") === "1");
+  const saved = localStorage.getItem("activityHidden");
+  if (saved !== null) setActivityHidden(saved === "1", false);
 } catch {}
 
 async function loadConfig() {
   try {
     const res = await pageFetch("/api/config");
     const config = await res.json();
+    if (config.mock) {
+      const url = new URL(window.location.href);
+      const preview = url.searchParams.get("mockMobile");
+      if (preview === "1" || preview === "0") mobileBrowser = preview === "1";
+      document.body.classList.toggle("mobile", mobileBrowser);
+      setActivityHidden(mobileBrowser, false);
+      allowInterruptToggle.checked = !mobileBrowser;
+      const controls = document.getElementById("header-controls");
+      if (controls) {
+        const button = el("button", "ui-language header-link mock-device");
+        button.type = "button";
+        I18n.text(button, I18n.msg(mobileBrowser ? "Mock Desktop" : "Mock Mobile"));
+        button.addEventListener("click", () => {
+          url.searchParams.set("mockMobile", mobileBrowser ? "0" : "1");
+          window.location.href = url.href;
+        });
+        controls.insertBefore(button, document.getElementById("ui-language"));
+      }
+    }
     targetSampleRate = config.sample_rate;
     language1 = config.language1 || "";
     language2 = config.language2 || "";
@@ -1034,7 +1029,8 @@ async function loadConfig() {
     Object.assign(audioProcessing, config.audio_processing);
     const { enabled, ...settings } = config.auto_split || {};
     Object.assign(autoSplit, settings);
-    autoSplitToggle.checked = !!enabled;
+    autoSplitToggle.checked = !mobileBrowser && !!enabled;
+    updateRecordingUi();
     autoPlayToggle.checked = !!config.auto_play;
     turnPauseMs = config.turn_pause_ms ?? turnPauseMs;
     maxBacklogS = (config.max_backlog_ms ?? maxBacklogS * 1000) / 1000;
@@ -1095,22 +1091,27 @@ async function startRecording(auto) {
     const node = new AudioWorkletNode(ctx, "recorder");
     const chunks = [];
     const splitter = auto ? createSegmentSplitter(ctx.sampleRate) : null;
-    node.port.onmessage = (e) => {
-      const rms = meterSample(e.data);
-      if (splitter) segmentSplitterBlock(splitter, e.data, rms);
-      else {
-        chunks.push(e.data);
-        noteSpeech(false); // a manual recording is a turn in progress
-      }
-    };
+    const recording = { stream, ctx, source, gain, node, chunks, splitter };
+    node.port.onmessage = (e) => microphoneBlock(recording, e.data);
     source.connect(gain).connect(node);
     node.connect(ctx.destination); // keeps the node processing; it outputs silence
-    micRecording = { stream, ctx, source, gain, node, chunks, splitter };
+    micRecording = recording;
     startMeter();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
     ctx.close();
     throw err;
+  }
+}
+
+function microphoneBlock(recording, samples) {
+  const muted = micInputSuppressed();
+  if (muted) samples.fill(0); // preserve recording duration; don't store or detect playback echo
+  const rms = meterSample(samples);
+  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms);
+  else {
+    recording.chunks.push(samples);
+    if (!muted) noteSpeech(false); // a manual recording is a turn in progress
   }
 }
 
@@ -1140,60 +1141,6 @@ async function stopRecording(recording = micRecording) {
   return encodeWav(resampled, targetSampleRate);
 }
 
-function concat(chunks) {
-  const total = chunks.reduce((n, c) => n + c.length, 0);
-  const out = new Float32Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.length;
-  }
-  return out;
-}
-
-// Let the browser's own resampler convert to the target rate.
-async function resample(samples, fromRate, toRate) {
-  if (fromRate === toRate) return samples;
-  const length = Math.ceil((samples.length * toRate) / fromRate);
-  const offline = new OfflineAudioContext(1, length, toRate);
-  const buffer = offline.createBuffer(1, samples.length, fromRate);
-  buffer.copyToChannel(samples, 0);
-  const src = offline.createBufferSource();
-  src.buffer = buffer;
-  src.connect(offline.destination);
-  src.start();
-  return (await offline.startRendering()).getChannelData(0);
-}
-
-// Mono 16-bit PCM WAV.
-function encodeWav(samples, sampleRate) {
-  const dataSize = samples.length * 2;
-  const view = new DataView(new ArrayBuffer(44 + dataSize));
-  const writeStr = (offset, s) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
-  };
-
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);             // fmt chunk size
-  view.setUint16(20, 1, true);              // PCM
-  view.setUint16(22, 1, true);              // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // byte rate
-  view.setUint16(32, 2, true);              // block align
-  view.setUint16(34, 16, true);             // bits per sample
-  writeStr(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([view], { type: "audio/wav" });
-}
-
 // Each server gets one request at a time from this page, in the order they're
 // asked for, and runs it with the whole machine; the stages still overlap
 // (the next segment is transcribed while this one is translated). toWhisper(task),
@@ -1216,14 +1163,19 @@ const toLlama = oneAtATime();
 
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).
-async function uploadWav(wav) {
+async function uploadWav(wav, context) {
   const { res, body } = await toWhisper(async () => {
+    // Read the preceding result inside the queue, after its transcription has completed.
+    const prompt = context?.previous?.text;
+    if (context) context.previous = null; // retain one tail, not a chain of old transcripts
     const res = await pageFetch("/api/recordings", {
       method: "POST",
-      headers: { "Content-Type": "audio/wav" },
+      headers: { "Content-Type": "audio/wav", ...(prompt ? { "X-Whisper-Prompt": encodeURIComponent(prompt) } : {}) },
       body: wav,
     });
-    return { res, body: await res.json() };
+    const body = await res.json();
+    if (res.ok && context) context.text = body.recheck ? "" : transcriptTail(body.text);
+    return { res, body };
   });
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { body });
   return body;
@@ -1340,7 +1292,7 @@ async function translateRow(row, text, source) {
 // quiet Chinese); reason says who thought so. Show it, marked, while the server
 // transcribes it again forced to each of the two, then swap in the more
 // confident result. Returns the result to use (the original if this fails).
-async function recheck(row, stt, reason) {
+async function recheck(row, stt, reason, context) {
   setLine(row, ".original", I18n.msg("{text} ({reason}; rechecking…)", { text: stt.text, reason }), "pending");
   setTiming(row, "recheck", null);
   try {
@@ -1353,6 +1305,7 @@ async function recheck(row, stt, reason) {
       return { res, result: await res.json() };
     });
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    if (context) context.text = transcriptTail(result.text);
     setTiming(row, "recheck", result.stt_seconds);
     addRawButton(row, "recheck", I18n.msg("whisper recheck: both languages"), result.stt_raw);
     setLanguage(row, result.language);
@@ -1371,7 +1324,7 @@ async function recheck(row, stt, reason) {
 // Transcribe, then translate, in the background so the next recording can start.
 // note: optional detail for the activity cell (e.g. how an auto-split segment ended).
 // source: "mic" or "capture" (for the status row's counts).
-async function processAudioSegment(wav, note = "", source = "mic") {
+async function processAudioSegment(wav, note = "", source = "mic", context = transcriptContext(source)) {
   if (pageLifetime.signal.aborted) return;
   const audioSeconds = (wav.size - 44) / 2 / targetSampleRate;
   const row = addRow();
@@ -1386,7 +1339,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
   try {
     let stt;
     try {
-      stt = await uploadWav(wav);
+      stt = await uploadWav(wav, context);
     } catch (err) {
       setTiming(row, "stt", "failed");
       setLine(row, ".original", I18n.msg("Error: {error}", { error: I18n.errorText(err) }), "error");
@@ -1402,7 +1355,7 @@ async function processAudioSegment(wav, note = "", source = "mic") {
       return;
     }
     setLine(row, ".original", stt.text);
-    if (stt.recheck) stt = await recheck(row, stt, I18n.msg("whisper heard {language}", { language: stt.language }));
+    if (stt.recheck) stt = await recheck(row, stt, I18n.msg("whisper heard {language}", { language: stt.language }), context);
     if (!stt.text) {
       setLine(row, ".original", I18n.msg("(no speech detected)"), "pending");
       return;
@@ -1424,24 +1377,43 @@ async function processAudioSegment(wav, note = "", source = "mic") {
   }
 }
 
-recordBtn.addEventListener("click", async () => {
+// A held input owns a push-to-talk recording, including asynchronous mic startup.
+let talkInput = null;
+let recordingBusy = false;
+function updateRecordingUi() {
+  const auto = autoSplitToggle.checked;
+  if (!auto) recordBtn.classList.toggle("recording", talkInput !== null);
+  I18n.text(recordBtn, I18n.msg(auto
+    ? (micRecording ? "Stop Listening" : "Start Recording")
+    : (talkInput !== null ? "Release to send" : "Hold to Talk")));
+  document.getElementById("toggle-shortcut").hidden = !auto;
+  document.getElementById("talk-shortcut").hidden = auto;
+  I18n.attr(recordBtn, "title", I18n.msg(auto ? "Start/stop recording (Space or `)" : "Hold to talk; release to send (Space or `)"));
+}
+autoSplitToggle.addEventListener("change", updateRecordingUi);
+updateRecordingUi();
+
+async function toggleRecording() {
+  if (recordingBusy) return;
   // if (capture) return; // capturing instead (one source at a time: off for now)
-  recordBtn.disabled = true;
+  recordingBusy = true;
+  recordBtn.disabled = autoSplitToggle.checked;
   try {
     if (!micRecording) {
       const auto = autoSplitToggle.checked;
       autoSplitToggle.disabled = true; // no mode change mid-recording
       await startRecording(auto);
-      I18n.text(recordBtn, I18n.msg(auto ? "Stop Listening" : "Stop Recording"));
-      recordBtn.classList.add("recording");
+      updateRecordingUi();
+      if (auto) recordBtn.classList.add("recording");
       updateStatus();
     } else {
-      I18n.text(recordBtn, I18n.msg("Start Recording"));
       recordBtn.classList.remove("recording");
+      const context = micRecording.splitter ? null : transcriptContext("mic");
       const wav = await stopRecording();
+      updateRecordingUi();
       autoSplitToggle.disabled = false;
       updateStatus();
-      if (wav) processAudioSegment(wav); // not awaited: runs in the background
+      if (wav) processAudioSegment(wav, "", "mic", context); // not awaited: runs in the background
     }
   } catch (err) {
     console.error(err);
@@ -1454,12 +1426,38 @@ recordBtn.addEventListener("click", async () => {
       micRecording = null;
     }
     autoSplitToggle.disabled = false;
-    I18n.text(recordBtn, I18n.msg("Start Recording"));
+    talkInput = null;
+    updateRecordingUi();
     recordBtn.classList.remove("recording");
   } finally {
+    recordingBusy = false;
     recordBtn.disabled = false;
-    // captureBtn.disabled = !!micRecording; // one source at a time (off for now)
+    // A release during getUserMedia/worklet setup must not leave the mic running.
+    if (!autoSplitToggle.checked && talkInput === null && micRecording) toggleRecording();
   }
+}
+
+recordBtn.addEventListener("click", () => {
+  if (autoSplitToggle.checked) toggleRecording();
+});
+recordBtn.addEventListener("pointerdown", (e) => {
+  if (autoSplitToggle.checked || e.button !== 0 || talkInput !== null || recordingBusy) return;
+  e.preventDefault();
+  talkInput = e.pointerId;
+  updateRecordingUi();
+  toggleRecording();
+});
+for (const event of ["pointerup", "pointercancel"]) window.addEventListener(event, (e) => {
+  if (talkInput !== e.pointerId) return;
+  talkInput = null;
+  updateRecordingUi();
+  if (micRecording) toggleRecording();
+});
+window.addEventListener("blur", () => {
+  if (talkInput === null) return;
+  talkInput = null;
+  updateRecordingUi();
+  if (micRecording) toggleRecording();
 });
 
 // --- Capture Audio (the sidebar): translate the sound of a browser tab, a
@@ -1665,9 +1663,11 @@ captureBtn.addEventListener("click", async () => {
 
 // Space starts/stops recording from anywhere on the page. It takes over Space
 // from focused buttons and switches (which would otherwise also be toggled);
-// Enter still activates buttons. Text fields keep Space for typing.
-function isSpaceShortcut(e) {
-  if (e.code !== "Space" || e.ctrlKey || e.altKey || e.metaKey) return false;
+// Backtick also toggles listening or holds to talk, with the same exclusions.
+// Enter still activates buttons. Text fields keep Space/backtick for typing.
+function isRecordingShortcut(e) {
+  const backtick = e.key === "`" && !e.shiftKey && !e.isComposing;
+  if ((e.code !== "Space" && !backtick) || e.ctrlKey || e.altKey || e.metaKey) return false;
   if (rawDialog.open) return false; // Space scrolls/acts inside the viewer instead
   const target = e.target;
   if (target.closest("#app-header")) return false; // header controls keep native keyboard behavior
@@ -1677,14 +1677,25 @@ function isSpaceShortcut(e) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!isSpaceShortcut(e)) return;
+  if (!isRecordingShortcut(e)) return;
   e.preventDefault(); // no page scroll, no click on a focused button
-  if (!e.repeat) recordBtn.click(); // holding Space toggles only once
+  if (e.repeat) return;
+  if (autoSplitToggle.checked) recordBtn.click();
+  else if (talkInput === null && !recordingBusy) {
+    talkInput = e.code;
+    updateRecordingUi();
+    toggleRecording();
+  }
 });
 
 // A focused button is "clicked" on Space key-up; block that too.
 document.addEventListener("keyup", (e) => {
-  if (isSpaceShortcut(e)) e.preventDefault();
+  if (typeof talkInput === "string" && e.code === talkInput) {
+    e.preventDefault(); // release the held recording even if focus moved
+    talkInput = null;
+    updateRecordingUi();
+    if (micRecording) toggleRecording();
+  } else if (isRecordingShortcut(e)) e.preventDefault();
 });
 
 // Discard unfinished audio on navigation; normal Stop still sends the final segment.

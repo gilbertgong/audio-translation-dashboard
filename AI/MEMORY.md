@@ -40,12 +40,26 @@ workflow, feature plans and history go in `AI/PRIVATE.md` when present.
 *Why:* the next session may be another assistant, account or computer; only the repo travels.
 
 ### Keep the docs current without asking
-Each change includes updating what it affects: `DESIGN.md` (it describes the code in detail, so most changes touch
-it), `README.md`, `config/defaults.toml` comments, the plan, the log and this file.
+Each change includes updating the docs it affects: `DESIGN.md` (it describes the code in detail, so most changes
+touch it), relevant configuration comments, the plan, the log and this file. Update `README.md` only when its
+overview, requirements, getting-started steps or other introductory guidance actually change.
 *Why:* a stale doc misleads the next session more than a missing one.
 
 ### README for people, `AI/` for assistants
 `README.md`, `DESIGN.md` and `INSTALL_MAC.md` are for people; reasons, history and working rules go in `AI/`.
+
+### Keep the root README concise
+Treat `README.md` as a typical GitHub project introduction: purpose, a short feature overview, requirements,
+quick start, basic usage, configuration pointers, documentation links and license. Prefer shorter, clearer
+copy over exhaustive coverage. A feature change does not automatically need a new README paragraph.
+
+Keep detailed controls, edge cases, implementation/protocol behavior, diagnostics, migration notes, testing,
+customization and release procedures in the appropriate supporting docs. When information already lives in
+`DESIGN.md`, an installation guide, configuration comments or another focused document, link there instead
+of repeating it. Briefly repeat a fact only when it helps a new reader understand the project or get started.
+Check for an existing documentation home before adding a new file, and preserve useful unique details there
+when trimming the README. Do not append development notes after the license or let it grow into a changelog.
+*Why:* the README should make the project easy to understand and try; detailed docs should own the details.
 
 ### Keep the shared docs self-contained
 Nothing local or outside the repo in shared docs: no local paths, machine setup or neighbouring folders. That goes in
@@ -83,6 +97,20 @@ option seems to matter, say so in one line and ask.
 Don't design around hypothetical problems (e.g. speaker feedback into the microphone) until they're actually seen.
 Mention a risk once at most.
 *Why:* the user prefers minimal features and real evidence; speculative fixes have steered designs wrongly before.
+
+### Transcription context and turn timing
+
+The user accepted lightweight, sequential microphone suppression when **Allow Interrupting
+Translator** is off. Keep the checkbox above playback speed controls, with a white/Muted mic meter.
+Use existing playback state; no mute pre/post-roll, clock mapping, device mute or AudioContext
+refactor is needed. Captured audio must stay active. Mobile defaults to interruption disabled,
+desktop enabled; a saved browser choice takes precedence. Keep the internal playback-time offset
+argument defaulted to zero and unused in production, with no config or UI around it.
+
+For Live transcription context, reuse the turn-detection speech clock and pause calculation with
+`turn_pause_ms`, separately per audio source. Processing/queue delays must not define turns; TTS
+playback does not reset context. Keep muted captured-video transcription context independent of
+the existing exception that lets automatic playback talk over muted capture.
 
 ### Keep configuration simple; don't validate it
 Read configuration at startup and use what it specifies. Don't add configuration validation or rules

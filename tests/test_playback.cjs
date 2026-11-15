@@ -64,7 +64,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/time-stretch
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n-zh-hant.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/i18n.js"), "utf8"), sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/app.js"), "utf8"), sandbox);
+for (const file of ["audio-utils.js", "segment-splitter.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/static/" + file), "utf8"), sandbox);
 vm.runInContext(`
   language1 = "English"; language2 = "Chinese";
   function fixture(language = "english", done = true) {
@@ -144,6 +144,90 @@ assert.equal(run("player.currentTime"), 0);
 element("playback-pause").click();
 assert.equal(run("player.paused"), false);
 run("stopPlayback()");
+// Disallowing interruptions suppresses only microphone samples during received audio playback.
+run(`
+  I18n.change('en');
+  allowInterruptToggle.checked = false;
+  speedInputs[1].value = '1';
+  const protectedSpeech = fixture('english', false);
+  protectedSpeech.audio.pieces = []; protectedSpeech.audio.seconds = 0;
+  speakTranslation(protectedSpeech.row, protectedSpeech.btn, protectedSpeech.text, protectedSpeech);
+`);
+assert.equal(run("micInputSuppressed()"), false); // initial network buffering
+run(`
+  protectedSpeech.audio.pieces.push(new Float32Array(24000)); protectedSpeech.audio.seconds = 1;
+  protectedSpeech.audio.listeners.forEach(fn => fn());
+`);
+assert.equal(run("micInputSuppressed()"), false); // existing scheduling lead, no mute pre-roll
+assert.equal(run("micInputSuppressed(0.1)"), true); // unused optional offset looks ahead, in seconds
+run("speech.ctx.currentTime = 0.1");
+assert.equal(run("micInputSuppressed()"), true);
+assert.equal(run("micInputSuppressed(-0.1)"), false);
+run(`
+  const manualMic = {chunks: [], splitter: null};
+  const micBlock = new Float32Array([0.5, -0.5]);
+  microphoneBlock(manualMic, micBlock);
+  noteSpeech(true); noteSpeech(true, 'capture');
+`);
+assert.equal(run("manualMic.chunks[0].every(sample => sample === 0)"), true);
+assert.equal(run("manualMic.chunks[0].length"), 2); // preserve time, don't concatenate around the mute
+assert.equal(run("speech.item === protectedSpeech"), true);
+assert.equal(run("speechQueue.length"), 0); // neither mic nor capture interrupts
+const meterClasses = new Map();
+element('level-meter').classList.toggle = (name, enabled) => meterClasses.set(name, enabled);
+run("drawMeter(0)");
+assert.equal(meterClasses.get('muted'), true);
+assert.equal(element('level-db').textContent, 'Muted');
+run(`
+  const continuousMic = {splitter: createSegmentSplitter(1000), chunks: []};
+  continuousMic.splitter.calibrating = false;
+  microphoneBlock(continuousMic, new Float32Array(100).fill(0.5));
+  const video = createSegmentSplitter(1000, 'captured audio', 'capture');
+  video.calibrating = false; video.noiseDb = -60;
+  segmentSplitterBlock(video, new Float32Array(100).fill(0.1), 0.1);
+`);
+assert.equal(run("continuousMic.splitter.speaking"), false);
+assert.equal(run("video.speaking"), true); // captured input remains live
+element('playback-pause').click();
+assert.equal(run("micInputSuppressed()"), false);
+run("microphoneBlock(manualMic, new Float32Array([0.25]))");
+assert.equal(run("manualMic.chunks.at(-1)[0]"), 0.25);
+element('playback-pause').click();
+assert.equal(run("micInputSuppressed()"), true);
+run("speech.ctx.currentTime = 1.1; drawMeter(0)");
+assert.equal(run("micInputSuppressed()"), false); // no mute post-roll, even before final stream EOF
+assert.equal(run("micInputSuppressed(-0.1)"), true); // can query an earlier playback time
+assert.equal(meterClasses.get('muted'), false);
+run(`
+  speech.ctx.currentTime = 2;
+  protectedSpeech.audio.pieces.push(new Float32Array(24000)); protectedSpeech.audio.seconds = 2;
+  protectedSpeech.audio.listeners.forEach(fn => fn());
+`);
+assert.equal(run("micInputSuppressed()"), true); // streaming resumes after the network gap
+run("allowInterruptToggle.checked = true");
+assert.equal(run("micInputSuppressed()"), false); // option can be changed during playback
+run("allowInterruptToggle.checked = false");
+run("protectedSpeech.audio.done = true; protectedSpeech.audio.listeners.forEach(fn => fn()); speech.ctx.currentTime = 3; speech.ctx.sources.at(-1).onended();");
+assert.equal(run("micInputSuppressed()"), false);
+run("speakTranslation(protectedSpeech.row, protectedSpeech.btn, protectedSpeech.text, protectedSpeech); speech.ctx.currentTime = 0.1;");
+element('playback-stop').click();
+assert.equal(run("micInputSuppressed()"), false);
+const originalConsole = sandbox.console;
+sandbox.console = { ...console, error() {} }; // expected stream failure below
+run(`
+  const failedSpeech = fixture('english', false);
+  speakTranslation(failedSpeech.row, failedSpeech.btn, failedSpeech.text, failedSpeech);
+  speech.ctx.currentTime = 0.1;
+  failedSpeech.audio.error = new Error('stream failed');
+  failedSpeech.audio.listeners.forEach(fn => fn());
+`);
+sandbox.console = originalConsole;
+assert.equal(run("micInputSuppressed()"), false);
+let storedInterrupt;
+sandbox.localStorage.setItem = (key, value) => { if (key === 'allowTranslatorInterrupt') storedInterrupt = value; };
+element('allow-interrupt').events.change();
+assert.equal(storedInterrupt, 'false');
+run("allowInterruptToggle.checked = true");
 
 // Pausing during buffering holds newly arriving streamed audio too.
 run(`
@@ -203,5 +287,59 @@ assert.match(element("playback-status").textContent, /^正在朗读/);
 element("playback-pause").click();
 assert.match(element("playback-status").textContent, /^已暂停/);
 run("stopPlayback(); I18n.change('en');");
-assert.equal(run(`isSpaceShortcut({ code: "Space", target: { closest: (selector) => selector === "#app-header" } })`), false);
+assert.equal(run(`isRecordingShortcut({ code: "Space", target: { closest: (selector) => selector === "#app-header" } })`), false);
 console.log("Playback checks passed: rate scheduling, position, pause/resume, restart, interruptions, next, stop/abort, independent language speeds, meter, recordings.");
+
+
+// Mobile defaults and mock overrides use the real config application path.
+(async () => {
+  const classes = new Set();
+  sandbox.document.body.classList.toggle = (name, enabled) => {
+    if (enabled) classes.add(name); else classes.delete(name);
+  };
+  sandbox.document.body.classList.contains = name => classes.has(name);
+  sandbox.URL = URL;
+  sandbox.window.location = { href: 'http://localhost/?mockMobile=1' };
+  const controls = element('header-controls');
+  const language = element('ui-language');
+  controls.children = [language];
+  controls.insertBefore = (child, reference) => {
+    assert.equal(reference, language);
+    controls.children.unshift(child);
+  };
+  const writes = [];
+  sandbox.localStorage.setItem = (...args) => writes.push(args);
+  sandbox.console = { ...console, warn(error, detail) { throw detail || Error(error); } };
+  run('showMockConversation = () => {};');
+  let config = { mock: true, sample_rate: 16000, auto_split: { enabled: true } };
+  sandbox.fetch = async () => ({ json: async () => config });
+  await run('loadConfig()');
+  assert.equal(classes.has('mobile'), true);
+  assert.equal(classes.has('activity-hidden'), true);
+  assert.equal(element('auto-split').checked, false);
+  assert.equal(element('allow-interrupt').checked, false);
+  assert.equal(controls.children[0].textContent, 'Mock Desktop');
+  assert.deepEqual(writes, []); // preview defaults do not overwrite saved choices
+  controls.children[0].click();
+  assert.equal(new URL(sandbox.window.location.href).searchParams.get('mockMobile'), '0');
+  controls.children = [language];
+  await run('loadConfig()');
+  assert.equal(classes.has('mobile'), false);
+  assert.equal(classes.has('activity-hidden'), false);
+  assert.equal(element('auto-split').checked, true);
+  assert.equal(element('allow-interrupt').checked, true);
+  assert.equal(controls.children[0].textContent, 'Mock Mobile');
+  // Preview query parameters have no authority over a real dashboard.
+  controls.children = [language];
+  sandbox.window.location.href = 'http://localhost/?mockMobile=1';
+  config.mock = false;
+  await run('loadConfig()');
+  assert.equal(element('auto-split').checked, true);
+  assert.equal(controls.children.length, 1);
+  sandbox.navigator.userAgent = 'iPhone';
+  assert.equal(run('isMobileBrowser()'), true);
+  run('mobileBrowser = isMobileBrowser();');
+  await run('loadConfig()');
+  assert.equal(element('auto-split').checked, false);
+  console.log('Mobile defaults and mock desktop/mobile config checks passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

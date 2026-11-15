@@ -76,7 +76,7 @@ The servers are started (and stopped) by `run_servers.py`, which the launcher or
 - **Translation window:** one row per recording. The left column (Conversation) shows the original and its translation, aligned left or right by language; the translation fills in as llama generates it (the page sends whisper, llama and the TTS server one request at a time each, in order, while the stages overlap: the next segment is transcribed while this one is translated, and the next translation's speech is generated while this one plays), and gets matching inline ▶ playback and copy icon buttons once complete. The right column (Activity) shows timings — audio length, transcribe time, recheck time (when one ran), translate time (with time to first token, TTFT, under it), and time until speech starts — plus notes and errors. The Activity column is collapsible.
 - **Capture audio** (a sidebar in the left margin; the main area keeps its size when there's room, and the sidebar moves above it on narrow screens): translates the sound of a browser tab, a window or the whole system instead of the microphone. It uses the browser's screen sharing (`getDisplayMedia`) in reverse: you share with the page, and it listens; the video is requested tiny and unused, and the audio comes unprocessed (no echo cancellation, noise suppression or gain control). A meter per channel, matching the microphone/playback meter styles, with L/R labels and dB values on the same row (M for mono); until one is chosen, the first channel with sound is (left if both start together), and clicking a meter switches. The chosen channel goes, mono, through the same pipeline as Continuous Audio Mode; its rows are noted "captured audio". **Mute captured tab**, a checkbox ticked before capturing (browsers honour `suppressLocalAudioPlayback` only when capture starts; it's locked while capturing), stops a captured tab playing here while it's still captured, so only the translations are heard; automatic playback then talks over it, waiting only for the microphone. The microphone and a capture can run at the same time (each has its own recording session, segment splitting and meters: the one by Start Recording is the microphone's, the sidebar's are the capture's; the status line notes "capturing too"); an experiment, to see how the pipeline copes. The code that made them exclusive is kept, commented out. A `?` explains which share choice gives sound (a tab with tab audio, or the entire screen with system audio; a window gives none).
 - **Playback** sits opposite Capture audio, to the right of the conversation. Matching icon buttons restart the current clip, pause/resume, stop and clear all queued audio, or skip to the next queued clip. Pausing holds streamed audio and the queue without interrupting capture or translation; automatic speech interruption does not override a user pause. Status shows buffering/speaking/paused/idle, target language, and queued clip count/duration. A seek bar shows elapsed/total clip time; a trailing + marks a duration still growing as audio streams in. Seeking uses the received audio and keeps a user pause in place. Timeline time follows the original clip duration, independent of playback speed. An analyser measures playback output in dBFS using the microphone meter colors (also for recorded-row playback). Separate sliders named for the configured languages set live translation playback speed from 0.75× to 1.5×, remembered in browser storage. Changes apply at the current audio position, including paused clips. A browser-side WSOLA prototype changes duration while preserving pitch; at 1× samples bypass processing. Queue duration reflects speed. On narrow screens both side panels move above the conversation.
-- **Controls:** Start/Stop (or Space), the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status row and the microphone's level meter aligned under the Activity column. The status row has three independent, unlabeled indicators separated by light dividers (position says which is which; tooltips spell them out): the capture (left) and the mic (middle) each show their source's state (off, calibrating, listening, speech, or recording; for the capture, "no sound yet" until a channel is chosen) and how many of its segments are still being translated; playback (right) shows what is playing, how many translations are queued for a pause, or whether automatic playback is on.
+- **Controls:** Start/Stop (or Space or backtick) in continuous mode; hold-to-talk/release-to-send otherwise, the Continuous Audio Mode and Automatic Translation Playback switches, a gain slider, and a status row and the microphone's level meter aligned under the Activity column. The status row has three independent, unlabeled indicators separated by light dividers (position says which is which; tooltips spell them out): the capture (left) and the mic (middle) each show their source's state (off, calibrating, listening, speech, or recording; for the capture, "no sound yet" until a channel is chosen) and how many of its segments are still being translated; playback (right) shows what is playing, how many translations are queued for a pause, or whether automatic playback is on.
 - **Server status:** the header shows Coordinator reachability separately from Transcribe, Translate and Speak engine health. Engine lights are green (ok), amber (loading), red (down), from `/api/health` every 10 s when ready or 2 s otherwise; tooltips show server details. The same health response determines Coordinator reachability, regardless of engine states.
 - **Speech playback:** the speech arrives as raw 16-bit PCM; each piece is converted and scheduled with Web Audio right after the previous one (with a 0.1 s head start against network jitter), so playback starts as soon as the first audio arrives. Only one thing plays at a time: the ▶ buttons stop whatever is playing, and starting a recording stops playback (speakers would otherwise be recorded).
 - **Debugging aids:** each row can play back the exact audio sent to whisper, show the raw whisper and llama requests and responses (`{ }`, including both attempts of a recheck), and show recording details (`ⓘ`: how a segment was split, temporary recording status, or the saved path when retention is enabled).
@@ -282,7 +282,68 @@ page memory; backend logging still follows the existing app behavior.
 
 #### Component tests (`test.html`)
 
-A second page, linked from the dashboard's header, that tests one stage at a time through the dashboard's own endpoints, so a result there is what the dashboard would get:
+A second page, linked from the dashboard's header, that tests audio transport and individual
+inference stages through the application's own endpoints:
+
+- **WebSocket echo:** `component-audio.js` reuses `recorder-worklet.js` to capture mono Float32 at
+  16 kHz, using the browser's AudioContext resampling for microphone input, and writes directly
+  into 16 ms `pcm_s16le` packets (256 samples, 512 payload bytes). Connect creates a random channel
+  and opens `/api/audio?channel=<name>&echo=1`, then requests the microphone. The shared Live
+  detector calibrates and waits for speech before starting a stream. Existing pre-roll is
+  included; audio buffers until the start acknowledgement supplies its stream ID. After
+  `split_pause_ms` of silence (250 ms by default), the final partial packet is zero-padded
+  and `stop_stream` is sent. The mic/socket remain open, sending no audio until speech resumes
+  in a fresh stream. Maximum WAV phrase length does not end a WS stream during speech.
+  The **PCM/Opus** toggle button selects the next speech stream's codec for echo only, including
+  while connected. PCM remains the default. Each queued stream captures its own codec/header
+  and frame size. Toggling does not interrupt speech; the active stream ends on silence and
+  flushes normally before the next starts. The status displays **Connected: PCM** or
+  **Connected: opus**, retaining the active stream's codec until it finishes; while idle it
+  reflects the selection. The button and availability indicator occupy the middle column
+  between connection/delay controls and metrics, stacking on narrow screens.
+  On page load, WebCodecs `AudioEncoder.isConfigSupported`
+  and `AudioDecoder.isConfigSupported` check mono 16 kHz Opus, with the encoder configured
+  for raw Opus, 20 ms frames and 24 kbit/s. The panel displays Opus available/unavailable;
+  the toggle stays disabled if either codec direction/API is unavailable or a check fails.
+  Opus encoding uses 320-sample Float32 `AudioData` frames and one native encoder per speech
+  stream. Encoder flush completes before `stop_stream` and the next stream start. The echo
+  server returns raw encoded payloads unchanged. A native decoder per received Opus stream
+  produces Web Audio buffers at its actual output sample rate. Decoder flushes preserve stream
+  order; delay changes discard pending old decoded audio, and disconnect closes all codecs.
+  See the [WebCodecs Opus registration](https://www.w3.org/TR/webcodecs-opus-codec-registration/).
+  No logon/authentication exchange or channel broadcast is involved. The browser delay slider
+  adds 0–5 seconds in 0.5-second steps; its final position disables playback while networking
+  and capture continue. Delay changes stop queued sources and begin scheduling with the new delay.
+  Playback includes a small 32 ms scheduling buffer in addition to the selected delay.
+  Disconnect/navigation discards pending playback and unsent partial audio, stops microphone
+  tracks and closes the context/socket, including late permission or worklet-setup results.
+  The mic meter uses Live's -60..0 dB scale, fast-rise/slow-fall display, -45/-10 dB color
+  boundaries, session peak hold and 1.5-second clipping indication. RMS/peak are collected
+  during the input block loop and rendered with requestAnimationFrame.
+  For packet RTT, the browser records performance.now() at each send and matches returned
+  stream IDs and downstream packet IDs: this echo route returns every packet exactly
+  once in order. No wire-format/timestamp extension is required. It measures browser send
+  through echo receive (including network/server/event-loop queues), excluding capture/frame
+  formation and playback/buffering/user-selected delay. RTT continues while playback is disabled;
+  the displayed arithmetic mean updates every 500 ms from samples received in that interval
+  using the existing animation loop; empty intervals display a dash. Disconnect clears readings
+  and pending timestamps. Meter/timing occupy a right-hand column beside connect/delay controls,
+  stacking below on narrow screens. Meter container width uses Live's
+  `calc(var(--activity-full-width) - 28px)` rule.
+  The original MediaRecorder-based Transcribe panel is unchanged.
+
+- **Channel translation:** shares echo's microphone, framing, playback and connection lifecycle.
+  Connecting either test disconnects the other. A random channel opens with `echo=0`; raw mic
+  PCM uses the same speech/pause stream boundaries as echo, while Live's extracted
+  `segment-splitter.js` independently creates WAV speech segments. WS includes silence through
+  the pause decision; WAVs retain their existing tail trimming and minimum-speech filtering.
+  Shared `audio-utils.js` supplies resampling and WAV encoding for Live and component tests.
+  WAVs queue in the browser, with exactly one `/api/channel/translate?channel=...&seq=...` POST
+  in flight. Completed `on_transcription` and `on_translation` JSON messages arrive over WS,
+  carrying the usual result, timing and raw exchange data. llama uses a completed response here,
+  rather than token streaming. Rows show both texts and raw responses; generated speech plays
+  from the server's szaL16 stream using the configured playback buffer. Disconnect aborts uploads,
+  clears queued segments/playback and prevents stale results from entering a new connection.
 
 - **Transcribe:** record, or upload any audio file the browser can decode (converted to the dashboard's WAV format in the page); shows the text, language, timings and raw response.
 - **Translate:** any text, streamed; uses a source-language selector and shows the translation, time to first token and the raw stream.
@@ -295,7 +356,34 @@ Linked from the component tests: checks that nothing broke, end to end, with the
 
 ### Backend (`src/app.py`)
 
-Serves the pages and runs the pipeline. The HTTP plumbing lives in `microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py` is just the app: config, the engine calls, and its endpoints as decorated functions:
+Serves the pages and runs the pipeline. HTTP/WebSocket plumbing lives in the vendored
+`microweb.py`, a small Flask-style framework (one file, standard library only), so `app.py`
+contains the configuration, engine calls and decorated endpoints:
+
+- **WebSocket `/api/audio`** requires a `channel` query parameter, unique among active connections. With
+  `echo=1`, the server acknowledges szaL16 start/stop controls, returns stream events and
+  echoes binary packets immediately. It preserves PCM or Opus payload bytes, replaces the network-order
+  packet header with downstream packet IDs, and uses multipart sends without joining payloads.
+  `echo=0` accepts stream controls/audio without returning an echo. Stream formats are mono
+  signed PCM16 LE or raw Opus, using the unchanged base64 codec header; malformed input closes
+  with 1008. PCM payload lengths follow the declared rate/duration; Opus payloads are variable
+  length and nonempty. The server checks framing/control fields but never decodes Opus.
+  Incoming message size is bounded to 16 KiB and queued payload to 256 KiB. A small registry
+  associates WAV POSTs with their active connection. Each connection has one ordered WS send
+  worker and a bounded outbound job queue, shared by echo and generated speech. Text results
+  send directly from the POST handler so they do not wait behind speech; microweb serializes
+  message writes. Disconnect removes the registry entry and discards queued jobs. An executing
+  engine call may finish or time out, but its results cannot reach a replacement connection.
+  The same transport operates in mock mode without inference calls.
+
+- **POST `/api/channel/translate`** takes a WAV plus `channel` and `seq` query values. It reuses
+  recording/transcription and forced-language recheck helpers, then makes one nonstreaming llama
+  request. Completed transcript and translation JSON go to that captured WS connection. After
+  delivering text, it queues speech and returns, allowing the next browser WAV upload while
+  speech runs. The WS send worker calls the existing TTS PCM helper and frames its native
+  24 kHz mono PCM16 LE into 16 ms szaL16 packets, padding only the final partial packet. No
+  intermediate WAV is created. Speech jobs stay ordered; errors return `on_speech_error` JSON.
+
 
 | Endpoint                       | Purpose                                                       |
 |--------------------------------|---------------------------------------------------------------|
@@ -317,6 +405,40 @@ Both connect to the engine before the response starts, so an unreachable engine 
 ### Engines
 
 Stock whisper-server and llama-server binaries from the projects' GitHub releases, run as separate processes. whisper auto-detects the language, so mixed-language speech works.
+
+The backend joins Whisper's `segments[].text` directly with no separator, trimming only the outer
+whitespace. This preserves word spaces and joins words split across segments without inserting
+the HTTP server's formatting newlines. If no segments are returned, it uses the combined `text`.
+Display, translation and subsequent prompt context all use this transcript; the browser wraps it
+to the available width. Raw response details retain the original combined text and segments.
+
+Live supplies the preceding segment's original transcript as Whisper's inference-time `prompt`,
+separately for microphone and captured audio. It keeps at most 100 Unicode characters, further
+limited to 200 UTF-8 bytes (a conservative bound below Whisper's usual 224-token prompt budget).
+If trimming cuts a space-delimited span, its leading fragment is dropped, using the same rule for
+all languages, including Chinese. If no space remains after the cutoff, context is empty. Short
+transcripts that fit the size limits remain intact. This is a continuation hint, not a same-language
+guarantee. The next speech block after
+a source has been quiet for `[tts] turn_pause_ms` starts a fresh context. Both this decision and
+automatic playback use the same `turnWait` calculation and speech-activity clock; processing/queue
+delays do not count as recording pauses. Muted capture still updates its own context, while
+continuing to let playback talk over the video. TTS playback does not clear context.
+
+Each segment snapshots its predecessor before resampling/queuing and reads its transcript when
+its Whisper request begins. A late result from an earlier turn cannot seed a new turn. Empty or
+failed transcripts supply no context; out-of-pair results supply context only after a successful
+language recheck, if that correction is available before the next request starts. Translation
+completion is not required. The WAV request body is unchanged: optional `X-Whisper-Prompt` carries
+URI-encoded UTF-8 text, which the backend decodes and forwards as a multipart `prompt` field.
+The raw Whisper request viewer includes that field. No server-side conversation memory is added;
+recheck inference and component tests remain unprompted, and navigation discards Live context.
+
+Whisper inherits Silero VAD v6.2.0 from `defaults.toml`: `[models.whisper].vad-model`
+downloads the GGML model and supplies `--vad-model`; startup args enable `--vad`. Whisper fragments
+inherit both settings. VAD filters speech inside uploaded clips before transcription; browser silence
+splitting is unchanged. Remote (`start = false`) servers must enable VAD themselves. Existing generated
+or local `args` lists replace the defaults, so regenerate or add `--vad` to such overrides. Existing
+Whisper binaries must support Silero v6.2.0; `ensure_version = false` does not upgrade them.
 
 #### Text-to-speech: Kokoro (`kokoro_server.py`)
 
@@ -362,11 +484,37 @@ Stock whisper-server and llama-server binaries from the projects' GitHub release
 
 ## Flow
 
-- **Manual mode:** Start/Stop records one clip. The page sends it to `/api/recordings`, shows the text when whisper returns, then sends the text to `/api/translate` and shows the translation as it streams in. Recording can continue while earlier rows are processing.
-- **Continuous Audio Mode** (called *auto-split* in code and config; on by default): Start keeps the microphone open, and a voice activity detector in the page splits the audio at pauses. Each segment goes through the same pipeline as its own row.
+- **Push-to-talk mode** (Continuous Audio Mode off): holding the recording button or Space or the backtick key records one clip; release sends it. Pointer cancellation or window blur ends a hold, and a release during asynchronous microphone startup is honored after setup. The button reads Hold to Talk / Release to send and the hint reads Hold Space or ` to talk. Space retains its existing exclusions for text inputs, selects, header/playback controls and the raw viewer. The page sends it to `/api/recordings`, shows the text when whisper returns, then sends the text to `/api/translate` and shows the translation as it streams in. Recording can continue while earlier rows are processing.
+- **Mobile defaults:** reuse the translator-interruption mobile detection (UA Client Hints,
+  mobile user-agent identifiers, or touch-enabled MacIntel iPads). Hide Capture Audio and
+  the keyboard hint, default Activity to collapsed unless a saved choice exists, and start
+  with Continuous Audio Mode off. Desktop retains the configured continuous-mode default.
+  In mock Live only, a header button before the language switch reloads with `mockMobile=1`
+  or `mockMobile=0`, applying mobile/desktop defaults including interruption without writing
+  preview defaults to local storage. Real dashboards ignore these query overrides.
+- **Continuous Audio Mode** (called *auto-split* in code and config; on by default on desktop): Start keeps the microphone open, and a voice activity detector in the page splits the audio at pauses. Each segment goes through the same pipeline as its own row.
 - **Language direction:** Whisper identifies the source language. If it is outside the configured pair and the transcript is nonempty, the page requests a **recheck** before translating: the server-side recording is transcribed forced to each language, and the result with the higher duration-weighted segment `avg_logprob` wins. The row shows the provisional transcript while waiting, then replaces its text and language. If the recheck fails, the original result is retained; an empty final transcript is not translated. Language rechecks are disabled if a configured language is not in Whisper's language list.
 - **Translation prompt:** the page sends the final transcript and Whisper language as `{text, source}`. The backend requires a source matching one of the configured languages (case-insensitive), chooses the other as target, and renders `{language1}`, `{language2}`, `{source}` and `{target}` per request. Unknown or missing source languages produce an explicit 400 error, including after a failed recheck. llama returns translation text only: no language tags, parsing or llama-triggered recheck. Bracketed content is preserved. The component tests select the source explicitly for typed input. Custom prompt overrides must use the new direction placeholders and omit tag instructions.
-- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio and heard position, resuming 100 ms before that position after the next turn pause. The cursor follows scheduled audio segments, so initial buffering and gaps do not count as heard speech; already-heard pieces are skipped and the first remaining piece starts at an offset. The backlog counts only the remaining audio. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro: stock `af_maple` for English and `zf_001` for Chinese), else `[tts] voice` if set, else the server's `default_voice` (`af_maple` for Kokoro, `qwen_demo` for Qwen). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits segments (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). If someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. The backlog is limited by time, not count: once the speech waiting (not counting the one playing, and only audio fetched in full) is over `[tts] max_backlog_ms` (30 s), the oldest are dropped, always keeping the newest, each with a note on its row ("over 30 s of speech waiting"; its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. With a muted captured tab, playback talks over the tab, so a fast speaker keeps the backlog full and playback about 30 s behind (see Extension points: a playback speed control). Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
+- **Speaking:** the ▶ after a translation sends it to `/api/speak` and plays the speech as it streams in, once `[tts] playback_buffer_ms` of audio has arrived, or all of it if shorter, so a slow start doesn't stutter (the test page has a Buffer field for trying other amounts). Translations queued for automatic playback have their speech fetched as soon as they're queued, in order, and held in the page, so when one's turn comes its audio is ready (or on its way) and it starts at once; one interrupted by the speaker keeps its audio and heard position, resuming 100 ms before that position after the next turn pause. The cursor follows scheduled audio segments, so initial buffering and gaps do not count as heard speech; already-heard pieces are skipped and the first remaining piece starts at an offset. The backlog counts only the remaining audio. The page also says which of the two languages the translation is in (the other one than the row's), and the server picks the voice: `[tts] voice_language1`/`voice_language2` for it if set (for anything unusual, e.g. a language whisper doesn't know), else the TTS server's `language_voices` by the language's name (Kokoro: stock `af_maple` for English and `zf_001` for Chinese), else `[tts] voice` if set, else the server's `default_voice` (`af_maple` for Kokoro, `qwen_demo` for Qwen). A server's voices live in its own `[api_servers]` section, so switching engines can't leave another engine's voice names behind. With Automatic Translation Playback on, each finished translation is queued and spoken, in order, **once the speaker's turn has ended**: every running source (microphone, capture) quiet for `[tts] turn_pause_ms` (2 s). That's deliberately longer than the pause that splits segments (`[auto_split] split_pause_ms`, 250 ms): text appears when the speaker takes a breath, but translations are only voiced when they've finished, so they don't talk over them (even with a captured tab muted, where a 2 s pause still feels natural). With **Allow Interrupting Translator** enabled, if someone starts speaking during playback (sustained speech, not a cough), it stops and that translation goes back to the front of the queue for the next turn's end. The backlog is limited by time, not count: once the speech waiting (not counting the one playing, and only audio fetched in full) is over `[tts] max_backlog_ms` (30 s), the oldest are dropped, always keeping the newest, each with a note on its row ("over 30 s of speech waiting"; its ▶ still works). A speaker who never pauses that long is never talked over, so nothing is spoken until they do. With a muted captured tab, playback talks over the tab, so a fast speaker keeps the backlog full and playback about 30 s behind (see Extension points: a playback speed control). Stopping playback (or starting a recording) drops the waiting ones; the ▶ buttons play at once.
+- **Interruptions:** the Playback panel's **Allow Interrupting Translator** checkbox defaults to
+  unchecked on mobile and checked on desktop; `allowTranslatorInterrupt` in browser local storage overrides that default.
+  Mobile detection uses the browser's mobile hint, common mobile user-agent names and the desktop-mode
+  iPad touch/platform combination. This is a best-effort default; the checkbox is available everywhere.
+  When disabled,
+  detected speech from either source cannot interrupt automatic translation playback. Microphone
+  blocks arriving while translation audio is playing are replaced by zeros before metering, recording
+  and detection, preserving their duration. Manual recording keeps silence for those intervals without
+  advancing its speech-activity clock. Captured audio remains live. The mic meter is white and says
+  **Muted** during suppression. This applies to both automatic and manually played translations,
+  but not playback of recorded clips.
+  Playback already tracks each scheduled PCM piece; its start/end times, playback pause and context
+  state determine whether audio is playing. Initial buffering, scheduling lead, network underflow,
+  pause, end, stop and error leave the mic available. Resuming audio suppresses it again. This is a
+  browser-thread decision when each input block arrives, with no added mute pre/post-roll or cross-clock
+  scheduling; it is not sample-accurate synchronization of physical output and input. No device mute,
+  new AudioContext lifecycle or gain automation is introduced. The tooltip explains mobile AEC limits.
+  `micInputSuppressed(offsetSeconds = 0)` can query an offset playback time internally: positive
+  values look ahead, negative values look back. All production callers use zero. It has no config or UI.
 
 ## Configuration
 
@@ -682,7 +830,7 @@ a shared dashboard) from rechecking a recording it did not make.
 ## Known limitations
 
 - **Segment splitting:** a perfectly steady sound longer than about 9 s is absorbed into the background estimate and ends the segment (deliberate, so constant noise can't hold it open).
-- **Feedback:** with Continuous Audio Mode and automatic playback both on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new segment. Headphones avoid it. (In practice the browser's echo cancellation has handled even a playing video well.)
+- **Feedback:** with Continuous Audio Mode, automatic playback and Allow Interrupting Translator all on, the microphone is open while the translation plays; if speakers get past echo cancellation, the speech is picked up as a new segment. Headphones avoid it. (In practice the browser's echo cancellation has handled even a playing video well.)
 - **misaki:** English misreads some proper names; Japanese reads a decimal point as a sentence end and leaves Latin letters as they are, and a line of kanji only (東京駅) is read as Chinese.
 - **Mac:** `scripts/setup_mac.sh` and `INSTALL_MAC.md` haven't been tried on a real Mac.
 
@@ -692,14 +840,13 @@ The project's history (milestones, measurements and the reasons behind decisions
 
 - **Streaming:**
   - Live provisional text while speaking: re-send the current segment's audio about once a second, show whisper's result as provisional, and translate only finished segments. The browser keeps the audio, so the server stays stateless.
-- **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`; passing the previous segment to whisper as a prompt for continuity.
+- **Continuous Audio Mode:** better voice detection, e.g. keep splitting on silence in the page, then run each clip through Silero VAD (`sherpa_server_win.py`'s `/vad`) before STT to drop or trim non-speech; filtering results with high `no_speech_prob`.
 - **Chinese script:** whisper sometimes writes Traditional characters (always, when a recheck forces Chinese), and it can't easily be made to write Simplified. llama can convert them reliably, e.g. a small pass (or an instruction in the translation prompt) that returns the transcript in Simplified characters before it's shown; a descriptive language name for llama ("Chinese-simplified") alongside whisper's name for the checks would fit the same idea.
 - **Configuration:**
   - Recipes for other hardware: no GPU, non-NVIDIA (Vulkan builds), and remote setups (a laptop using a desktop's servers).
   - A recipe with two TTS servers (e.g. one per language) would define `[tts]` twice; it needs a per-language `[tts]` first.
 - **Housekeeping:** a retention limit for `tmp/audio/` when session retention is explicitly enabled (about 115 MB per hour of recorded speech).
 - **Speech:**
-  - Pause speech detection while a translation plays, so speakers can't feed it back into Continuous Audio Mode.
   - The speaker's own voice, cloned from their recordings (Qwen3-TTS).
   - Start speaking before the translation finishes (sentence by sentence).
   - Playback speed quality: audition the PCM WSOLA prototype on real speech. Future Opus/media-element playback could use native pitch preservation if streaming latency and transport controls remain satisfactory.
@@ -708,3 +855,12 @@ The project's history (milestones, measurements and the reasons behind decisions
 - Add stages to the pipeline (summarization, glossary/terminology pass).
 - **Capture:** both sources now run at once, but their rows look alike: marking each row with its source (you vs. the other side of a meeting) and aligning by source would make two-sided transcripts; file upload as another source.
 - Add other backends behind the same STT and translation interfaces (e.g. cloud APIs).
+
+
+### Vendored transport provenance
+
+`src/microweb.py` was copied unchanged from
+[gilbertgong/microweb main at de9fefb](https://github.com/gilbertgong/microweb/blob/de9fefb02b19dc30620be498998f73e07debba1d/microweb.py)
+for WebSocket support, including its embedded BSD notice. The user subsequently updated
+its version line; that edit is preserved. This revision includes the
+receive-copy optimization. Updating a consumer copy remains a deliberate maintenance action.

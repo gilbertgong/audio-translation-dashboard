@@ -15,6 +15,26 @@ Mac).
 
 ## Current direction
 
+The root README is a concise introduction and getting-started guide, with links to existing
+detailed documentation. Keep implementation/edge-case/release detail in its supporting docs;
+see MEMORY.md for the README scope rule.
+
+szaL16 wire documentation permits `pcm_s16le` and `opus`, without requiring endpoints
+to implement either codec or defining negotiation/fallback. Echo now offers an optional
+WebCodecs Opus toggle with encoder/decoder availability indication. PCM is the default;
+selection can change while connected and takes effect at the next speech stream. Connection
+status retains the active stream's codec until it ends. Channel translation stays PCM.
+Native Chrome codec-path and mocked transport checks pass.
+
+Channel translation component test is implemented for review. Echo and translation share one
+browser mic/WS lifecycle and one server WS send worker per connection. Translation sends both
+raw PCM and serial queued WAV POSTs; completed text returns over WS before independently queued
+speech finishes. Mic WS audio is 16 kHz/16 ms with local speech/pause stream boundaries;
+the mic/socket remain open during silence. TTS remains native 24 kHz. Shared Live
+segmentation/resampling/WAV helpers preserve existing behavior.
+Mocked HTTP/WS pipeline, browser queue/cancellation and Live regression checks pass; physical
+microphone playback and real-engine audition remain for user review. Changes are uncommitted.
+
 Feature-complete for everyday use; now polishing playback and capture from real use, and making the smaller-machine
 recipes good.
 
@@ -44,6 +64,45 @@ recipes good.
   results stay in order.
 
 ## Results so far
+
+- Component tests now include WebSocket microphone echo via `/api/audio?channel=...&echo=1`.
+  AudioWorklet -> 16 ms PCM16 LE packets -> immediate server echo -> browser playback.
+  Live-style mic meter and per-packet RTT are displayed. Local delay is 0–5 s in 0.5 s steps
+  plus Disabled; changing delay discards pending echoes.
+  Real WebSocket and simulated browser lifecycle checks pass. Physical audio remains for audition.
+  Vendored microweb main de9fefb includes WS and the receive-copy optimization. Translation-over-WS
+  is deferred; existing inference component panels and Live behavior are unchanged.
+
+- `docs/szaL16.md` proposes the Zello stream subset with `pcm_s16le` mono little-endian PCM,
+  unchanged stream/header formats, and recommended 16 ms packets/examples (not a fixed protocol duration).
+  Includes adapted upstream send/receive reference and `docs/zello_LICENSE`.
+  Standalone JS Float32/send/decode/playback and blocking/threaded Python relay/WAV references are in
+  `docs/reference/`, defaulting to 16 ms with other durations supported. Cross-language
+  packet/WAV tests pass. The component echo below now exercises the same wire format;
+  the standalone references remain separate.
+
+- Mobile Live hides Capture Audio and keyboard hints, defaults Activity collapsed (saved choice
+  wins), and starts in push-to-talk mode. Mock Live has a header Mobile/Desktop preview toggle
+  that reloads with device defaults, including interruption, without storing those defaults.
+
+- Continuous Audio Mode off uses hold-to-talk/release-to-send with the button, existing Space shortcut or backtick key.
+  Space and backtick toggle recording in continuous mode; existing Space shortcut exclusions remain unchanged.
+
+- Playback's **Allow Interrupting Translator** option remembers the browser choice (mobile defaults
+  off, desktop on). When off, speech does not interrupt translation playback and microphone blocks become
+  silence while received audio plays. White/Muted mic indicator; captured audio stays active.
+  Existing scheduled PCM intervals drive this browser-thread check, without mute padding or clock changes.
+
+- Whisper transcripts join `segments[].text` directly for display, translation and prompt context;
+  raw responses remain untouched. No prompt-specific newline removal or whitespace normalization.
+
+- Live Whisper prompts carry the preceding transcript tail per audio source, bounded to 100 Unicode
+  characters and 200 UTF-8 bytes, dropping cut-off spans at whitespace boundaries for all languages. Context uses the
+  same speech-pause calculation as playback turns (`turn_pause_ms`), independently of processing
+  delay or TTS playback, including muted capture.
+
+- Whisper defaults download Silero VAD v6.2.0, pass its model path and enable VAD at startup.
+  Whisper fragments inherit these settings; browser silence detection is unchanged.
 
 - Coordinator reachability has its own header light, derived from the same /api/health reply as the
   engine lights. Successful replies mean Coordinator is alive even with all engines down. Live transcription/translation/speech wait through known outages and automatically retry eligible

@@ -15,16 +15,20 @@ microweb.py.
 
 import argparse
 import atexit
+import base64
 import contextlib
 import itertools
 import json
 import logging
+import queue
 import re
 import secrets
+import struct
 import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -207,16 +211,19 @@ def sse_event(name, data):
     return f"event: {name}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
 
 
-def transcribe(whisper_url, wav, filename, language=None):
+def transcribe(whisper_url, wav, filename, language=None, prompt=""):
     """Send a WAV to whisper-server; return {"text", "language", "confidence",
     "stt_raw"}. language: force it (whisper's code or lowercase English name,
-    e.g. "chinese") instead of letting whisper detect it.
+    e.g. "chinese") instead of letting whisper detect it. prompt: preceding
+    transcript context, supplied explicitly for this request only.
 
     confidence is the segments' average log-probability, weighted by their
     length (closer to 0 = more confident). stt_raw is the request settings and
     whisper's full reply, for debugging.
     """
     fields = {"response_format": "verbose_json", "temperature": "0.0"}
+    if prompt:
+        fields["prompt"] = prompt
     if language:
         fields["language"] = language
     body, content_type = multipart(fields, {"file": (filename, "audio/wav", wav)})
@@ -227,10 +234,12 @@ def transcribe(whisper_url, wav, filename, language=None):
     raw = {"request": {"url": url, "fields": fields, "file": f"{filename} ({len(wav)} bytes)"},
            "response": result}
     segments = result.get("segments") or []
+    # Segment text retains word spaces; the server's combined text adds newlines even mid-word.
+    text = "".join(s["text"] for s in segments) if segments else result["text"]
     weights = [max(s.get("end", 0) - s.get("start", 0), 0.01) for s in segments]
     confidence = (sum(s.get("avg_logprob", 0) * w for s, w in zip(segments, weights)) / sum(weights)
                   if segments else None)
-    return {"text": result["text"].strip(), "language": result.get("language") if language
+    return {"text": text.strip(), "language": result.get("language") if language
             else result.get("detected_language"), "confidence": confidence, "stt_raw": raw}
 
 
@@ -312,10 +321,14 @@ def relay_translation(text, url, body, resp, start):
              seconds, first or 0, logged_text(text), logged_text("".join(pieces).strip()))
 
 
+def mock_translation(text):
+    known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
+    return known.get(text, f"[mock translation] {text}")
+
+
 def mock_translation_stream(text):
     """A made-up stream in llama's format, word by word, for --mock."""
-    known = {item["text"]: item["translation"] for item in MOCK_CONVERSATION}
-    translation = known.get(text, f"[mock translation] {text}")
+    translation = mock_translation(text)
     yield sse_event("request", {"mock": True, "text": text})
     time.sleep(MOCK_DELAY / 2)
     # Pieces like a tokenizer's: single CJK characters, or words with their spaces.
@@ -348,6 +361,215 @@ app = App(static_dir=STATIC_DIR)  # request bodies up to 1 MB unless a handler a
 config = None  # the settings (see load_config)
 mock = False  # --mock: sample data instead of whisper/llama
 mock_counter = itertools.count(MOCK_PRELOAD)  # next sample line in mock mode
+# Only non-echo component connections receive channel translation results.
+audio_channels = {}
+audio_channels_lock = threading.Lock()
+
+
+@app.websocket("/api/audio", max_bytes=16384, max_queue_bytes=262144)
+def audio_socket(ws):
+    """szaL16 component connection; channel/echo come from the opening URL."""
+    channel = ws.req.query.get("channel", "")
+    echo = ws.req.query.get("echo") == "1"
+    if not channel:
+        ws.close(1008, "channel required")
+        return
+    session = {"ws": ws, "outbound": queue.Queue(maxsize=256), "stop": threading.Event(), "echo": echo}
+    with audio_channels_lock:
+        if channel in audio_channels:
+            ws.close(1008, "channel already connected")
+            return
+        audio_channels[channel] = session
+    worker = threading.Thread(target=ws_sender, args=(session,), daemon=True)
+    worker.start()
+    # All echo controls/audio use the same outbound worker as generated speech.
+    def send(message):
+        try:
+            session["outbound"].put((message,), timeout=ws.timeout)
+        except queue.Full:
+            ws.close(1013, "outgoing queue full")
+            raise ConnectionError("outgoing queue full") from None
+    active = None
+    packet_id = 0
+    try:
+        for message in ws:
+            if isinstance(message, str):
+                command = json.loads(message)
+                if command["command"] == "start_stream":
+                    if active is not None or command["channel"] != channel:
+                        raise ValueError("unexpected stream")
+                    codec = command["codec"]
+                    if command["type"] != "audio" or codec not in ("pcm_s16le", "opus"):
+                        raise ValueError("unsupported codec")
+                    rate, frames, frame_ms = struct.unpack("<HBB", base64.b64decode(command["codec_header"], validate=True))
+                    duration = frames * frame_ms
+                    if (not rate or frames not in (1, 2) or not 2.5 <= duration <= 60
+                            or command["packet_duration"] != duration or rate * frame_ms % 1000):
+                        raise ValueError("invalid audio format")
+                    if codec == "opus" and (rate not in (8000, 12000, 16000, 24000, 48000)
+                                             or frame_ms not in (5, 10, 20, 40, 60)):
+                        raise ValueError("invalid Opus format")
+                    stream_id = secrets.randbits(32)
+                    active = (stream_id, rate * duration // 1000 * 2 if codec == "pcm_s16le" else None)
+                    packet_id = 0
+                    if "seq" in command:
+                        send(json.dumps(dict(seq=command["seq"], success=True, stream_id=stream_id)))
+                    if echo:
+                        send(json.dumps(dict(command="on_stream_start", channel=channel,
+                            stream_id=stream_id, type="audio", codec=codec,
+                            codec_header=command["codec_header"], packet_duration=duration,
+                            **{"from": "echo"})))
+                elif command["command"] == "stop_stream":
+                    if active is None or command["stream_id"] != active[0] or command["channel"] != channel:
+                        raise ValueError("unexpected stream")
+                    if echo:
+                        send(json.dumps(dict(command="on_stream_stop", stream_id=active[0])))
+                    if "seq" in command:
+                        send(json.dumps(dict(seq=command["seq"], success=True)))
+                    active = None
+                else:
+                    raise ValueError("unknown command")
+            else:
+                if (active is None or len(message) <= 9
+                        or (active[1] is not None and len(message) != 9 + active[1])):
+                    raise ValueError("unexpected audio packet")
+                kind, stream_id, _ = struct.unpack_from("!BII", message)
+                if kind != 1 or stream_id != active[0]:
+                    raise ValueError("unexpected audio packet")
+                if echo:
+                    send((struct.pack("!BII", 1, stream_id, packet_id), memoryview(message)[9:]))
+                    packet_id = (packet_id + 1) & 0xffffffff
+    except (ValueError, KeyError, TypeError, struct.error):
+        ws.close(1008, "invalid szaL16 stream")
+    finally:
+        session["stop"].set()
+        with audio_channels_lock:
+            if audio_channels.get(channel) is session:
+                del audio_channels[channel]
+        while True:
+            try:
+                session["outbound"].get_nowait()
+            except queue.Empty:
+                break
+        session["outbound"].put(None)
+        worker.join(timeout=0.2)  # an executing engine read may finish on its normal timeout
+
+
+def ws_sender(session):
+    """One connection's ordered send worker; jobs supply echo or generated audio messages."""
+    ws, stop = session["ws"], session["stop"]
+    try:
+        while not stop.is_set():
+            messages = session["outbound"].get()
+            if messages is None or stop.is_set():
+                return
+            iterator = iter(messages)
+            try:
+                for message in iterator:
+                    if stop.is_set() or ws.closed:
+                        return
+                    ws.send(message)
+            finally:
+                close = getattr(iterator, "close", None)
+                if close:
+                    close()
+    except OSError:
+        stop.set()
+        ws.close()
+    except Exception:
+        log.exception("WebSocket send worker failed")
+        stop.set()
+        ws.close(1011, "audio sender failed")
+
+
+def channel_speech(channel, session, seq, text, target):
+    """Produce standard szaL16 messages from the existing TTS PCM stream."""
+    stream_id = secrets.randbits(32)
+    started = False
+    stream = None
+    try:
+        if session["stop"].is_set():
+            return
+        stream = speech_stream(text, target)
+        header = base64.b64encode(struct.pack("<HBB", 24000, 1, 16)).decode("ascii")
+        yield json.dumps(dict(command="on_stream_start", channel=channel, stream_id=stream_id,
+            seq=seq, type="audio", codec="pcm_s16le", codec_header=header, packet_duration=16,
+            **{"from": "translator"}))
+        started = True
+        pending = b""
+        packet_id = 0
+        for chunk in stream:
+            if session["stop"].is_set():
+                return
+            data = pending + chunk if pending else chunk
+            offset = 0
+            while offset + 768 <= len(data):  # 24 kHz * 16 ms * two bytes
+                yield (struct.pack("!BII", 1, stream_id, packet_id), memoryview(data)[offset:offset + 768])
+                offset += 768
+                packet_id = (packet_id + 1) & 0xffffffff
+            pending = data[offset:]
+        if len(pending) % 2:
+            raise ValueError("incomplete PCM sample from TTS")
+        if pending:
+            yield (struct.pack("!BII", 1, stream_id, packet_id), bytes(pending).ljust(768, b"\0"))
+    except (HTTPError, OSError, RuntimeError, ValueError) as error:
+        if not session["stop"].is_set():
+            yield json.dumps(dict(command="on_speech_error", channel=channel, seq=seq, error=str(error)))
+    finally:
+        if stream is not None:
+            close = getattr(stream.chunks, "close", None)
+            if close:
+                close()
+    if started and not session["stop"].is_set():
+        yield json.dumps(dict(command="on_stream_stop", stream_id=stream_id))
+
+
+@app.post("/api/channel/translate")
+def post_channel_translate(req):
+    """WAV -> completed text JSON on WS; return before queued speech generation finishes."""
+    channel = req.query.get("channel", "")
+    seq = req.query.get("seq", "")
+    with audio_channels_lock:
+        session = audio_channels.get(channel)
+    if session is None or session["echo"] or session["stop"].is_set() or session["ws"].closed:
+        raise HTTPError(410, "translation channel disconnected")
+    def connected():
+        if session["stop"].is_set() or session["ws"].closed:
+            raise HTTPError(410, "translation channel disconnected")
+    wav = req.body(max_bytes=config["audio"]["max_upload_mb"] * 1024 * 1024)
+    try:
+        stt = record_wav(wav, urllib.parse.unquote(req.headers.get("X-Whisper-Prompt", "")), keep_recheck=False)
+        connected()
+        if stt.get("recheck"):
+            checked = recheck_recording(wav, Path(stt["file"]).name)
+            connected()
+            stt.update(text=checked["text"], language=checked["language"], confidence=checked["confidence"],
+                       recheck_result=checked, recheck=False)
+        session["ws"].send(json.dumps(dict(command="on_transcription", channel=channel, seq=seq, result=stt)))
+        if not stt["text"]:
+            return {"seq": seq}
+        url, body = translation_request(config, stt["text"], stt["language"])
+        body["stream"] = False
+        body.pop("stream_options", None)
+        start = time.monotonic()
+        if mock:
+            time.sleep(MOCK_DELAY)
+            raw = {"choices": [{"message": {"content": mock_translation(stt["text"])}}], "mock": True}
+        else:
+            raw = call_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
+        connected()
+        translation = raw["choices"][0]["message"]["content"].strip()
+        result = dict(translation=translation, seconds=time.monotonic() - start,
+                      firstSeconds=None, raw={"request": {"url": url, "body": body}, "response": raw})
+        session["ws"].send(json.dumps(dict(command="on_translation", channel=channel, seq=seq, result=result)))
+        connected()
+        if translation:
+            target = "language2" if stt["language"].lower() == config["languages"]["language1"].lower() else "language1"
+            session["outbound"].put(channel_speech(channel, session, seq, translation, target), timeout=session["ws"].timeout)
+        return {"seq": seq}
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError, queue.Full) as error:
+        connected()
+        raise HTTPError(502, str(error)) from error
 
 
 @app.get("/api/config")
@@ -506,7 +728,12 @@ def post_speak(req):
     target = data.get("target")
     if target not in (None, "language1", "language2"):
         raise HTTPError(400, 'target must be "language1" or "language2"')
-    voice = choose_voice(data.get("voice"), target)
+    return speech_stream(text, target, data.get("voice"))
+
+
+def speech_stream(text, target=None, voice=None):
+    """Shared TTS request and PCM response handling."""
+    voice = choose_voice(voice, target)
     if not isinstance(voice, str):
         raise HTTPError(400, "voice must be a string")
 
@@ -553,8 +780,14 @@ def post_recording(req):
     """Body: one audio segment as a WAV file. Saves and transcribes it; returns {"file", "bytes",
     "text", "language", "confidence", "recheck", "stt_seconds", "stt_raw"} with
     status 201. recheck is true when whisper heard neither of the two
-    [languages]: the page then asks /api/recordings/recheck to try again."""
+    [languages]: the page then asks /api/recordings/recheck to try again.
+    Optional X-Whisper-Prompt: URI-encoded UTF-8 preceding transcript text."""
     data = req.body(max_bytes=config["audio"]["max_upload_mb"] * 1024 * 1024)
+    return record_wav(data, urllib.parse.unquote(req.headers.get("X-Whisper-Prompt", ""))), 201
+
+
+def record_wav(data, prompt="", *, keep_recheck=True):
+    """Shared recording/transcription path; HTTP and channel callers own rechecks."""
     if not data:
         raise HTTPError(400, "empty upload")
     if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
@@ -566,7 +799,7 @@ def post_recording(req):
         item = MOCK_CONVERSATION[next(mock_counter) % len(MOCK_CONVERSATION)]
         return {"file": "(mock mode: not saved)", "bytes": len(data),
                 "text": item["text"], "language": item["language"], "stt_seconds": MOCK_DELAY,
-                "stt_raw": {"mock": True, "text": item["text"], "language": item["language"]}}, 201
+                "stt_raw": {"mock": True, "text": item["text"], "language": item["language"]}}
 
     temp_dir = config["audio"]["temp_dir"]
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -587,7 +820,7 @@ def post_recording(req):
 
         start = time.monotonic()
         try:
-            result = transcribe(config["whisper_url"], data, path.name)
+            result = transcribe(config["whisper_url"], data, path.name, prompt=prompt)
         except (OSError, RuntimeError, ValueError) as err:
             # OSError: connection problems; RuntimeError: errors from whisper-server.
             error = f"transcription failed: {err} (is whisper-server running at {config['whisper_url']}?)"
@@ -596,11 +829,11 @@ def post_recording(req):
         seconds = round(time.monotonic() - start, 2)
         log.info("transcribed %s in %ss (%s): %r", path.name, seconds, result["language"], logged_text(result["text"]))
         recheck = bool(result["text"]) and not expected_language(result["language"])
-        if temporary and recheck:
+        if temporary and recheck and keep_recheck:
             keep_for_recheck(path.name, recording)
             cleanup.pop_all()  # the recheck request or expiry now owns the handle
         return {"file": str(path), "bytes": len(data), **result, "recheck": recheck,
-                "stt_seconds": seconds, "temporary": temporary}, 201
+                "stt_seconds": seconds, "temporary": temporary}
 
 
 @app.post("/api/recordings/recheck")
