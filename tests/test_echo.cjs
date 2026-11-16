@@ -308,13 +308,13 @@ function fixture(splitSettings = { pre_roll_ms: 0 }, codecSupport) {
   const secondResult = channel.elements['channel-results'].children[1];
   assert.equal(secondResult.children[0].textContent, 'second');
   assert.equal(secondResult.children[1].textContent, '第二');
-  ws.fire('message', { data: JSON.stringify({ command: 'on_speech_error', message_id: 502, stream_id: 78, error: 'TTS interrupted' }) });
+  ws.fire('message', { data: JSON.stringify({ command: 'on_error', message_id: 502, stream_id: 78, error: 'TTS interrupted' }) });
   assert.deepEqual(secondResult.children[4].children[1].children.map(message => JSON.parse(message.textContent).command),
-    ['on_stream_start', 'on_transcription', 'on_speech_error']); // each received response appears once
+    ['on_stream_start', 'on_transcription', 'on_error']); // each received response appears once
   // TTS can fail before announcing its stream; text must still join the error's message ID.
   ws.fire('message', { data: JSON.stringify({ command: 'on_transcription', stream_id: 79, text: 'retained',
     language: 'en', translations: [{ language: 'zh', message: '保留' }], stt_seconds: 0.1, llm_seconds: 0.2 }) });
-  ws.fire('message', { data: JSON.stringify({ command: 'on_speech_error', message_id: 503, stream_id: 79, error: 'TTS failed' }) });
+  ws.fire('message', { data: JSON.stringify({ command: 'on_error', message_id: 503, stream_id: 79, error: 'TTS failed' }) });
   assert.equal(channel.elements['channel-results'].children.length, 3);
   const failedSpeech = channel.elements['channel-results'].children[2];
   assert.equal(failedSpeech.children[0].textContent, 'retained');

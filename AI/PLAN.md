@@ -46,6 +46,15 @@ This plan supersedes the earlier channel result-message format described below.
   Browser checks must prove POST JSON is inspectable while displayed text comes exclusively
   from `on_transcription`, including differing WS event arrival orders.
 
+### Python message constructors — agreed 2026-11-16
+
+Extract the six JSON constructors currently needed by the Python app into a standalone
+`szal16.py`: success response, stream start/stop, transcription, translation entry and speech
+error (`on_error`). Return plain dictionaries; leave ID generation, codec headers, JSON encoding and
+transport in the app. Mark timing fields and error correlation IDs as application extensions.
+Keep channel on stream-start messages; omit it from transcription and error events.
+Preserve existing wire values and independently test the constructor contracts.
+
 ### Existing project context
 
 Vendored microweb now matches upstream 490b0ef, including shared HTTPS/local-HTTP origin

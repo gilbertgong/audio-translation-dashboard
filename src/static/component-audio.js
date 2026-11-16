@@ -366,7 +366,7 @@
           state.decoders.delete(stream);
         }).catch(error => fail(state, error));
         state.receiving = null;
-      } else if (["on_transcription", "on_speech_error"].includes(event.command)) resultMessage(state, event, undefined, data);
+      } else if (["on_transcription", "on_error"].includes(event.command)) resultMessage(state, event, undefined, data);
       return;
     }
     const packet = new DataView(data);

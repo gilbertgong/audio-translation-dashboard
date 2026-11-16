@@ -1171,3 +1171,8 @@ Channel POST returns message_id; speech start links it to stream_id used by one 
 on_transcription with text/language/translations and no raw replies. POST timing and queued
 speech remain; individual WS/POST JSON is separately collapsible and indented for debugging.
 Application and browser regressions pass. Vendored microweb updated to v0.2.3.
+
+## 2026-11-16: Extract szaL16 message constructors
+
+Six plain-dictionary constructors centralize message shapes; on_error uses correlation extensions,
+and only stream starts carry channel. Constructor/channel/browser checks pass; transport stays in the app.

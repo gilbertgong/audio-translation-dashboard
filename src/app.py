@@ -36,6 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 import configuration
+import szal16
 from microweb import App, HTTPError, Stream
 
 ROOT = configuration.ROOT  # the project folder
@@ -413,19 +414,19 @@ def audio_socket(ws):
                     active = (stream_id, rate * duration // 1000 * 2 if codec == "pcm_s16le" else None)
                     packet_id = 0
                     if "seq" in command:
-                        send(json.dumps(dict(seq=command["seq"], success=True, stream_id=stream_id)))
+                        send(json.dumps(szal16.success_response(command["seq"], stream_id)))
                     if echo:
-                        send(json.dumps(dict(command="on_stream_start", channel=channel,
-                            stream_id=stream_id, type="audio", codec=codec,
+                        send(json.dumps(szal16.on_stream_start(channel=channel,
+                            stream_id=stream_id, codec=codec,
                             codec_header=command["codec_header"], packet_duration=duration,
-                            **{"from": "echo"})))
+                            sender="echo")))
                 elif command["command"] == "stop_stream":
                     if active is None or command["stream_id"] != active[0] or command["channel"] != channel:
                         raise ValueError("unexpected stream")
                     if echo:
-                        send(json.dumps(dict(command="on_stream_stop", stream_id=active[0])))
+                        send(json.dumps(szal16.on_stream_stop(active[0])))
                     if "seq" in command:
-                        send(json.dumps(dict(seq=command["seq"], success=True)))
+                        send(json.dumps(szal16.success_response(command["seq"])))
                     active = None
                 else:
                     raise ValueError("unknown command")
@@ -491,9 +492,9 @@ def channel_speech(channel, session, message_id, stream_id, text, target):
             return
         stream = speech_stream(text, target)
         header = base64.b64encode(struct.pack("<HBB", 24000, 1, 16)).decode("ascii")
-        yield json.dumps(dict(command="on_stream_start", channel=channel, stream_id=stream_id,
-            message_id=message_id, type="audio", codec="pcm_s16le", codec_header=header, packet_duration=16,
-            **{"from": "translator"}))
+        yield json.dumps(szal16.on_stream_start(channel=channel, stream_id=stream_id,
+            message_id=message_id, codec="pcm_s16le", codec_header=header, packet_duration=16,
+            sender="translator"))
         started = True
         pending = b""
         packet_id = 0
@@ -513,7 +514,7 @@ def channel_speech(channel, session, message_id, stream_id, text, target):
             yield (struct.pack("!BII", 1, stream_id, packet_id), bytes(pending).ljust(768, b"\0"))
     except (HTTPError, OSError, RuntimeError, ValueError) as error:
         if not session["stop"].is_set():
-            yield json.dumps(dict(command="on_speech_error", channel=channel, message_id=message_id,
+            yield json.dumps(szal16.on_error(message_id=message_id,
                                   stream_id=stream_id, error=str(error)), ensure_ascii=False)
     finally:
         if stream is not None:
@@ -521,7 +522,7 @@ def channel_speech(channel, session, message_id, stream_id, text, target):
             if close:
                 close()
     if started and not session["stop"].is_set():
-        yield json.dumps(dict(command="on_stream_stop", stream_id=stream_id))
+        yield json.dumps(szal16.on_stream_stop(stream_id))
 
 
 @app.post("/api/channel/translate")
@@ -547,9 +548,6 @@ def post_channel_translate(req):
                        recheck=False)
         languages = {name: code for code, name in configuration.whisper_languages()}
         stream_id = secrets.randbits(32)
-        result = dict(command="on_transcription", channel=channel, stream_id=stream_id, text=stt["text"],
-                      language=languages.get((stt["language"] or "").lower(), stt["language"]), translations=[],
-                      stt_seconds=stt["stt_seconds"], llm_seconds=None)
         translation = ""
         if stt["text"]:
             url, body = translation_request(config, stt["text"], stt["language"])
@@ -565,9 +563,11 @@ def post_channel_translate(req):
             translation = raw["choices"][0]["message"]["content"].strip()
             target = "language2" if stt["language"].lower() == config["languages"]["language1"].lower() else "language1"
             language = config["languages"][target]
-            result.update(translations=[dict(language=languages.get(language.lower(), language), message=translation)],
-                          llm_seconds=time.monotonic() - start)
         if translation:
+            result = szal16.on_transcription(stream_id=stream_id, text=stt["text"],
+                language=languages.get(stt["language"].lower(), stt["language"]),
+                translations=[szal16.translation(languages.get(language.lower(), language), translation)],
+                stt_seconds=stt["stt_seconds"], llm_seconds=time.monotonic() - start)
             session["ws"].send(json.dumps(result, ensure_ascii=False))
             connected()
             session["outbound"].put(channel_speech(channel, session, message_id, stream_id, translation, target),

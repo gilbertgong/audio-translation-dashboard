@@ -165,7 +165,7 @@ class ChannelTests(test_echo.EchoTests):
                 self.start(sock, "one", echo=False)
                 self.assertEqual(self.post()[0], 200)
                 event = receive(sock)
-                self.assertEqual(set(event), {"command", "channel", "stream_id", "text", "language",
+                self.assertEqual(set(event), {"command", "stream_id", "text", "language",
                                               "translations", "stt_seconds", "llm_seconds"})
                 self.assertEqual(event["command"], "on_transcription")
                 self.assertEqual(event["text"], checked["text"])
@@ -288,8 +288,9 @@ class ChannelTests(test_echo.EchoTests):
                 self.assertEqual(self.post(channel="two")[0], 200)
                 self.assertEqual(receive(sock)["command"], "on_transcription")
                 error = receive(sock)
-                self.assertEqual(error["command"], "on_speech_error")
+                self.assertEqual(error["command"], "on_error")
                 self.assertEqual(error["error"], "speech failed")
+                self.assertNotIn("channel", error)
 
 
 if __name__ == "__main__":
