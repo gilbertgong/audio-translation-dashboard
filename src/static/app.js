@@ -669,12 +669,13 @@ function transcriptContext(source) {
 function transcriptTail(text) {
   const characters = Array.from(text || "");
   let start = Math.max(0, characters.length - 100);
+  const byteLimit = /\s/u.test(text) ? 200 : 100;
   // Byte-level BPE cannot use more tokens than UTF-8 bytes; leave room below 224 tokens.
-  while (new TextEncoder().encode(characters.slice(start).join("")).length > 200) start++;
+  while (new TextEncoder().encode(characters.slice(start).join("")).length > byteLimit) start++;
   let tail = characters.slice(start).join("");
   // If the size cutoff lands inside a space-delimited span, discard that partial span.
   if (start > 0 && !/\s/u.test(characters[start - 1]) && !/\s/u.test(characters[start])) {
-    tail = tail.replace(/^\S+\s*/u, "");
+    if (/\s/u.test(text)) tail = tail.replace(/^\S+\s*/u, "");
   }
   return tail.trimStart();
 }

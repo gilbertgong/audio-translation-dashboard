@@ -108,9 +108,10 @@ function stream(chunks = [], error = null) {
     .run("allowInterruptToggle.checked"), true);
   { const f = fixture();
     assert.equal(f.run("transcriptTail('prefix '.repeat(40) + 'I think…')"), 'prefix '.repeat(13) + 'I think…');
-    assert.equal(f.run("transcriptTail('a'.repeat(150))"), ''); // no partial oversized word
+    assert.equal(f.run("transcriptTail('a'.repeat(150))"), 'a'.repeat(100));
     assert.equal(f.run("transcriptTail('x'.repeat(110) + ' Hello world')"), 'Hello world');
-    assert.equal(f.run("transcriptTail('中'.repeat(100))"), '');
+    assert.equal(f.run("transcriptTail('中'.repeat(100))"), '中'.repeat(33));
+    assert.equal(f.run("transcriptTail('😀'.repeat(100))"), '😀'.repeat(25));
     assert.equal(f.run("transcriptTail('中'.repeat(100) + '， 继续说明。')"), '继续说明。');
     assert.equal(f.run("transcriptTail('😀'.repeat(100) + ' next phrase')"), 'next phrase');
     assert.equal(f.run("transcriptTail('这是一个短句子。')"), '这是一个短句子。');
