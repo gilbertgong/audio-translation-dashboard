@@ -1164,3 +1164,10 @@ load the deployment override. The whitespace check passed.
 Browser splitting halves/quarters the configured pause at 50%/75% of the target duration,
 then uses a configurable grace pause before a hard cutoff (defaults: 30 s + 5 s, 50 ms).
 Boundary/scaling, echo, recording and recovery checks pass; live audition remains.
+
+## 2026-11-15: Combine channel text results
+
+Channel POST returns message_id; speech start links it to stream_id used by one UTF-8
+on_transcription with text/language/translations and no raw replies. POST timing and queued
+speech remain; individual WS/POST JSON is separately collapsible and indented for debugging.
+Application and browser regressions pass. Vendored microweb updated to v0.2.3.

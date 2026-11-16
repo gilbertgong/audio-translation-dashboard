@@ -137,10 +137,25 @@
   delay.addEventListener("input", updateDelay);
   updateDelay();
 
-  function resultMessage(state, event) {
+  function resultMessage(state, event, messageId = event.message_id ?? state.streamResults.get(event.stream_id)?.message_id, rawResponse) {
     if (state.panel.echo) return;
+    if (event.command === "on_transcription") {
+      const stream = state.streamResults.get(event.stream_id) || {};
+      stream.transcription = event;
+      stream.rawTranscription = rawResponse;
+      state.streamResults.set(event.stream_id, stream);
+      if (stream.message_id === undefined) return; // start may arrive after the text
+      messageId = stream.message_id;
+      delete stream.transcription;
+      delete stream.rawTranscription;
+    } else if (event.message_id !== undefined && event.stream_id !== undefined) {
+      const stream = state.streamResults.get(event.stream_id) || {};
+      stream.message_id = event.message_id;
+      state.streamResults.set(event.stream_id, stream);
+      if (stream.transcription) resultMessage(state, stream.transcription, undefined, stream.rawTranscription);
+    }
     const results = document.getElementById("channel-results");
-    let row = state.rows.get(event.seq);
+    let row = state.rows.get(messageId);
     if (!row) {
       const element = document.createElement("div");
       element.className = "result";
@@ -148,23 +163,36 @@
       original.className = translated.className = "text";
       const meta = document.createElement("div"), error = document.createElement("div");
       meta.className = "meta"; error.className = "status error";
-      const details = document.createElement("details"), summary = document.createElement("summary"), raw = document.createElement("pre");
+      const details = document.createElement("details"), summary = document.createElement("summary"), raw = document.createElement("div");
       I18n.text(summary, I18n.msg("Raw response"));
-      details.append(summary, raw); element.append(original, translated, meta, error, details);
+      const postSection = document.createElement("details"), postLabel = document.createElement("summary"), post = document.createElement("pre");
+      I18n.text(postLabel, I18n.msg("POST response"));
+      postSection.hidden = true;
+      postSection.append(postLabel, post);
+      details.append(summary, raw); element.append(original, translated, meta, error, details, postSection);
       results.append(element); results.hidden = false;
-      row = { original, translated, meta, error, raw, data: {} };
-      state.rows.set(event.seq, row);
+      row = { original, translated, meta, error, raw, postSection, post, data: {} };
+      state.rows.set(messageId, row);
     }
-    row.data[event.command] = event.result || event.error;
-    if (event.command === "on_transcription") row.original.textContent = event.result.text;
-    if (event.command === "on_translation") row.translated.textContent = event.result.translation;
+    if (event.command === "post_response") {
+      row.postSection.hidden = false;
+      row.post.textContent = JSON.stringify(JSON.parse(event.response), null, 2);
+    } else row.data[event.command] = event.error || event;
+    if (event.command === "on_transcription") {
+      row.original.textContent = event.text;
+      row.translated.textContent = event.translations.map(item => item.message).join("\n");
+    }
     if (event.error) I18n.text(row.error, I18n.msg("Error: {error}", { error: event.error }));
     const stt = row.data.on_transcription;
     if (stt) I18n.text(row.meta, I18n.msg("{language} · whisper {stt}s · llama {llm}s", {
       language: stt.language || "?", stt: stt.stt_seconds,
-      llm: row.data.on_translation?.seconds.toFixed(2) ?? "—",
+      llm: stt.llm_seconds?.toFixed(2) ?? "—",
     }));
-    row.raw.textContent = JSON.stringify(row.data, null, 2);
+    if (rawResponse !== undefined) {
+      const message = document.createElement("pre");
+      message.textContent = JSON.stringify(JSON.parse(rawResponse), null, 2);
+      row.raw.append(message);
+    }
   }
 
   async function uploadNext(state) {
@@ -172,18 +200,20 @@
     state.posting = true;
     try {
       while (current === state && state.uploads.length) {
-        const { samples, seq } = state.uploads.shift();
+        const { samples } = state.uploads.shift();
         try {
           const converted = await resample(samples, state.ctx.sampleRate, sampleRate);
           if (current !== state) return;
-          const response = await pageFetch(`/api/channel/translate?channel=${encodeURIComponent(state.channel)}&seq=${seq}`, {
+          const response = await pageFetch(`/api/channel/translate?channel=${encodeURIComponent(state.channel)}`, {
             method: "POST", headers: { "Content-Type": "audio/wav" },
             body: encodeWav(converted, sampleRate), signal: state.abort.signal,
           });
           if (!response.ok) throw new Error(await errorMessage(response));
-          await response.json(); // exactly one WAV POST until this completed-text response finishes
+          const rawResponse = await response.text(); // keep one POST in flight through completed processing
+          const body = JSON.parse(rawResponse);
+          if (current === state) resultMessage(state, { command: "post_response", response: rawResponse }, body.message_id);
         } catch (error) {
-          if (current === state) resultMessage(state, { command: "upload_error", seq, error: I18n.errorText(error) });
+          if (current === state) resultMessage(state, { command: "upload_error", error: I18n.errorText(error) }, Symbol());
         }
       }
     } finally { state.posting = false; }
@@ -302,6 +332,7 @@
         state.micStreams[0].id = event.stream_id;
         sendMic(state);
       } else if (event.command === "on_stream_start") {
+        if (!state.panel.echo) resultMessage(state, event, undefined, data);
         const header = Uint8Array.from(atob(event.codec_header), c => c.charCodeAt(0));
         const rate = new DataView(header.buffer).getUint16(0, true);
         const samples = rate * event.packet_duration / 1000;
@@ -326,6 +357,7 @@
         }
         state.receiving = stream;
       } else if (event.command === "on_stream_stop") {
+        if (!state.panel.echo) resultMessage(state, event, undefined, data);
         const stream = state.receiving;
         if (stream?.decoder) state.decodeTail = stream.ready.then(() => {
           if (current === state) return stream.decoder.flush();
@@ -334,7 +366,7 @@
           state.decoders.delete(stream);
         }).catch(error => fail(state, error));
         state.receiving = null;
-      } else if (["on_transcription", "on_translation", "on_speech_error"].includes(event.command)) resultMessage(state, event);
+      } else if (["on_transcription", "on_speech_error"].includes(event.command)) resultMessage(state, event, undefined, data);
       return;
     }
     const packet = new DataView(data);
@@ -400,7 +432,7 @@
       url.searchParams.set("echo", panel.echo ? "1" : "0");
       socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
-      state = { panel, ctx, socket, abort: new AbortController(), uploads: [], rows: new Map(), nextSeq: 1, posting: false, channel: url.searchParams.get("channel"), playing: new Set(), next: 0,
+      state = { panel, ctx, socket, abort: new AbortController(), uploads: [], rows: new Map(), streamResults: new Map(), posting: false, channel: url.searchParams.get("channel"), playing: new Set(), next: 0,
         playbackEpoch: 0,
         decoders: new Set(), decodeTail: Promise.resolve(), micStreams: [], nextStreamSeq: 1, sentAt: new Map(),
         rttSum: 0, rttCount: 0, rttAt: 0,
@@ -442,7 +474,7 @@
           onAudio: block => micAudio(state, block),
           onPause: () => { state.micStreams.at(-1).ended = true; sendMic(state); },
           onSegment: panel.echo ? undefined : samples => {
-            state.uploads.push({ samples, seq: String(state.nextSeq++) }); uploadNext(state);
+            state.uploads.push({ samples }); uploadNext(state);
           },
         });
       state.node.port.onmessage = ({ data }) => {

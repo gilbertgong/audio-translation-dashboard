@@ -196,7 +196,7 @@ function createSegmentSplitter(sampleRate, label = "continuous mode", source = "
       I18n.msg("{label} ({reason})", { label: I18n.msg(label), reason: I18n.msg(reason) }), source),
   }), { label, source });
 }
-function segmentSplitterBlock(sp, block, rms) { SegmentSplitter.push(sp, block, rms); }
+function segmentSplitterBlock(sp, block, rms, suppressed = false) { SegmentSplitter.push(sp, block, rms, suppressed); }
 function endSegment(sp, reason) { SegmentSplitter.end(sp, reason); }
 
 async function sendAudioSegment(samples, sampleRate, note, source, context = transcriptContext(source)) {
@@ -1109,7 +1109,7 @@ function microphoneBlock(recording, samples) {
   const muted = micInputSuppressed();
   if (muted) samples.fill(0); // preserve recording duration; don't store or detect playback echo
   const rms = meterSample(samples);
-  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms);
+  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms, muted);
   else {
     recording.chunks.push(samples);
     if (!muted) noteSpeech(false); // a manual recording is a turn in progress

@@ -265,22 +265,61 @@ function fixture(splitSettings = { pre_roll_ms: 0 }, codecSupport) {
   feed(loud, 120); channel.ackStream(43); feed(quiet, 120); await settle();
   assert.equal(channel.requests.length, 1); // second WAV is queued, never parallel
   assert.ok(ws.sent.some(item => item instanceof ArrayBuffer)); // raw PCM path also runs
-  channel.requests[0].resolve({ ok: true, json: async () => ({ seq: '1' }) });
+  const rawPost = '{ "message_id": 501,\n "text": "POST text must not be displayed" }';
+  channel.requests[0].resolve({ ok: true, text: async () => rawPost });
   await settle(); assert.equal(channel.requests.length, 2);
-  ws.fire('message', { data: JSON.stringify({ command: 'on_transcription', seq: '1', result: { text: 'hello', language: 'english', stt_seconds: 0.1 } }) });
-  ws.fire('message', { data: JSON.stringify({ command: 'on_translation', seq: '1', result: { translation: '你好', seconds: 0.2 } }) });
+  const rawTranscription = JSON.stringify({ command: 'on_transcription', stream_id: 77, text: 'hello',
+    language: 'en', translations: [{ language: 'zh', message: '你好' }], stt_seconds: 0.1, llm_seconds: 0.2 }, null, 2)
+    .replace('你好', '\\u4f60\\u597d');
+  ws.fire('message', { data: rawTranscription });
+  assert.equal(channel.elements['channel-results'].children.length, 1); // POST diagnostics precede stream/message link
+  const postOnly = channel.elements['channel-results'].children[0];
+  assert.ok(!postOnly.children[0].textContent); // POST text does not populate the transcription
+  assert.ok(!postOnly.children[1].textContent);
+  const postSection = postOnly.children[5];
+  assert.equal(postSection.hidden, false);
+  assert.equal(postSection.children[0].message.key, 'POST response');
+  assert.equal(postSection.children[1].textContent, JSON.stringify(JSON.parse(rawPost), null, 2));
+  const ttsHeader = Buffer.from([0xc0, 0x5d, 1, 16]).toString('base64');
+  const rawStart = JSON.stringify({ command: 'on_stream_start', message_id: 501, stream_id: 77,
+    codec: 'pcm_s16le', codec_header: ttsHeader, packet_duration: 16 });
+  ws.fire('message', { data: rawStart });
   assert.equal(channel.elements['channel-results'].children.length, 1);
   const result = channel.elements['channel-results'].children[0];
   assert.equal(result.children[0].textContent, 'hello');
   assert.equal(result.children[1].textContent, '你好');
-  const ttsHeader = Buffer.from([0xc0, 0x5d, 1, 16]).toString('base64');
-  ws.fire('message', { data: JSON.stringify({ command: 'on_stream_start', seq: '1', stream_id: 77, codec: 'pcm_s16le', codec_header: ttsHeader, packet_duration: 16 }) });
+  const rawMessages = result.children[4].children[1].children;
+  assert.deepEqual(rawMessages.map(message => message.textContent),
+    [rawTranscription, rawStart].map(raw => JSON.stringify(JSON.parse(raw), null, 2)));
   const speech = new ArrayBuffer(777), view = new DataView(speech);
   view.setUint8(0, 1); view.setUint32(1, 77); view.setInt16(9, 16384, true);
   ws.fire('message', { data: speech });
   assert.equal(channel.contexts.at(-1).sources[0].at, 1.8);
   assert.equal(channel.contexts.at(-1).sources[0].buffer.getChannelData(0)[0], 0.5);
   assert.equal(channel.contexts.at(-1).sources[0].buffer.sampleRate, 24000);
+  const rawStop = '{ "command": "on_stream_stop", "stream_id": 77 }';
+  ws.fire('message', { data: rawStop });
+  assert.equal(rawMessages.at(-1).textContent, JSON.stringify(JSON.parse(rawStop), null, 2));
+  ws.fire('message', { data: JSON.stringify({ command: 'on_stream_start', message_id: 502, stream_id: 78,
+    codec: 'pcm_s16le', codec_header: ttsHeader, packet_duration: 16 }) });
+  ws.fire('message', { data: JSON.stringify({ command: 'on_transcription', stream_id: 78, text: 'second',
+    language: 'en', translations: [{ language: 'zh', message: '第二' }], stt_seconds: 0.1, llm_seconds: 0.2 }) });
+  assert.equal(channel.elements['channel-results'].children.length, 2);
+  const secondResult = channel.elements['channel-results'].children[1];
+  assert.equal(secondResult.children[0].textContent, 'second');
+  assert.equal(secondResult.children[1].textContent, '第二');
+  ws.fire('message', { data: JSON.stringify({ command: 'on_speech_error', message_id: 502, stream_id: 78, error: 'TTS interrupted' }) });
+  assert.deepEqual(secondResult.children[4].children[1].children.map(message => JSON.parse(message.textContent).command),
+    ['on_stream_start', 'on_transcription', 'on_speech_error']); // each received response appears once
+  // TTS can fail before announcing its stream; text must still join the error's message ID.
+  ws.fire('message', { data: JSON.stringify({ command: 'on_transcription', stream_id: 79, text: 'retained',
+    language: 'en', translations: [{ language: 'zh', message: '保留' }], stt_seconds: 0.1, llm_seconds: 0.2 }) });
+  ws.fire('message', { data: JSON.stringify({ command: 'on_speech_error', message_id: 503, stream_id: 79, error: 'TTS failed' }) });
+  assert.equal(channel.elements['channel-results'].children.length, 3);
+  const failedSpeech = channel.elements['channel-results'].children[2];
+  assert.equal(failedSpeech.children[0].textContent, 'retained');
+  assert.equal(failedSpeech.children[1].textContent, '保留');
+  assert.equal(failedSpeech.children[3].message.values.error, 'TTS failed');
   feed(loud, 120); feed(quiet, 120); await settle();
   channel.click('echo'); // drops remaining WAVs, cancels in-flight POST and stops translated speech
   assert.equal(ws.readyState, 3);

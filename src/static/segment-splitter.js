@@ -26,16 +26,18 @@ const SegmentSplitter = (() => {
   }
 
   // Feed one audio block (Float32Array) and its RMS level.
-  function push(sp, block, rms) {
+  function push(sp, block, rms, suppressed = false) {
     const ms = (block.length / sp.sampleRate) * 1000;
     const db = toDb(rms);
     sp.elapsedMs += ms;
 
-    // Track the background noise level.
-    if (sp.noiseDb === null) sp.noiseDb = db;
-    const tau = db < sp.noiseDb ? NOISE_FALL_MS : NOISE_RISE_MS * (sp.speaking ? 4 : 1);
-    sp.noiseDb += (db - sp.noiseDb) * (1 - Math.exp(-ms / tau));
-    sp.thresholdDb = Math.max(sp.noiseDb + sp.settings.threshold_db, sp.settings.min_threshold_db);
+    // Synthetic silence must not lower the background noise estimate.
+    if (!suppressed) {
+      if (sp.noiseDb === null) sp.noiseDb = db;
+      const tau = db < sp.noiseDb ? NOISE_FALL_MS : NOISE_RISE_MS * (sp.speaking ? 4 : 1);
+      sp.noiseDb += (db - sp.noiseDb) * (1 - Math.exp(-ms / tau));
+      sp.thresholdDb = Math.max(sp.noiseDb + sp.settings.threshold_db, sp.settings.min_threshold_db);
+    }
 
     if (sp.calibrating) {
       if (sp.elapsedMs < CALIBRATION_MS) return;

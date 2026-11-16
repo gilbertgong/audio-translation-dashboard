@@ -482,9 +482,8 @@ def ws_sender(session):
         ws.close(1011, "audio sender failed")
 
 
-def channel_speech(channel, session, seq, text, target):
+def channel_speech(channel, session, message_id, stream_id, text, target):
     """Produce standard szaL16 messages from the existing TTS PCM stream."""
-    stream_id = secrets.randbits(32)
     started = False
     stream = None
     try:
@@ -493,7 +492,7 @@ def channel_speech(channel, session, seq, text, target):
         stream = speech_stream(text, target)
         header = base64.b64encode(struct.pack("<HBB", 24000, 1, 16)).decode("ascii")
         yield json.dumps(dict(command="on_stream_start", channel=channel, stream_id=stream_id,
-            seq=seq, type="audio", codec="pcm_s16le", codec_header=header, packet_duration=16,
+            message_id=message_id, type="audio", codec="pcm_s16le", codec_header=header, packet_duration=16,
             **{"from": "translator"}))
         started = True
         pending = b""
@@ -514,7 +513,8 @@ def channel_speech(channel, session, seq, text, target):
             yield (struct.pack("!BII", 1, stream_id, packet_id), bytes(pending).ljust(768, b"\0"))
     except (HTTPError, OSError, RuntimeError, ValueError) as error:
         if not session["stop"].is_set():
-            yield json.dumps(dict(command="on_speech_error", channel=channel, seq=seq, error=str(error)))
+            yield json.dumps(dict(command="on_speech_error", channel=channel, message_id=message_id,
+                                  stream_id=stream_id, error=str(error)), ensure_ascii=False)
     finally:
         if stream is not None:
             close = getattr(stream.chunks, "close", None)
@@ -528,7 +528,7 @@ def channel_speech(channel, session, seq, text, target):
 def post_channel_translate(req):
     """WAV -> completed text JSON on WS; return before queued speech generation finishes."""
     channel = req.query.get("channel", "")
-    seq = req.query.get("seq", "")
+    message_id = secrets.randbits(32)
     with audio_channels_lock:
         session = audio_channels.get(channel)
     if session is None or session["echo"] or session["stop"].is_set() or session["ws"].closed:
@@ -544,29 +544,35 @@ def post_channel_translate(req):
             checked = recheck_recording(wav, Path(stt["file"]).name)
             connected()
             stt.update(text=checked["text"], language=checked["language"], confidence=checked["confidence"],
-                       recheck_result=checked, recheck=False)
-        session["ws"].send(json.dumps(dict(command="on_transcription", channel=channel, seq=seq, result=stt)))
-        if not stt["text"]:
-            return {"seq": seq}
-        url, body = translation_request(config, stt["text"], stt["language"])
-        body["stream"] = False
-        body.pop("stream_options", None)
-        start = time.monotonic()
-        if mock:
-            time.sleep(MOCK_DELAY)
-            raw = {"choices": [{"message": {"content": mock_translation(stt["text"])}}], "mock": True}
-        else:
-            raw = call_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
-        connected()
-        translation = raw["choices"][0]["message"]["content"].strip()
-        result = dict(translation=translation, seconds=time.monotonic() - start,
-                      firstSeconds=None, raw={"request": {"url": url, "body": body}, "response": raw})
-        session["ws"].send(json.dumps(dict(command="on_translation", channel=channel, seq=seq, result=result)))
-        connected()
-        if translation:
+                       recheck=False)
+        languages = {name: code for code, name in configuration.whisper_languages()}
+        stream_id = secrets.randbits(32)
+        result = dict(command="on_transcription", channel=channel, stream_id=stream_id, text=stt["text"],
+                      language=languages.get((stt["language"] or "").lower(), stt["language"]), translations=[],
+                      stt_seconds=stt["stt_seconds"], llm_seconds=None)
+        translation = ""
+        if stt["text"]:
+            url, body = translation_request(config, stt["text"], stt["language"])
+            body["stream"] = False
+            body.pop("stream_options", None)
+            start = time.monotonic()
+            if mock:
+                time.sleep(MOCK_DELAY)
+                raw = {"choices": [{"message": {"content": mock_translation(stt["text"])}}], "mock": True}
+            else:
+                raw = call_server(url, json.dumps(body).encode("utf-8"), "application/json", LLM_TIMEOUT)
+            connected()
+            translation = raw["choices"][0]["message"]["content"].strip()
             target = "language2" if stt["language"].lower() == config["languages"]["language1"].lower() else "language1"
-            session["outbound"].put(channel_speech(channel, session, seq, translation, target), timeout=session["ws"].timeout)
-        return {"seq": seq}
+            language = config["languages"][target]
+            result.update(translations=[dict(language=languages.get(language.lower(), language), message=translation)],
+                          llm_seconds=time.monotonic() - start)
+        if translation:
+            session["ws"].send(json.dumps(result, ensure_ascii=False))
+            connected()
+            session["outbound"].put(channel_speech(channel, session, message_id, stream_id, translation, target),
+                                    timeout=session["ws"].timeout)
+        return {"message_id": message_id}
     except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError, queue.Full) as error:
         connected()
         raise HTTPError(502, str(error)) from error
