@@ -3,7 +3,8 @@
 Scope: audio-translation-dashboard only. If embedded as a subtree, this plan does not define the
 containing repository's architecture, Git workflow or work scope; see MEMORY.md's scope boundary.
 
-The present state, rewritten when it changes. History is in `AI/PROJECT_LOG.md`; the detailed design in `DESIGN.md`.
+Agreed plans from planning sessions, recorded before implementation. History is in
+`AI/PROJECT_LOG.md`; extremely high-level system design belongs in `DESIGN.md`.
 
 ## Goal
 
@@ -14,6 +15,47 @@ speaker's turn, nothing needs the cloud, and it runs on anything from a 24 GB de
 Mac).
 
 ## Current direction
+
+### Channel component protocol — agreed 2026-11-15
+
+This plan supersedes the earlier channel result-message format described below.
+
+- Keep `/api/channel/translate` processing synchronous: the POST performs transcription,
+  any language recheck, and translation, then queues speech independently. Keep serial WAV
+  uploads and the existing connection lifetime/disconnect behavior.
+- Give each uploaded WAV segment a `message_id` and return it in the POST response. Keep
+  `seq` for command/response sequence numbers, such as the `start_stream` handshake;
+  stop using it as the WAV/result identity.
+- Generated speech's `on_stream_start` carries both `message_id` and `stream_id`. The
+  combined `on_transcription` uses that same `stream_id`, linking text to the stream
+  and through it to the uploaded message. Do not add `message_id` to `on_transcription`.
+- Send one `on_transcription` after transcription/recheck and translation complete, with
+  top-level `text`, source `language` and `translations: [{language, message}]`. Use
+  language codes from the existing Whisper language table. Retain the component timing
+  fields. Eliminate `on_translation` and omit raw inference/recheck replies from WS messages.
+- Empty results get a POST acknowledgment but no speech stream or transcription event.
+- The component UI displays transcription/translation text only from `on_transcription`,
+  so it validates the WS path. Show POST JSON in a separate "POST response" collapsible beside "Raw response";
+  it must not populate the displayed texts. Use the WS start event to link message/stream
+  IDs, handling transcription events arriving before or after their stream start.
+- Encode channel text JSON with `ensure_ascii=False` for direct UTF-8. Keep the current
+  16 KiB WS message limit; no transport-limit change is part of this plan.
+- Verify the implementation against these relationships: POST completion before queued
+  speech finishes, command sequencing, IDs across POST/start/transcription/audio/stop,
+  empty results, rechecks, disconnects, and large CJK results with oversized raw replies.
+  Browser checks must prove POST JSON is inspectable while displayed text comes exclusively
+  from `on_transcription`, including differing WS event arrival orders.
+
+### Python message constructors — agreed 2026-11-16
+
+Extract the six JSON constructors currently needed by the Python app into a standalone
+`szal16.py`: success response, stream start/stop, transcription, translation entry and speech
+error (`on_error`). Return plain dictionaries; leave ID generation, codec headers, JSON encoding and
+transport in the app. Mark timing fields and error correlation IDs as application extensions.
+Keep channel on stream-start messages; omit it from transcription and error events.
+Preserve existing wire values and independently test the constructor contracts.
+
+### Existing project context
 
 Vendored microweb now matches upstream 490b0ef, including shared HTTPS/local-HTTP origin
 checks for mutation requests and WS upgrades. Browser-origin integration checks cover the

@@ -36,9 +36,9 @@ class ChannelTests(test_echo.EchoTests):
             audio.writeframes(bytes(3200))
         self.wav = data.getvalue()
 
-    def post(self, channel="one", seq="1"):
+    def post(self, channel="one"):
         with closing(http.client.HTTPConnection(*self.server.server_address, timeout=3)) as client:
-            client.request("POST", f"/api/channel/translate?channel={channel}&seq={seq}", self.wav,
+            client.request("POST", f"/api/channel/translate?channel={channel}", self.wav,
                            {"Content-Type": "audio/wav"})
             reply = client.getresponse()
             return reply.status, json.loads(reply.read())
@@ -64,18 +64,28 @@ class ChannelTests(test_echo.EchoTests):
                 with connection(self.server, "channel=one&echo=0") as sock:
                     mic_id = self.start(sock, "one", echo=False)
                     send(sock, struct.pack("!BII", 1, mic_id, 0) + bytes(1536))
-                    self.assertEqual(self.post(), (200, {"seq": "1"}))
-                    self.assertEqual(receive(sock)["command"], "on_transcription")
+                    status, posted = self.post()
+                    self.assertEqual(status, 200)
+                    self.assertEqual(set(posted), {"message_id"})
                     translated = receive(sock)
-                    self.assertEqual(translated["result"]["translation"], "你好")
-                    self.assertEqual(translated["result"]["raw"]["response"]["choices"][0]["message"]["content"], "你好")
+                    self.assertEqual(translated["command"], "on_transcription")
+                    self.assertEqual(translated["text"], "hello")
+                    self.assertEqual(translated["language"], "en")
+                    self.assertEqual(translated["translations"], [{"language": "zh", "message": "你好"}])
+                    self.assertNotIn("raw", translated)
                     first = receive(sock)
                     self.assertEqual(first["command"], "on_stream_start")
+                    self.assertEqual(first["message_id"], posted["message_id"])
+                    self.assertEqual(first["stream_id"], translated["stream_id"])
+                    self.assertNotIn("seq", translated)
+                    self.assertNotIn("message_id", translated)
                     self.assertTrue(started.wait(1))
                     # While first speech is blocked, POST #2 still completes and delivers text.
-                    self.assertEqual(self.post(seq="2"), (200, {"seq": "2"}))
-                    self.assertEqual(receive(sock)["seq"], "2")
-                    self.assertEqual(receive(sock)["seq"], "2")
+                    status, second_post = self.post()
+                    self.assertEqual(status, 200)
+                    self.assertNotEqual(second_post["message_id"], posted["message_id"])
+                    second_text = receive(sock)
+                    self.assertEqual(second_text["command"], "on_transcription")
                     self.assertEqual(tts.call_count, 1)  # second speech waits in order
                     body = json.loads(llama.call_args.args[1])
                     self.assertIs(body["stream"], False)
@@ -84,10 +94,16 @@ class ChannelTests(test_echo.EchoTests):
                     for index in range(2):
                         event = first if index == 0 else receive(sock)
                         self.assertEqual(event["command"], "on_stream_start")
+                        self.assertEqual(event["message_id"], (posted if index == 0 else second_post)["message_id"])
+                        self.assertEqual(event["stream_id"], (translated if index == 0 else second_text)["stream_id"])
                         packets = [receive(sock), receive(sock)]
+                        self.assertEqual([struct.unpack_from("!I", packet, 1)[0] for packet in packets],
+                                         [event["stream_id"], event["stream_id"]])
                         self.assertEqual([struct.unpack_from("!I", packet, 5)[0] for packet in packets], [0, 1])
                         self.assertEqual(packets[0][9:] + packets[1][9:], pcm.ljust(1536, b"\0"))
-                        self.assertEqual(receive(sock)["command"], "on_stream_stop")
+                        stopped = receive(sock)
+                        self.assertEqual(stopped["command"], "on_stream_stop")
+                        self.assertEqual(stopped["stream_id"], event["stream_id"])
             finally:
                 release.set()
 
@@ -100,20 +116,100 @@ class ChannelTests(test_echo.EchoTests):
             with connection(self.server, "channel=one&echo=0") as sock:
                 self.start(sock, "one", echo=False)
                 self.assertEqual(self.post()[0], 200)
-                result = receive(sock)["result"]
-                self.assertEqual(result["language"], "chinese")
-                self.assertEqual(result["recheck_result"], checked)
+                result = receive(sock)
+                self.assertEqual(result["language"], "zh")
+                self.assertEqual(result["text"], "你好")
+                self.assertEqual(result["translations"], [{"language": "en", "message": "hello"}])
+                self.assertNotIn("recheck_result", result)
+                self.assertNotIn("stt_raw", result)
                 self.assertEqual(recheck.call_args.args[0], self.wav)
-                self.assertEqual(receive(sock)["command"], "on_translation")
                 self.assertEqual(receive(sock)["command"], "on_stream_start")
                 self.assertEqual(receive(sock)["command"], "on_stream_stop")
                 self.assertEqual(tts.call_args.args, ("hello", "language1"))
-        with patch.object(app, "transcribe", return_value=self.transcript(text="")), patch.object(app, "call_server") as llama:
+        with patch.object(app, "transcribe", return_value=self.transcript(language=None, text="")), \
+             patch.object(app, "call_server") as llama, patch.object(app, "speech_stream") as tts:
             with connection(self.server, "channel=two&echo=0") as sock:
                 self.start(sock, "two", echo=False)
                 self.assertEqual(self.post(channel="two")[0], 200)
-                self.assertEqual(receive(sock)["result"]["text"], "")
+                sock.settimeout(0.05)
+                with self.assertRaises(TimeoutError):
+                    receive(sock)
                 llama.assert_not_called()
+                tts.assert_not_called()
+
+    def test_empty_translation_acknowledges_without_events_or_speech(self):
+        with patch.object(app, "transcribe", return_value=self.transcript()), \
+             patch.object(app, "call_server", return_value={"choices": [{"message": {"content": " "}}]}), \
+             patch.object(app, "speech_stream") as tts:
+            with connection(self.server, "channel=one&echo=0") as sock:
+                self.start(sock, "one", echo=False)
+                status, posted = self.post()
+                self.assertEqual(status, 200)
+                self.assertEqual(set(posted), {"message_id"})
+                sock.settimeout(0.05)
+                with self.assertRaises(TimeoutError):
+                    receive(sock)
+                tts.assert_not_called()
+
+    def test_combined_event_omits_large_raw_replies_and_uses_utf8(self):
+        checked = dict(text="中" * 1800, language="chinese", confidence=-0.01,
+                       stt_raw={"response": "原" * 20000})
+        raw = {"choices": [{"message": {"content": "译" * 1800}}], "debug": "原" * 20000}
+        transcript = self.transcript("russian")
+        transcript["stt_raw"] = {"response": "原" * 20000}
+        with patch.object(app, "transcribe", return_value=transcript), \
+             patch.object(app, "recheck_recording", return_value=checked), \
+             patch.object(app, "call_server", return_value=raw), \
+             patch.object(app, "speech_stream", return_value=Stream([], app.TTS_PCM_TYPE)):
+            with connection(self.server, "channel=one&echo=0") as sock:
+                self.start(sock, "one", echo=False)
+                self.assertEqual(self.post()[0], 200)
+                event = receive(sock)
+                self.assertEqual(set(event), {"command", "stream_id", "text", "language",
+                                              "translations", "stt_seconds", "llm_seconds"})
+                self.assertEqual(event["command"], "on_transcription")
+                self.assertEqual(event["text"], checked["text"])
+                self.assertEqual(event["translations"], [{"language": "en", "message": "译" * 1800}])
+                self.assertLess(len(json.dumps(event, ensure_ascii=False).encode()), 16384)
+                self.assertGreater(len(json.dumps(event).encode()), 16384)
+                self.assertEqual(receive(sock)["command"], "on_stream_start")
+                self.assertEqual(receive(sock)["command"], "on_stream_stop")
+
+    def test_post_and_combined_event_wait_for_translation(self):
+        started, release = threading.Event(), threading.Event()
+        outcome = []
+
+        def translate(*args):
+            started.set()
+            release.wait(3)
+            return {"choices": [{"message": {"content": "你好"}}]}
+
+        with patch.object(app, "transcribe", return_value=self.transcript()), \
+             patch.object(app, "call_server", side_effect=translate), \
+             patch.object(app, "speech_stream", return_value=Stream([], app.TTS_PCM_TYPE)):
+            with connection(self.server, "channel=one&echo=0") as sock:
+                self.start(sock, "one", echo=False)
+                job = threading.Thread(target=lambda: outcome.append(self.post()))
+                job.start()
+                try:
+                    self.assertTrue(started.wait(1))
+                    self.assertTrue(job.is_alive())
+                    sock.settimeout(0.05)
+                    with self.assertRaises(TimeoutError):
+                        receive(sock)
+                finally:
+                    release.set()
+                    job.join(3)
+                self.assertFalse(job.is_alive())
+                self.assertEqual(outcome[0][0], 200)
+                self.assertEqual(set(outcome[0][1]), {"message_id"})
+                sock.settimeout(2)
+                text = receive(sock)
+                stream = receive(sock)
+                self.assertEqual(text["command"], "on_transcription")
+                self.assertEqual(stream["command"], "on_stream_start")
+                self.assertEqual(stream["stream_id"], text["stream_id"])
+                self.assertEqual(stream["message_id"], outcome[0][1]["message_id"])
 
     def test_disconnect_discards_pending_inference_and_does_not_target_reconnect(self):
         started, release = threading.Event(), threading.Event()
@@ -161,7 +257,7 @@ class ChannelTests(test_echo.EchoTests):
                     self.start(sock, "one", echo=False)
                     self.assertEqual(self.post()[0], 200)
                     self.assertTrue(started.wait(1))
-                    self.assertEqual(self.post(seq="2")[0], 200)
+                    self.assertEqual(self.post()[0], 200)
                     with app.audio_channels_lock:
                         session = app.audio_channels["one"]
                     sock.close()
@@ -178,8 +274,9 @@ class ChannelTests(test_echo.EchoTests):
             with connection(self.server, "channel=one&echo=0") as sock:
                 self.start(sock, "one", echo=False)
                 self.assertEqual(self.post()[0], 200)
-                self.assertEqual(receive(sock)["command"], "on_transcription")
-                self.assertTrue(receive(sock)["result"]["raw"]["response"]["mock"])
+                event = receive(sock)
+                self.assertEqual(event["command"], "on_transcription")
+                self.assertTrue(event["translations"][0]["message"])
                 self.assertEqual(receive(sock)["command"], "on_stream_start")
                 self.assertEqual(len(receive(sock)), 777)
                 self.assertEqual(receive(sock)["command"], "on_stream_stop")
@@ -189,10 +286,11 @@ class ChannelTests(test_echo.EchoTests):
             with connection(self.server, "channel=two&echo=0") as sock:
                 self.start(sock, "two", echo=False)
                 self.assertEqual(self.post(channel="two")[0], 200)
-                receive(sock); receive(sock)
+                self.assertEqual(receive(sock)["command"], "on_transcription")
                 error = receive(sock)
-                self.assertEqual(error["command"], "on_speech_error")
+                self.assertEqual(error["command"], "on_error")
                 self.assertEqual(error["error"], "speech failed")
+                self.assertNotIn("channel", error)
 
 
 if __name__ == "__main__":

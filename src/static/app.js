@@ -182,7 +182,7 @@ function stopMeter() {
 // voice activity detector: "speech" is anything clearly above the background
 // noise level, which is tracked continuously (falling quickly, rising slowly).
 // A segment starts at the first loud block (plus some pre-roll audio), and ends
-// after split_pause_ms of quiet or at max_phrase_s; it is then sent like a
+// after an age-dependent pause or at max_phrase_s + grace_period_s; it is then sent like a
 // manual recording. Settings come from [auto_split] in the config.
 
 const autoSplitToggle = document.getElementById("auto-split");
@@ -196,7 +196,7 @@ function createSegmentSplitter(sampleRate, label = "continuous mode", source = "
       I18n.msg("{label} ({reason})", { label: I18n.msg(label), reason: I18n.msg(reason) }), source),
   }), { label, source });
 }
-function segmentSplitterBlock(sp, block, rms) { SegmentSplitter.push(sp, block, rms); }
+function segmentSplitterBlock(sp, block, rms, suppressed = false) { SegmentSplitter.push(sp, block, rms, suppressed); }
 function endSegment(sp, reason) { SegmentSplitter.end(sp, reason); }
 
 async function sendAudioSegment(samples, sampleRate, note, source, context = transcriptContext(source)) {
@@ -394,7 +394,7 @@ function addPlayButton(row, wav) {
 // Speaking a translation: the text is sent to /api/speak, which streams
 // tts-server's audio back as raw PCM (16-bit little-endian mono; the rate is
 // in the Content-Type). Fetching and playing are separate: loadSpeech() fetches
-// a translation's audio into memory, one request at a time from this page
+// a translation's audio into memory through the shared inference queue
 // (toTts), so queued translations are fetched ahead while another plays or the
 // speaker is still talking; speakTranslation() plays it, starting once
 // playback_buffer_ms ([tts]) of audio is in, or all of it if less (at once if
@@ -669,12 +669,13 @@ function transcriptContext(source) {
 function transcriptTail(text) {
   const characters = Array.from(text || "");
   let start = Math.max(0, characters.length - 100);
+  const byteLimit = /\s/u.test(text) ? 200 : 100;
   // Byte-level BPE cannot use more tokens than UTF-8 bytes; leave room below 224 tokens.
-  while (new TextEncoder().encode(characters.slice(start).join("")).length > 200) start++;
+  while (new TextEncoder().encode(characters.slice(start).join("")).length > byteLimit) start++;
   let tail = characters.slice(start).join("");
   // If the size cutoff lands inside a space-delimited span, discard that partial span.
   if (start > 0 && !/\s/u.test(characters[start - 1]) && !/\s/u.test(characters[start])) {
-    tail = tail.replace(/^\S+\s*/u, "");
+    if (/\s/u.test(text)) tail = tail.replace(/^\S+\s*/u, "");
   }
   return tail.trimStart();
 }
@@ -1108,7 +1109,7 @@ function microphoneBlock(recording, samples) {
   const muted = micInputSuppressed();
   if (muted) samples.fill(0); // preserve recording duration; don't store or detect playback echo
   const rms = meterSample(samples);
-  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms);
+  if (recording.splitter) segmentSplitterBlock(recording.splitter, samples, rms, muted);
   else {
     recording.chunks.push(samples);
     if (!muted) noteSpeech(false); // a manual recording is a turn in progress
@@ -1141,11 +1142,9 @@ async function stopRecording(recording = micRecording) {
   return encodeWav(resampled, targetSampleRate);
 }
 
-// Each server gets one request at a time from this page, in the order they're
-// asked for, and runs it with the whole machine; the stages still overlap
-// (the next segment is transcribed while this one is translated). toWhisper(task),
-// toLlama(task) and toTts(task) (see loadSpeech) run task() once the ones
-// before it have finished (or failed) and return its result.
+// One inference at a time from this page, across transcription, translation and
+// speech. Tasks hold the shared queue through their complete response reads.
+// Recording and playback continue independently.
 function oneAtATime() {
   let last = Promise.resolve();
   return (task) => {
@@ -1158,8 +1157,8 @@ function oneAtATime() {
   };
 }
 
-const toWhisper = oneAtATime();
-const toLlama = oneAtATime();
+const toWhisper = toTts;
+const toLlama = toTts;
 
 // Returns the response body; on failure, throws an Error that also carries
 // the body (which may include the saved file's path).

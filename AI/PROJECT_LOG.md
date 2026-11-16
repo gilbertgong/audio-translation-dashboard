@@ -1158,3 +1158,21 @@ header-custom.js. Deployments can replace that file without changing the shared-
 assumptions. No runtime changes or deployment-specific branding assertions are included.
 All JavaScript suites passed; a guarded file-read check also confirmed header fixtures never
 load the deployment override. The whitespace check passed.
+
+## 2026-11-15: Prefer pauses near the segment limit
+
+Browser splitting halves/quarters the configured pause at 50%/75% of the target duration,
+then uses a configurable grace pause before a hard cutoff (defaults: 30 s + 5 s, 50 ms).
+Boundary/scaling, echo, recording and recovery checks pass; live audition remains.
+
+## 2026-11-15: Combine channel text results
+
+Channel POST returns message_id; speech start links it to stream_id used by one UTF-8
+on_transcription with text/language/translations and no raw replies. POST timing and queued
+speech remain; individual WS/POST JSON is separately collapsible and indented for debugging.
+Application and browser regressions pass. Vendored microweb updated to v0.2.3.
+
+## 2026-11-16: Extract szaL16 message constructors
+
+Six plain-dictionary constructors centralize message shapes; on_error uses correlation extensions,
+and only stream starts carry channel. Constructor/channel/browser checks pass; transport stays in the app.

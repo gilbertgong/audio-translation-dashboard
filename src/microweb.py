@@ -74,7 +74,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = "v0.2.1"
+__version__ = "v0.2.3"
 UPDATE_URL = "https://raw.githubusercontent.com/gilbertgong/microweb/main/microweb.version"
 
 # Copyright (c) 2026, Gilbert Gong
@@ -223,6 +223,7 @@ class _Server(ThreadingHTTPServer):
     def __init__(self, *args, **kwargs):
         self._requests = threading.Condition()
         self._active = 0
+        self._pending = set()
         self._websockets = set()
         self._stopping = False
         super().__init__(*args, **kwargs)
@@ -232,10 +233,12 @@ class _Server(ThreadingHTTPServer):
         request.settimeout(30)
         with self._requests:
             self._active += 1
+            self._pending.add(request)
         try:
             super().process_request(request, client_address)
         except BaseException:
             with self._requests:
+                self._pending.discard(request)
                 self._active -= 1
                 self._requests.notify_all()
             raise
@@ -245,16 +248,27 @@ class _Server(ThreadingHTTPServer):
             super().process_request_thread(request, client_address)
         finally:
             with self._requests:
+                self._pending.discard(request)
                 self._active -= 1
                 self._requests.notify_all()
 
     def drain_requests(self):
         with self._requests:
-            while self._active:
-                try:
-                    self._requests.wait(0.2)
-                except KeyboardInterrupt:
-                    log.warning("Waiting for active HTTP requests before stopping components")
+            self._stopping = True
+            pending = list(self._pending)
+        # Wake handlers waiting for a request line or headers. Requests racing
+        # with shutdown may be disconnected; dispatched handlers still drain.
+        for connection in pending:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
+        # Windows buffered readers may outlive socket shutdown; they cannot
+        # dispatch once stopping, so wait only for already-dispatched handlers.
+        with self._requests:
+            while self._active > len(self._pending):
+                self._requests.wait(0.2)  # a second Ctrl+C interrupts the drain
 
     def stop_websockets(self):
         with self._requests:
@@ -988,7 +1002,22 @@ class App:
         class Handler(BaseHTTPRequestHandler):
             server_version = "microweb"
 
+            def handle(self):
+                try:
+                    super().handle()
+                except OSError:
+                    with self.server._requests:
+                        closing_idle = (self.server._stopping and
+                                        self.connection in self.server._pending)
+                    if not closing_idle:
+                        raise
+
             def _serve(self):
+                with self.server._requests:
+                    if self.server._stopping:
+                        self.close_connection = True
+                        return
+                    self.server._pending.discard(self.connection)
                 req = Request(self.command, self.path, self.headers, self.rfile,
                               self.client_address[0], app.max_body)
                 req._http_version = self.request_version

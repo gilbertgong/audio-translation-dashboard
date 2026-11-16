@@ -187,9 +187,29 @@ run(`
   segmentSplitterBlock(video, new Float32Array(100).fill(0.1), 0.1);
 `);
 assert.equal(run("continuousMic.splitter.speaking"), false);
+assert.equal(run("continuousMic.splitter.noiseDb"), null); // suppressed input cannot initialize the estimate
 assert.equal(run("video.speaking"), true); // captured input remains live
+run(`
+  const mutedSegments = [];
+  Object.assign(continuousMic.splitter, {
+    noiseDb: -35, thresholdDb: -23, speaking: true,
+    blocks: [new Float32Array(100).fill(0.1)], segmentSamples: 100, speechMs: 100,
+    onSegment: (samples, reason) => mutedSegments.push({samples, reason}),
+  });
+  for (let i = 0; i < 6; i++) microphoneBlock(continuousMic, new Float32Array(100).fill(0.5));
+`);
+assert.equal(run("continuousMic.splitter.noiseDb"), -35);
+assert.equal(run("continuousMic.splitter.thresholdDb"), -23);
+assert.equal(run("mutedSegments.length"), 1); // synthetic silence still ends an existing segment
+assert.equal(run("mutedSegments[0].reason"), 'pause');
+assert.equal(run("mutedSegments[0].samples.length"), 300); // speech + configured silence tail
+assert.equal(run("mutedSegments[0].samples.slice(100).every(sample => sample === 0)"), true);
 element('playback-pause').click();
 assert.equal(run("micInputSuppressed()"), false);
+run("microphoneBlock(continuousMic, new Float32Array(100).fill(10 ** (-35 / 20)))");
+assert.equal(run("continuousMic.splitter.speaking"), false); // room noise is not speech when unmuted
+run("microphoneBlock(continuousMic, new Float32Array(100).fill(0.01))");
+assert.equal(run("continuousMic.splitter.noiseDb < -35"), true); // normal noise tracking resumes
 run("microphoneBlock(manualMic, new Float32Array([0.25]))");
 assert.equal(run("manualMic.chunks.at(-1)[0]"), 0.25);
 element('playback-pause').click();

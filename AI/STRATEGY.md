@@ -29,17 +29,18 @@ to keep it current as part of the work itself.
 2. **One home for AI context, one entry point.** It all lives in `AI/`, and `AI/MEMORY.md` is the entry point: it
    says what else to read and when. Tool-specific entry files only point to it, so switching assistants means adding
    a pointer, not rewriting anything.
-3. **People and assistants get separate docs.** `README.md` is for people. `AI/` is for assistants, and can be
-   detailed, explicit and full of reasons.
+3. **People and assistants get separate docs.** `README.md` is for people. `AI/` is for assistants;
+   include the context needed to continue without turning routine changes into lengthy records.
 4. **Record the why.** Decisions are written down with their reasons, so a later session can tell a deliberate
    choice from an accident, and knows what to reconsider if the reason no longer holds.
-5. **Keep the present apart from the past.** `AI/PLAN.md` holds the current state and is rewritten so it's always
-   true; `AI/PROJECT_LOG.md` holds shared history and is only appended to, except when relocating
+5. **Keep plans apart from history.** `AI/PLAN.md` holds the agreed plan from planning sessions; `AI/PROJECT_LOG.md` holds shared history and is only appended to, except when relocating
    private material into `AI/PRIVATE.md`. That file keeps its own current context and dated history.
    *Why:* when one file mixes both, every change of direction means finding and correcting old statements, and the
    stale ones that slip through mislead the next session.
-6. **Docs are updated with the code, unasked.** Every change includes updating the docs it affects. A stale plan is
-   worse than none.
+6. **Update docs in proportion to the work.** Update only documents whose purpose calls for it.
+   `DESIGN.md` is for extremely high-level design, `AI/PLAN.md` changes only through planning sessions,
+   and `AI/PROJECT_LOG.md` entries stay proportionate to the change. A code change does not require
+   edits to every document.
 7. **Plain Markdown, no tooling.** Any assistant can read and write it; nothing needs installing.
 8. **The repo stands alone.** The shared AI docs describe only the repo itself. There are no local paths, machine
    details, user-specific setups, or discussion of files, folders and projects outside the repo. What the repo needs
@@ -61,13 +62,14 @@ to keep it current as part of the work itself.
 
 ```
 README.md            for people: what it is, how to run it, options, output
+DESIGN.md            extremely high-level system design only
 AGENTS.md            entry file: "read AI/MEMORY.md first"
 CLAUDE.md            entry file for Claude Code: the same pointer (plus an import of AI/MEMORY.md)
 (other entry files)  one per assistant in use, same content
 .gitignore           includes AI/LOCAL.md
 AI/
   MEMORY.md          the entry point: what to read and when; how to work here (preferences, each with its reason)
-  PLAN.md            the present, high level: goal, direction, approach, results so far, next steps, open questions
+  PLAN.md            cohesive agreed plan from planning sessions, recorded before implementation
   TODO.md            user-requested work, with completed and remaining items
   PROJECT_LOG.md     the past: dated history of what was tried, found and decided, and why; appended to
   STRATEGY.md        this file: how the structure works and how to replicate it
@@ -94,26 +96,35 @@ process, testing, communication, what to ask about and what to just do. Not fact
   ("yes, keep doing that").
 - Includes the rules that make this structure work (below), so they travel with every copy.
 
-### `AI/PLAN.md`: the present
+### `DESIGN.md`: extremely high-level design
 
-Where the project stands now, at a high level, rewritten when the direction changes so it's always true. It's about
-the project, not one computer or session: what's running or queued right now doesn't belong here. Suggested sections:
+Describe only the system's overall architecture, major components, their responsibilities and
+relationships, and fundamental design decisions. Keep implementation details, individual fixes,
+test results, endpoint inventories and routine behavior changes out of this document. Update it
+only when the high-level design changes.
 
-- **Goal:** what it's for, and what good looks like.
-- **Current direction.**
-- **Approach:** the decisions in force, each with its reason. A replaced decision leaves the plan; the log records
-  the change.
-- **Results so far:** the headline findings.
-- **Orientation:** where code and docs are, briefly.
-- **Open questions:** decisions waiting on the user.
-- **Known issues:** bugs and weak spots not yet fixed, with workarounds.
-- **Next steps.**
+### `AI/PLAN.md`: the agreed plan
+
+Update only from planning sessions: multi-turn conversations in which discussion and decisions
+form a cohesive plan. Recording that agreed plan is the step before implementation begins.
+Capture the intended outcome, scope, decisions and approach, remaining questions, and sequence
+of work at the level needed to implement it.
+
+Do not update PLAN as a routine implementation step, progress report, completion record or
+inventory of small fixes. If implementation raises a decision that changes the plan, return to
+planning discussion and record the revised agreement before implementing that change.
 
 ### `AI/PROJECT_LOG.md`: the past
 
 Dated entries, appended to: what changed and why, findings, approaches tried and dropped, decisions made and later
 replaced. Read when history matters, e.g. before trying something that may have been tried. Facts that are already
 plain from the code or version control don't need repeating; record what isn't.
+
+Size entries in proportion to the change, aiming for roughly five lines of changed code per
+line of PROJECT_LOG entry (about 5:1). This is a sizing guideline, not a quota or an invitation
+to pad either code or prose. Small fixes warrant at most a brief entry; omit an entry when it
+adds no useful context. Keep the reason and consequential findings, without narrating every
+edit or listing routine verification details.
 
 ### `AI/PRIVATE.md`: private development only
 
@@ -161,10 +172,11 @@ These go in every `AI/MEMORY.md`, after the "Start here" instruction:
 
 1. **Start here:** read `AI/PLAN.md`, `AI/LOCAL.md` if it exists, `AI/PROJECT_LOG.md` when history matters, and
    `AI/STRATEGY.md` when changing the docs' structure.
-2. **Remember in the repo.** Save preferences in `AI/MEMORY.md`, the current state in `AI/PLAN.md`, history in
+2. **Remember in the repo.** Save preferences in `AI/MEMORY.md`, agreed plans in `AI/PLAN.md`, history in
    `AI/PROJECT_LOG.md`, and anything about this computer in `AI/LOCAL.md`, not in the assistant's own memory.
-3. **Keep the docs current without asking.** Each change includes updating the README, the plan, the log and the
-   memory file as they're affected.
+3. **Keep docs focused and proportionate.** DESIGN contains extremely high-level design only. Update PLAN
+   only from planning sessions, before implementation. Aim for roughly 5:1 changed code lines to log-entry
+   lines. Update other docs only as their purpose requires; do not edit every doc for every change.
 4. **README for people, `AI/` for assistants.**
 5. **Keep the shared AI docs self-contained:** nothing local or outside the repo (principle 8); that goes in
    `AI/LOCAL.md` (principle 9).
@@ -179,10 +191,10 @@ For an assistant doing this in a new or existing repo:
    user's known preferences. If the user has preferences saved in an assistant's own memory, carry over the ones that
    still apply, generalized so any assistant can follow them.
 3. **Write `AI/PLAN.md` and `AI/PROJECT_LOG.md`:**
-   - new repo: the goal and the first decisions in the plan; a first dated entry in the log;
-   - existing repo: read the code, docs and history, then write the plan (goal, how things work, a code map, the
-     current status, the open questions) and a log entry summarizing the history so far. Ask the user about anything
-     that can't be learned from the repo, especially the reasons behind decisions.
+   - form the initial plan through planning discussion with the user, then record it before implementation;
+   - for an existing repo, read code, docs and history to inform that discussion. Do not turn PLAN into
+     a code inventory or reconstruct a supposed agreed plan from implementation alone. Preserve useful
+     history in a concise log entry when needed.
 4. **Sort the README.** Keep what people need; move reasons, history and working notes into `AI/`.
 5. **Add entry files:** `AGENTS.md`, plus one per assistant the user works with, each only pointing to
    `AI/MEMORY.md`.
@@ -191,8 +203,9 @@ For an assistant doing this in a new or existing repo:
 ## Day to day
 
 - **Starting a session:** read `AI/MEMORY.md`, which says what to read next.
-- **During work:** when a decision is made, a finding turns up, or a plan changes, update the plan and add a log
-  entry as part of that step. When the user states a preference, add it to `AI/MEMORY.md`. Local facts (paths,
-  services, machine-only rules) go in `AI/LOCAL.md`.
-- **Finishing a piece of work:** make sure the plan's status, open questions and known issues are true, and the
-  README matches what a person would see.
+- **Planning:** use the conversation to settle a cohesive plan, then update PLAN before implementation.
+- **During implementation:** keep PLAN unchanged. Update DESIGN only for high-level architectural changes;
+  keep any log entry proportionate (roughly 5:1 code lines to entry lines). When the user states a lasting
+  preference, add it to `AI/MEMORY.md`. Local facts go in `AI/LOCAL.md`.
+- **Finishing a piece of work:** check documentation affected by the change against its purpose. Do not add
+  routine completion updates to PLAN or implementation details to DESIGN.

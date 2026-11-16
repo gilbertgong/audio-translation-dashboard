@@ -137,6 +137,7 @@ const UI_ZH_HANT = {
   "▶ Play what was sent": "▶ 播放已傳送的音訊",
   "Translate this ↓": "翻譯此內容 ↓",
   "Raw response": "原始回應",
+  "POST response": "POST 回應",
   "Text in either language": "輸入任一語言的文字",
   "Speak this ↓": "朗讀此內容 ↓",
   "Raw request and streamed response": "原始請求和串流回應",
