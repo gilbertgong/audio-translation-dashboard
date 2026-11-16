@@ -216,6 +216,9 @@ codec = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-to
 # Used by src/install_api_servers.py and src/run_servers.py. Prebuilt
 # binaries are downloaded from GitHub releases into install_dir/<name>/.
 install_dir = "api_servers"
+# Optional installer lock directory; defaults to install_dir. Relative paths use
+# the config directory. Use the same lock_dir for installs sharing install_dir.
+# lock_dir = "api_servers"
 # Which build to download. Substituted for {binary_type} in the asset patterns
 # below. Examples: "win-cuda-12.*-x64" (NVIDIA, CUDA 12), "win-cuda-13.*-x64",
 # "win-vulkan-x64". Non-CUDA builds also need the cudart entry removed below.

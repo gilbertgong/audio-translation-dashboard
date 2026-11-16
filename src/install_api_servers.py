@@ -86,12 +86,12 @@ def find_release(repo, release, patterns):
     raise SystemExit(f"error: no release of {repo} ({release}) has files matching {patterns}")
 
 
-def lock_installs(install_dir):
-    """Hold a lock on <install_dir>/.install.lock until this process exits, so
+def lock_installs(lock_dir):
+    """Hold a lock on <lock_dir>/.install.lock until this process exits, so
     two installers (e.g. Launch and a server button) never work on the same
     folders at once: the second waits, then finds what the first installed."""
-    install_dir.mkdir(parents=True, exist_ok=True)
-    lock = open(install_dir / ".install.lock", "a+")
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock = open(lock_dir / ".install.lock", "a+")
     waiting = False
     while True:
         try:
@@ -106,7 +106,7 @@ def lock_installs(install_dir):
         except OSError as err:
             if err.errno not in ((errno.EACCES,) if os.name == "nt" else (errno.EACCES, errno.EAGAIN)):
                 lock.close()
-                raise SystemExit(f"error: could not lock {install_dir / '.install.lock'}: {err}") from None
+                raise SystemExit(f"error: could not lock {lock_dir / '.install.lock'}: {err}") from None
             if not waiting:
                 print("== waiting for another install to finish", flush=True)
                 waiting = True
@@ -205,7 +205,8 @@ def main():
     cfg = full_cfg["api_servers"]
     install_dir = config_path(full_cfg, cfg.get("install_dir", "api_servers"))
     if not args.dry_run:
-        lock = lock_installs(install_dir)  # noqa: F841 (held until exit)
+        lock_dir = config_path(full_cfg, cfg["lock_dir"]) if "lock_dir" in cfg else install_dir
+        lock = lock_installs(lock_dir)  # noqa: F841 (held until exit)
 
     for name, server in api_servers(full_cfg).items():
         if args.only and name not in args.only:

@@ -13,6 +13,26 @@ import install_api_servers as installer
 
 
 class InstallLockTests(unittest.TestCase):
+    def test_lock_directory_config_and_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for override in (None, "locks", str(root / "absolute-locks")):
+                for dry_run in (False, True):
+                    with self.subTest(override=override, dry_run=dry_run):
+                        cfg = {"_config_dir": root, "api_servers": {"install_dir": "servers"}}
+                        if override is not None:
+                            cfg["api_servers"]["lock_dir"] = override
+                        argv = ["install_api_servers.py"] + (["--dry-run"] if dry_run else [])
+                        with patch.object(sys, "argv", argv), \
+                                patch.object(installer, "load_config", return_value=cfg), \
+                                patch.object(installer, "setup_logging"), \
+                                patch.object(installer, "lock_installs") as lock:
+                            installer.main()
+                            if dry_run:
+                                lock.assert_not_called()
+                            else:
+                                lock.assert_called_once_with(root / (override or "servers"))
+
     def test_contention_waits_then_acquires_on_both_platforms(self):
         for platform, error in (("nt", errno.EACCES), ("posix", errno.EAGAIN),
                                 ("posix", errno.EACCES)):
