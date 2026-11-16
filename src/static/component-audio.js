@@ -139,23 +139,16 @@
 
   function resultMessage(state, event, messageId = event.message_id ?? state.streamResults.get(event.stream_id)?.message_id, rawResponse) {
     if (state.panel.echo) return;
-    if (event.command === "on_transcription") {
-      const stream = state.streamResults.get(event.stream_id) || {};
-      stream.transcription = event;
-      stream.rawTranscription = rawResponse;
+    let stream;
+    if (event.stream_id !== undefined) {
+      stream = state.streamResults.get(event.stream_id) || {};
+      if (event.message_id !== undefined) stream.message_id = event.message_id;
       state.streamResults.set(event.stream_id, stream);
-      if (stream.message_id === undefined) return; // start may arrive after the text
-      messageId = stream.message_id;
-      delete stream.transcription;
-      delete stream.rawTranscription;
-    } else if (event.message_id !== undefined && event.stream_id !== undefined) {
-      const stream = state.streamResults.get(event.stream_id) || {};
-      stream.message_id = event.message_id;
-      state.streamResults.set(event.stream_id, stream);
-      if (stream.transcription) resultMessage(state, stream.transcription, undefined, stream.rawTranscription);
+      messageId ??= stream.message_id;
     }
     const results = document.getElementById("channel-results");
-    let row = state.rows.get(messageId);
+    const messageRow = state.rows.get(messageId);
+    let row = stream?.row || messageRow;
     if (!row) {
       const element = document.createElement("div");
       element.className = "result";
@@ -171,7 +164,16 @@
       postSection.append(postLabel, post);
       details.append(summary, raw); element.append(original, translated, meta, error, details, postSection);
       results.append(element); results.hidden = false;
-      row = { original, translated, meta, error, raw, postSection, post, data: {} };
+      row = { element, original, translated, meta, error, raw, postSection, post, data: {} };
+    }
+    if (stream) stream.row = row;
+    if (messageId !== undefined) {
+      if (messageRow && messageRow !== row) {
+        row.postSection.hidden = messageRow.postSection.hidden;
+        row.postSection.open = messageRow.postSection.open;
+        row.post.textContent = messageRow.post.textContent;
+        results.removeChild(messageRow.element);
+      }
       state.rows.set(messageId, row);
     }
     if (event.command === "post_response") {
