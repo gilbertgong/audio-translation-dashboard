@@ -30,6 +30,7 @@ Standard library only (Python 3.11+ for tomllib).
 """
 
 import argparse
+import errno
 import fnmatch
 import hashlib
 import json
@@ -102,7 +103,10 @@ def lock_installs(install_dir):
                 import fcntl
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return lock  # kept open (and locked) for the rest of the run
-        except OSError:
+        except OSError as err:
+            if err.errno not in ((errno.EACCES,) if os.name == "nt" else (errno.EACCES, errno.EAGAIN)):
+                lock.close()
+                raise SystemExit(f"error: could not lock {install_dir / '.install.lock'}: {err}") from None
             if not waiting:
                 print("== waiting for another install to finish", flush=True)
                 waiting = True
