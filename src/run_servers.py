@@ -144,6 +144,7 @@ def start_server(cfg, name, server, log, log_dir):
     print(f"== Starting {name} at {url}, {gpu} (log: {server_log})")
     with open(server_log, "wb") as out:
         # stdin: not ours (see Command.start).
+        print(f"   {subprocess.list2cmdline(argv)}", flush=True)
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, env=env)
     log.info("launched %s (%s) with command\n  %s", name, gpu, subprocess.list2cmdline(argv))
 

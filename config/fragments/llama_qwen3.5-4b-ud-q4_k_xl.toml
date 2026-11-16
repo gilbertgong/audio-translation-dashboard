@@ -12,7 +12,8 @@ executable = "llama-server"
 host = "127.0.0.1"
 port = 8082
 # All layers on the GPU, memory fitted automatically; --ctx-size caps the context.
-args = ["--ctx-size", "2048"]
+# presence penalty helps Qwen3.5 4B
+args = ["--ctx-size", "2048", "--presence-penalty", "0.8"]
 
 [models.llama]
 model = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-UD-Q4_K_XL.gguf?download=true"
