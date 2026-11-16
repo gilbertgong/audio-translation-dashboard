@@ -63,7 +63,8 @@ echo_cancellation = true
 enabled = true
 # Silence (ms) that ends a segment and sends it to be transcribed: short, so
 # text appears when the speaker takes a breath. (Speaking translations waits
-# for a longer pause: [tts] turn_pause_ms.)
+# for a longer pause: [tts] turn_pause_ms.) Halved at 50% of max_phrase_s,
+# then quartered at 75% to find a pause before the length limit.
 split_pause_ms = 600
 # How far (dB) above the background noise counts as speech. Raise it if noise
 # triggers segments; lower it if quiet speech is missed.
@@ -77,9 +78,12 @@ pre_roll_ms = 300
 tail_ms = 200
 # Segments with less speech than this (ms) are dropped (coughs, clicks).
 min_speech_ms = 100
-# Longest segment (seconds); longer speech is cut here (whisper works on
-# 30-second windows).
-max_phrase_s = 25
+# Target maximum segment duration (seconds), followed by a grace period.
+max_phrase_s = 30
+# Extra seconds to find a shorter pause; cut unconditionally after this period.
+grace_period_s = 5
+# Required silence (ms) during the grace period.
+grace_pause_ms = 50
 
 [languages]
 # The two languages to translate between, in either direction. Rows the page

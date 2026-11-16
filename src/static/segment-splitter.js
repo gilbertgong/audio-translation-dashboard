@@ -1,7 +1,8 @@
 // The Live speech splitter, independent of page UI and upload handling.
 const SegmentSplitter = (() => {
-  const defaults = { split_pause_ms: 250, threshold_db: 12, min_threshold_db: -50,
-    pre_roll_ms: 300, tail_ms: 200, min_speech_ms: 100, max_phrase_s: 25 };
+  const defaults = { split_pause_ms: 600, threshold_db: 12, min_threshold_db: -50,
+    pre_roll_ms: 300, tail_ms: 200, min_speech_ms: 100, max_phrase_s: 30,
+    grace_period_s: 5, grace_pause_ms: 50 };
   const CALIBRATION_MS = 400;
   const NOISE_FALL_MS = 50;
   const NOISE_RISE_MS = 2000;
@@ -71,8 +72,12 @@ const SegmentSplitter = (() => {
     } else {
       sp.silenceMs += ms;
     }
-    if (sp.silenceMs >= sp.settings.split_pause_ms) end(sp, "pause");
-    else if (sp.segmentSamples / sp.sampleRate >= sp.settings.max_phrase_s) end(sp, "max length");
+    const seconds = sp.segmentSamples / sp.sampleRate;
+    const max = sp.settings.max_phrase_s;
+    const pauseMs = seconds >= max ? sp.settings.grace_pause_ms
+      : sp.settings.split_pause_ms / (seconds >= max * 0.75 ? 4 : seconds >= max * 0.5 ? 2 : 1);
+    if (sp.silenceMs >= pauseMs) end(sp, "pause");
+    else if (seconds >= max + sp.settings.grace_period_s) end(sp, "max length");
   }
 
   // Finish the current segment and send it (if it had enough speech).

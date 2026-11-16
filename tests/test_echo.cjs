@@ -313,9 +313,9 @@ function fixture(splitSettings = { pre_roll_ms: 0 }, codecSupport) {
   delayed.ackStream(102);
   assert.deepEqual(commands().map(item => item.command), ['start_stream', 'stop_stream', 'start_stream', 'stop_stream']);
   const secondAudio = delayedWs.sent.filter(item => item instanceof ArrayBuffer && new DataView(item).getUint32(1) === 102);
-  assert.equal(secondAudio.length, 4); // 7 worklet blocks -> 3 full packets + one padded
+  assert.equal(secondAudio.length, 3); // shortened pause threshold: 6 worklet blocks -> 3 full packets
   assert.equal(new DataView(secondAudio[0]).getUint32(5), 0); // packet IDs restart per stream
-  assert.equal(new DataView(secondAudio.at(-1)).getUint32(5), 3);
+  assert.equal(new DataView(secondAudio.at(-1)).getUint32(5), 2);
   assert.equal(new DataView(secondAudio.at(-1)).getInt16(519, true), 0);
   // Packet zero from two different streams must retain distinct RTT timestamps.
   delayed.advance(20);
@@ -400,7 +400,7 @@ function fixture(splitSettings = { pre_roll_ms: 0 }, codecSupport) {
 
   // Codec changes during speech apply after the natural pause, on the same socket. A pending
   // acknowledgement or native encoder/decoder flush must preserve their ordering.
-  const hot = fixture({ pre_roll_ms: 0 }, { encode: true, decode: true });
+  const hot = fixture({ pre_roll_ms: 0, split_pause_ms: 250 }, { encode: true, decode: true });
   await settle(); hot.click(); hot.acknowledge(); await settle(); hot.permit(); await settle();
   const hotWs = hot.sockets[0], hotNode = hot.nodes[0];
   const hotPush = (value, n) => {

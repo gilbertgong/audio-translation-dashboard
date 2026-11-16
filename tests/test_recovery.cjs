@@ -235,7 +235,36 @@ function stream(chunks = [], error = null) {
     f.coordinator.set("up"); await result; assert.equal(f.calls.length, 1); }
   { const f = fixture(); const error = new Error("access denied"); f.coordinator.set("blocked", error);
     await assert.rejects(f.upload(), (err) => err === error); assert.equal(f.calls.length, 0); }
-  // Original toWhisper queue still owns ordering through retries.
+  // All inference stages share the queue until their response bodies finish.
+  { const f = fixture(); let releaseUpload, releaseTranslation, releaseSpeech, uploads = 0;
+    f.network(async (url) => {
+      if (url === "/api/recordings") return ++uploads === 1
+        ? { ...json(), json: () => new Promise(resolve => { releaseUpload = () => resolve({ text: "hello" }); }) }
+        : json(200, { text: "next" });
+      const response = stream();
+      response.headers = { get: () => null };
+      response.reader.read = () => new Promise((resolve, reject) => {
+        if (url === "/api/translate") releaseTranslation = () => resolve({ done: true });
+        else releaseSpeech = () => reject(new TypeError("speech stream failed"));
+      });
+      return response;
+    });
+    const upload = f.upload(), translation = f.translate();
+    f.run("globalThis.queuedSpeech = loadSpeech(row, 'hello')");
+    const next = f.upload();
+    await f.clock.flush();
+    assert.deepEqual(f.calls.map(call => call.url), ["/api/recordings"]);
+    releaseUpload(); await upload; await f.clock.flush();
+    assert.deepEqual(f.calls.map(call => call.url), ["/api/recordings", "/api/translate"]);
+    releaseTranslation(); await translation; await f.clock.flush();
+    assert.deepEqual(f.calls.map(call => call.url), ["/api/recordings", "/api/translate", "/api/speak"]);
+    releaseSpeech(); await next; await f.clock.flush();
+    assert.deepEqual(f.calls.map(call => call.url),
+      ["/api/recordings", "/api/translate", "/api/speak", "/api/recordings"]);
+    assert.equal(f.run("queuedSpeech.done"), true);
+    assert.equal(f.run("queuedSpeech.error.message"), "speech stream failed");
+  }
+  // The shared queue still owns ordering through retries.
   { const f = fixture(); let count = 0;
     f.network(async () => ++count === 1 ? json(503) : json());
     const first = f.upload(); f.sandbox.otherWav = new Blob(["other"]);
